@@ -85,13 +85,28 @@ final class ApiManager: Sendable {
             return data
         } catch {
             if let apiError = error as? ApiError {
+                sendEvent(event: .ERROR_API_RESPONSE, extras: apiError.getResponse())
                 throw apiError
             } else if let urlError = error as? URLError {
                 let code = urlError.errorCode
                 let errorBody = urlError.errorUserInfo
+                sendEvent(event: .ERROR_API_RESPONSE, extras: [
+                    "errorCode": String(code),
+                    "errorMessage": urlError.localizedDescription
+                ])
                 let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"
+                if urlError.code == .timedOut || urlError.code == .notConnectedToInternet {
+                    throw ApiError(message: "Request timeout", statusCode: 5005, responseJson: [
+                        "errorCode": "5005",
+                        "errorMessage": "Request timeout"
+                    ])
+                }
                 throw ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)
             } else {
+                sendEvent(event: .ERROR_API_RESPONSE, extras: [
+                    "errorCode": "500",
+                    "errorMessage": error.localizedDescription
+                ])
                 throw ApiError(message: error.localizedDescription, statusCode: 500, responseJson: [
                     "errorCode": "500",
                     "errorMessage": "Something Went Wrong!"

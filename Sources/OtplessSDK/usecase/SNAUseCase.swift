@@ -25,7 +25,8 @@ internal final class SNAUseCase: @unchecked Sendable {
 
         async let snaApiCall: Void = Otpless.shared.apiRepository
             .makeSNACall(url: url) { snaResponse in
-                print("Sna response: \(snaResponse)")
+                log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
+                sendEvent(event: .SNA_CALLBACK_RESULT)
         }
 
         async let snaTransactionApiCall = pollSNATransaction(state: state, timerSettings: timerSettings)

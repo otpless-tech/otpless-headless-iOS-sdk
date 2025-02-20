@@ -234,7 +234,7 @@ struct OneTap: Codable {
     func toDict() -> [String: Any] {
         [
             "firebaseInfo": firebaseInfo?.toDict() as Any,
-            "merchantUserInfo": merchantUserInfo?.toDict() as Any,
+            "data": merchantUserInfo?.toDict() as Any,
             "sessionInfo": sessionInfo?.toDict() as Any,
             "status": status,
             "token": token

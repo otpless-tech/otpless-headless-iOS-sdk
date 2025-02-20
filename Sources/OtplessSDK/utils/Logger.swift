@@ -35,6 +35,8 @@ public enum LogType: String, @unchecked Sendable {
     case POLLING_STARTED = "Polling Started"
     case POLLING_RESPONSE = "Polling Response"
     case INVALID_DEEPLINK = "Invalid Deeplink"
+    case SNA_RESPONSE = "SNA Response"
+    case EVENT_API_ERROR = "EVENT API ERROR"
     
     public static func < (lhs: LogType, rhs: LogType) -> Bool {
         return lhs.rawValue < rhs.rawValue

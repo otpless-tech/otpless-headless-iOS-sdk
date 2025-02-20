@@ -6,10 +6,10 @@
 //
 
 
-public enum ResponseTypes {
+public enum ResponseTypes: String {
     case INITIATE,
-    VERIFY,
-    INTERNET_ERR,
-    ONETAP,
-    FALLBACK_TRIGGERED
+         VERIFY,
+         INTERNET_ERR,
+         ONETAP,
+         FALLBACK_TRIGGERED
 }

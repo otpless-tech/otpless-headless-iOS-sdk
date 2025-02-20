@@ -7,9 +7,9 @@
 
 import Foundation
 
-internal enum AuthenticationMedium {
-    case PHONE
-    case EMAIL
-    case OAUTH
-    case WEB_AUTHN
+internal enum AuthenticationMedium: String {
+    case PHONE = "PHONE"
+    case EMAIL = "EMAIL"
+    case OAUTH = "OAUTH"
+    case WEB_AUTHN = "WEB_AUTHN"
 }

@@ -19,7 +19,7 @@ extension Otpless {
                         return
                     }
                     let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: otplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
+                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
                     if let otplessResponse = response {
                         self.invokeResponse(otplessResponse)
@@ -33,7 +33,7 @@ extension Otpless {
                     let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
                     let androidString = webauthnData.replacingOccurrences(of: "\n", with: "")
                         .replacingOccurrences(of: " ", with: "")
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: otplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
+                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
                     if let otplessResponse = response {
                         self.invokeResponse(otplessResponse)
@@ -248,6 +248,17 @@ extension Otpless {
             Otpless.shared.resetStates()
         }
         
+        if (otplessResponse.statusCode == 5005) {
+            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
+        } else {
+            Utils.convertToEventParamsJson(
+                otplessResponse: otplessResponse,
+                callback: { extras, requestId, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+                }
+            )
+        }
+        
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
         }
@@ -272,12 +283,15 @@ extension Otpless {
     func prepareForSdkAuth(withAuthParams sdkAuthParams: SdkAuthParams) async {
         switch sdkAuthParams.channelType {
         case .FACEBOOK_SDK:
+            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
             await manageFBSignIn(with: sdkAuthParams)
             break
         case .GOOGLE_SDK:
+            sendEvent(event: .GOOGLE_SDK_IOS_SDK)
             await manageGIDSignIn(with: sdkAuthParams)
             break
         case .APPLE_SDK:
+            sendEvent(event: .APPLE_SDK_IOS_SDK)
             let appleSignInResponse = await appleSignInUseCase.invoke(withNonce: sdkAuthParams.nonce)
             await verifySdkAuthResponse(queryParams: appleSignInResponse.toDict())
             break

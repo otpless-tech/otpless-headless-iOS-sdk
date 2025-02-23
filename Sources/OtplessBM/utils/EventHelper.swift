@@ -33,18 +33,15 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
     
     var eventParams = extras
     
-    if let deviceInfoString = Otpless.shared.deviceInfo.data(using: .utf8),
-       let deviceInfoDict = try? JSONSerialization.jsonObject(with: deviceInfoString, options: []) as? [String: Any] {
-        eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfoDict)
-    }
+    var deviceInfo = Otpless.shared.deviceInfo
+    deviceInfo.removeValue(forKey: "userAgent") // Remove userAgent key because parsing is failing on backend due to this and userAgent is by default added so we don't need it
 
+    eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfo)
     
     if let eventParamsData = try? JSONSerialization.data(withJSONObject: eventParams, options: []),
        let eventParamsString = String(data: eventParamsData, encoding: .utf8) {
         params["event_params"] = eventParamsString
     }
-
-    print("Event params: \(params)")
 
     fetchDataWithGET(
         apiRoute: "https://mtkikwb8yc.execute-api.ap-south-1.amazonaws.com/prod/appevent",

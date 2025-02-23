@@ -126,7 +126,7 @@ final class ApiManager: Sendable {
         mutableBody["version"] = "V4"
         mutableBody["tsId"] = Otpless.shared.tsid
         mutableBody["inId"] = Otpless.shared.inid
-        mutableBody["deviceInfo"] = Otpless.shared.deviceInfo
+        mutableBody["deviceInfo"] = Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
         mutableBody["loginUri"] = Otpless.shared.merchantLoginUri
         mutableBody["appId"] = Otpless.shared.merchantAppId
         mutableBody["isHeadless"] = true
@@ -134,6 +134,11 @@ final class ApiManager: Sendable {
         mutableBody["package"] = Otpless.shared.packageName
         mutableBody["platform"] = "HEADLESS"
         mutableBody["uid"] = Otpless.shared.uid
+        
+        mutableBody["metadata"] = Utils.convertDictionaryToString([
+            "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),
+            "deviceInfo": Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
+        ])
         
         return mutableBody
     }
@@ -160,11 +165,11 @@ final class ApiManager: Sendable {
             URLQueryItem(name: "isHeadless", value: "true"),
             URLQueryItem(name: "platform", value: "iOS"),
             URLQueryItem(name: "isLoginPage", value: "false"),
-            URLQueryItem(name: "packageName", value: "com.digvijayanubhav.app"),
-            URLQueryItem(name: "package", value: "com.digvijayanubhav.app"),
-            URLQueryItem(name: "loginUri", value: "otpless.ztdr74hfnt0l7cp504zf://otpless"),
+            URLQueryItem(name: "packageName", value: Otpless.shared.packageName),
+            URLQueryItem(name: "package", value: Otpless.shared.packageName),
+            URLQueryItem(name: "loginUri", value: Otpless.shared.merchantLoginUri),
             URLQueryItem(name: "appId", value: Otpless.shared.merchantAppId),
-            URLQueryItem(name: "deviceInfo", value: Otpless.shared.deviceInfo)
+            URLQueryItem(name: "deviceInfo", value: Utils.convertDictionaryToString(Otpless.shared.deviceInfo))
         ]
         
         if !Otpless.shared.uid.isEmpty {

@@ -24,7 +24,7 @@ class DeviceInfoUtils : @unchecked Sendable {
     public var appHash = ""
     private var inid: String?
     private var tsid: String?
-    private var deviceInfoString: String?
+    private var deviceInfo: [String: String]? = nil
     
     func initialise () {
         if (!isIntialised){
@@ -169,27 +169,37 @@ class DeviceInfoUtils : @unchecked Sendable {
         return tsid
     }
 
-    func getDeviceInfoString() -> String {
-        if let deviceInfoString = deviceInfoString {
-            return deviceInfoString
+    func getDeviceInfoDict() -> [String: String] {
+        if let deviceInfo = deviceInfo {
+            return deviceInfo
         }
         
         let os = ProcessInfo().operatingSystemVersion
         let device = UIDevice.current
         
+        let screenWidth = String(Int(UIScreen.main.bounds.width))
+        let screenHeight = String(Int(UIScreen.main.bounds.height))
+        let userAgent = WKWebView().value(forKey: "userAgent") as? String
+        var nonNullUserAgent: String = "otplesssdk"
+        if let userAgent = userAgent {
+            nonNullUserAgent = userAgent.replacingOccurrences(of: "\"", with: "\\\"") + " otplesssdk"
+        }
         
         let deviceInfo = [
-            "brand": "Apple",
-            "manufacturer": "Apple",
+            "platform": "iOS",
+            "vendor": "Apple",
             "device": device.name,
             "model": UIDevice.modelName,
             "iOS_version": os.majorVersion.description + "." + os.minorVersion.description,
             "product": device.systemName,
-            "hardware": hardwareString()
+            "hardware": hardwareString(),
+            "screenHeight": screenHeight,
+            "screenWidth": screenWidth,
+            "userAgent":  nonNullUserAgent
         ]
         
-        deviceInfoString = Utils.convertDictionaryToString(deviceInfo)
-        return deviceInfoString!
+        self.deviceInfo = deviceInfo
+        return deviceInfo
     }
 
     

@@ -38,7 +38,7 @@ class PostIntentUseCase {
     func getPostIntentRequestBody(_ otplessRequest: OtplessRequest, uiId: [String]?, uid: String?) -> PostIntentRequestBody {
         let requestDict = otplessRequest.getDictForIntent()
         return PostIntentRequestBody(
-            channel: (requestDict[RequestKeys.channelKey] ?? "") ?? "",
+            channel: alterChannelIfRequired(channel: ((requestDict[RequestKeys.channelKey] ?? "") ?? "")),
             email: requestDict[RequestKeys.emailKey] as? String,
             hasWhatsapp: (Otpless.shared.appInfo["hasWhatsapp"] as? String) ?? "",
             identifierType: (requestDict[RequestKeys.identifierTypeKey] ?? "") ?? "",
@@ -57,6 +57,22 @@ class PostIntentUseCase {
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
             requestId: requestDict[RequestKeys.requestIdKey] as? String
         )
+    }
+    
+    private func alterChannelIfRequired(channel: String) -> String {
+        if channel == OtplessChannelType.GOOGLE_SDK.rawValue {
+            return OtplessChannelType.GMAIL.rawValue
+        }
+        
+        if channel == OtplessChannelType.FACEBOOK_SDK.rawValue {
+            return OtplessChannelType.FACEBOOK.rawValue
+        }
+        
+        if channel == OtplessChannelType.APPLE_SDK.rawValue {
+            return OtplessChannelType.APPLE.rawValue
+        }
+        
+        return channel
     }
     
     func parseSuccessResponse(_ response: IntentResponse, postIntentRequestBody: PostIntentRequestBody) -> PostIntentUseCaseResponse {
@@ -267,8 +283,10 @@ class PostIntentUseCase {
         
         let channel: String
         if Otpless.shared.hasMerchantSelectedExternalSDK {
-            if data.quantumLeap.channel.contains("FACEBOOK") == true {
+            if data.quantumLeap.channel.contains("FACEBOOK") {
                 channel = OtplessChannelType.FACEBOOK_SDK.rawValue
+            } else if data.quantumLeap.channel.contains("APPLE") {
+                channel = OtplessChannelType.APPLE_SDK.rawValue
             } else {
                 channel = OtplessChannelType.GOOGLE_SDK.rawValue
             }
@@ -304,7 +322,7 @@ class PostIntentUseCase {
     }
     
     private func getSdkAuthParamsFromIntentAndChannel(intent: String, channel: String) -> SdkAuthParams {
-        guard !intent.isEmpty, let urlComponents = URLComponents(string: intent), urlComponents.host?.isEmpty == true else {
+        guard !intent.isEmpty, let urlComponents = URLComponents(string: intent), let host = urlComponents.host, !host.isEmpty else {
             return SdkAuthParams(
                 nonce: "invalid_or_empty_intent",
                 clientId: "invalid_or_empty_intent",

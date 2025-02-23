@@ -17,12 +17,13 @@ internal class GIDSignInUseCase: NSObject, GoogleAuthProtocol {
         withHint hint: String?,
         shouldAddAdditionalScopes additionalScopes: [String]?,
         withNonce nonce: String?
-    ) async -> [String: Any] {
+    ) async -> GoogleSignInResponse {
         os_log("OTPLESS: Google support not initialized. Please add OtplessBM/GoogleSupport to your Podfile")
-        return [
-            "success": false,
-            "error": "Google support not initialized. Please add OtplessBM/GoogleSupport to your Podfile"
-        ]
+        return GoogleSignInResponse(
+            success: false,
+            idToken: nil,
+            error: "Google support not initialized. Please add OtplessBM/GoogleSupport to your Podfile"
+        )
     }
     
     func isGIDDeeplink(url: URL) -> Bool {
@@ -30,10 +31,10 @@ internal class GIDSignInUseCase: NSObject, GoogleAuthProtocol {
     }
 }
 #else
-import GoogleSignIn
+@preconcurrency import GoogleSignIn
 
 #if canImport(GoogleSignInSwift)
-import GoogleSignInSwift
+@preconcurrency import GoogleSignInSwift
 #endif
 
 internal class GIDSignInUseCase: NSObject, GoogleAuthProtocol {
@@ -41,49 +42,50 @@ internal class GIDSignInUseCase: NSObject, GoogleAuthProtocol {
         return GIDSignIn.sharedInstance.handle(url)
     }
     
-    /// Initiates the Google Sign-In process using Swift Concurrency.
-    ///
-    /// - Parameters:
-    ///   - vc: The `UIViewController` that presents the sign-in UI.
-    ///   - hint: An optional string to suggest a Google account for the sign-in prompt.
-    ///   - additionalScopes: An optional array of additional OAuth 2.0 scopes to request access to.
-    ///   - nonce: An optional cryptographic nonce to associate with the sign-in request for enhanced security.
-    /// - Returns: A dictionary containing the sign-in result.
+    @MainActor
     func signIn(
         vc: UIViewController,
         withHint hint: String?,
         shouldAddAdditionalScopes additionalScopes: [String]?,
         withNonce nonce: String?
-    ) async -> [String: Any] {
+    ) async -> GoogleSignInResponse {
         do {
-            let signInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: vc, hint: hint, additionalScopes: additionalScopes, nonce: nonce)
+            let signInResult = try await GIDSignIn.sharedInstance.signIn(
+                withPresenting: vc,
+                hint: hint,
+                additionalScopes: additionalScopes,
+                nonce: nonce
+            )
             
             guard let idToken = signInResult.user.idToken?.tokenString else {
                 return handleSignInError("Invalid idToken")
             }
             
-            return GIDSignInResult(success: true, idToken: idToken, error: nil).toDict()
+            return GoogleSignInResponse(
+                success: true,
+                idToken: idToken,
+                error: nil
+            )
         } catch {
             return handleSignInError(error.localizedDescription)
         }
     }
     
-    private func handleSignInError(_ errorDescription: String) -> [String: Any] {
-        return GIDSignInResult(success: false, idToken: nil, error: errorDescription).toDict()
+    private func handleSignInError(_ errorDescription: String) -> GoogleSignInResponse {
+        return GoogleSignInResponse(
+            success: false,
+            idToken: nil,
+            error: errorDescription
+        )
     }
 }
+#endif
 
-private class GIDSignInResult: NSObject {
+struct GoogleSignInResponse: Sendable {
     let channel: String = OtplessChannelType.GOOGLE_SDK.rawValue
     let success: Bool
     let idToken: String?
     let error: String?
-    
-    init(success: Bool, idToken: String?, error: String?) {
-        self.success = success
-        self.idToken = idToken
-        self.error = error
-    }
     
     func toDict() -> [String: Any] {
         var dict: [String: Any] = [
@@ -102,7 +104,6 @@ private class GIDSignInResult: NSObject {
         return dict
     }
 }
-#endif
 
 protocol GoogleAuthProtocol {
     func signIn(
@@ -110,8 +111,7 @@ protocol GoogleAuthProtocol {
         withHint hint: String?,
         shouldAddAdditionalScopes additionalScopes: [String]?,
         withNonce nonce: String?
-    ) async -> [String: Any]
+    ) async -> GoogleSignInResponse
     
     func isGIDDeeplink(url: URL) -> Bool
 }
-

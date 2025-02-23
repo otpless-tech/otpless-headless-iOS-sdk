@@ -28,7 +28,7 @@ import UIKit
     
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
-    internal private(set) var deviceInfo: String = ""
+    internal private(set) var deviceInfo: [String: String] = [:]
     internal private(set) var uiId: [String]?
     internal private(set) var inid: String = ""
     internal private(set) var tsid: String = ""
@@ -102,7 +102,7 @@ import UIKit
             self.tsid = tsid
             
             await MainActor.run {
-                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoString()
+                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
             
             await MainActor.run { [weak self] in
@@ -111,6 +111,27 @@ import UIKit
             
             self.fetchStateAndMerchantConfig()
         }
+    }
+    
+    @objc public func isOtplessDeeplink(url : URL) -> Bool {
+        if let GoogleAuthClass = NSClassFromString("OtplessBM.GIDSignInUseCase") as? NSObject.Type {
+            let googleAuthHandler = GoogleAuthClass.init()
+            if let handler = googleAuthHandler as? GoogleAuthProtocol {
+                let isGIDDeeplink = handler.isGIDDeeplink(url: url)
+                if isGIDDeeplink {
+                    return true
+                }
+            }
+        }
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true), let host = components.host {
+            switch host {
+            case "otpless":
+                return true
+            default:
+                break
+            }
+        }
+        return false
     }
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
@@ -192,11 +213,11 @@ import UIKit
     @MainActor
     @objc public func registerFBApp(
         openURLContexts URLContexts: Set<UIOpenURLContext>
-    ) {
-        if let FacebookAuthClass = NSClassFromString("OtplessSDK.OtplessFBSignIn") as? NSObject.Type {
+    ) async {
+        if let FacebookAuthClass = NSClassFromString("OtplessBM.FBSdkUseCase") as? NSObject.Type {
             let facebookAuthHandler = FacebookAuthClass.init()
             if let handler = facebookAuthHandler as? FacebookAuthProtocol {
-                handler.register(openURLContexts: URLContexts)
+                await handler.register(openURLContexts: URLContexts)
             }
         }
     }

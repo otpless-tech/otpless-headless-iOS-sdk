@@ -282,19 +282,19 @@ extension Otpless {
     
     func prepareForSdkAuth(withAuthParams sdkAuthParams: SdkAuthParams) async {
         switch sdkAuthParams.channelType {
-        case .FACEBOOK_SDK:
-            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
-            await manageFBSignIn(with: sdkAuthParams)
-            break
-        case .GOOGLE_SDK:
+        case .GOOGLE_SDK, .GMAIL:
             sendEvent(event: .GOOGLE_SDK_IOS_SDK)
             await manageGIDSignIn(with: sdkAuthParams)
-            break
-        case .APPLE_SDK:
+            
+        case .FACEBOOK_SDK, .FACEBOOK:
+            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
+            await manageFBSignIn(with: sdkAuthParams)
+
+        case .APPLE_SDK, .APPLE:
             sendEvent(event: .APPLE_SDK_IOS_SDK)
-            let appleSignInResponse = await appleSignInUseCase.invoke(withNonce: sdkAuthParams.nonce)
+            let appleSignInResponse = await appleSignInUseCase.performSignIn(withNonce: sdkAuthParams.nonce)
             await verifySdkAuthResponse(queryParams: appleSignInResponse.toDict())
-            break
+
         default:
             return
         }
@@ -316,18 +316,18 @@ extension Otpless {
                     withPermissions: permissions
                 )
                 
-                await verifySdkAuthResponse(queryParams: fbSignInResult)
+                await verifySdkAuthResponse(queryParams: fbSignInResult.toDict())
             } else {
                 let errorDictionary = [
                     "error": "missing_dependency",
-                    "errorDescription": "Facebook support not initialized. Please add OtplessSDK/FacebookSupport to your Podfile"
+                    "errorDescription": "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
                 ]
                 await verifySdkAuthResponse(queryParams: errorDictionary)
             }
         } else {
             let errorDictionary = [
                 "error": "missing_class",
-                "errorDescription": "Could not find an instance of OtplessFBSignIn"
+                "errorDescription": "Could not find an instance of FBSdkUseCase"
             ]
             await verifySdkAuthResponse(queryParams: errorDictionary)
         }
@@ -347,7 +347,7 @@ extension Otpless {
                     withNonce: sdkAuthParams.nonce
                 )
                 
-                await verifySdkAuthResponse(queryParams: googleSignInResponse)
+                await verifySdkAuthResponse(queryParams: googleSignInResponse.toDict())
             } else {
                 let errorDictionary: [String: Any] = [
                     "error": "missing_dependency",

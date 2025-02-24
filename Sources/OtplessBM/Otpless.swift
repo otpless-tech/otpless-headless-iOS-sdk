@@ -325,7 +325,7 @@ private extension Otpless {
             return
         }
         
-        if !otplessRequest.hasOtp() {
+        if !otplessRequest.hasOtp() && otplessRequest.getRequestId().isEmpty {
             let oneTapIdentity = await showOneTapViewIfIdentityExists(request: otplessRequest)
             if let identity = oneTapIdentity {
                 let oneTapRequest = OtplessRequest()

@@ -19,7 +19,7 @@ extension Otpless {
                         return
                     }
                     let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: otplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
+                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
                     if let otplessResponse = response {
                         self.invokeResponse(otplessResponse)
@@ -33,7 +33,7 @@ extension Otpless {
                     let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
                     let androidString = webauthnData.replacingOccurrences(of: "\n", with: "")
                         .replacingOccurrences(of: " ", with: "")
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: otplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
+                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
                     if let otplessResponse = response {
                         self.invokeResponse(otplessResponse)
@@ -248,6 +248,17 @@ extension Otpless {
             Otpless.shared.resetStates()
         }
         
+        if (otplessResponse.statusCode == 5005) {
+            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
+        } else {
+            Utils.convertToEventParamsJson(
+                otplessResponse: otplessResponse,
+                callback: { extras, requestId, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+                }
+            )
+        }
+        
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
         }
@@ -271,16 +282,19 @@ extension Otpless {
     
     func prepareForSdkAuth(withAuthParams sdkAuthParams: SdkAuthParams) async {
         switch sdkAuthParams.channelType {
-        case .FACEBOOK_SDK:
-            await manageFBSignIn(with: sdkAuthParams)
-            break
-        case .GOOGLE_SDK:
+        case .GOOGLE_SDK, .GMAIL:
+            sendEvent(event: .GOOGLE_SDK_IOS_SDK)
             await manageGIDSignIn(with: sdkAuthParams)
-            break
-        case .APPLE_SDK:
-            let appleSignInResponse = await appleSignInUseCase.invoke(withNonce: sdkAuthParams.nonce)
+            
+        case .FACEBOOK_SDK, .FACEBOOK:
+            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
+            await manageFBSignIn(with: sdkAuthParams)
+
+        case .APPLE_SDK, .APPLE:
+            sendEvent(event: .APPLE_SDK_IOS_SDK)
+            let appleSignInResponse = await appleSignInUseCase.performSignIn(withNonce: sdkAuthParams.nonce)
             await verifySdkAuthResponse(queryParams: appleSignInResponse.toDict())
-            break
+
         default:
             return
         }
@@ -302,18 +316,18 @@ extension Otpless {
                     withPermissions: permissions
                 )
                 
-                await verifySdkAuthResponse(queryParams: fbSignInResult)
+                await verifySdkAuthResponse(queryParams: fbSignInResult.toDict())
             } else {
                 let errorDictionary = [
                     "error": "missing_dependency",
-                    "errorDescription": "Facebook support not initialized. Please add OtplessSDK/FacebookSupport to your Podfile"
+                    "errorDescription": "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
                 ]
                 await verifySdkAuthResponse(queryParams: errorDictionary)
             }
         } else {
             let errorDictionary = [
                 "error": "missing_class",
-                "errorDescription": "Could not find an instance of OtplessFBSignIn"
+                "errorDescription": "Could not find an instance of FBSdkUseCase"
             ]
             await verifySdkAuthResponse(queryParams: errorDictionary)
         }
@@ -333,7 +347,7 @@ extension Otpless {
                     withNonce: sdkAuthParams.nonce
                 )
                 
-                await verifySdkAuthResponse(queryParams: googleSignInResponse)
+                await verifySdkAuthResponse(queryParams: googleSignInResponse.toDict())
             } else {
                 let errorDictionary: [String: Any] = [
                     "error": "missing_dependency",

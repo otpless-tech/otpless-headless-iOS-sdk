@@ -12,7 +12,7 @@ public enum OtplessChannelType: String, CaseIterable {
     case GOOGLE_SDK = "GOOGLE_SDK"
     case FACEBOOK_SDK = "FACEBOOK_SDK"
     case APPLE_SDK = "APPLE_SDK"
-    case APPLE = "APPLE"
+    case APPLE = "APPLE_EMAIL"
     case GMAIL = "GMAIL"
     case TWITTER = "TWITTER"
     case DISCORD = "DISCORD"

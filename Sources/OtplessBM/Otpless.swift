@@ -18,7 +18,7 @@ import UIKit
     internal private(set) var stateFetchRetriesCount: Int = 0
     
     internal private(set) var merchantAppId: String = ""
-    internal private(set) var otplessRequest: OtplessRequest?
+    internal private(set) var merchantOtplessRequest: OtplessRequest?
     internal private(set) var state: String?
     internal private(set) var hasMerchantSelectedExternalSDK: Bool = false
     internal private(set) var phoneIntentChannel: String = ""
@@ -28,7 +28,7 @@ import UIKit
     
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
-    internal private(set) var deviceInfo: String = ""
+    internal private(set) var deviceInfo: [String: String] = [:]
     internal private(set) var uiId: [String]?
     internal private(set) var inid: String = ""
     internal private(set) var tsid: String = ""
@@ -40,6 +40,8 @@ import UIKit
     
     internal private(set) weak var loggerDelegate: OtplessLoggerDelegate?
     internal private(set) weak var responseDelegate: OtplessResponseDelegate?
+    internal private(set) weak var oneTapDataDelegate: OneTapDataDelegate?
+    
     internal private(set) weak var merchantWindowScene: UIWindowScene?
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
@@ -76,6 +78,10 @@ import UIKit
     
     internal private(set) weak var merchantVC: UIViewController?
     
+    public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
+        self.oneTapDataDelegate = oneTapDataDelegate
+    }
+    
     @objc public func initialise(withAppId appId: String, loginUri: String? = nil, vc: UIViewController) {
         self.merchantAppId = appId
         self.merchantVC = vc
@@ -96,9 +102,7 @@ import UIKit
             self.tsid = tsid
             
             await MainActor.run {
-                DeviceInfoUtils.shared.getDeviceInfoString { [weak self] result in
-                    self?.deviceInfo = result
-                }
+                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
             
             await MainActor.run { [weak self] in
@@ -109,20 +113,42 @@ import UIKit
         }
     }
     
-    public func start(withRequest otplessRequest: OtplessRequest) async {
-        self.otplessRequest = otplessRequest
+    @objc public func isOtplessDeeplink(url : URL) -> Bool {
+        if let GoogleAuthClass = NSClassFromString("OtplessBM.GIDSignInUseCase") as? NSObject.Type {
+            let googleAuthHandler = GoogleAuthClass.init()
+            if let handler = googleAuthHandler as? GoogleAuthProtocol {
+                let isGIDDeeplink = handler.isGIDDeeplink(url: url)
+                if isGIDDeeplink {
+                    return true
+                }
+            }
+        }
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true), let host = components.host {
+            switch host {
+            case "otpless":
+                return true
+            default:
+                break
+            }
+        }
+        return false
+    }
+    
+    @objc public func start(withRequest otplessRequest: OtplessRequest) async {
+        self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
         
+        sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         await processRequestIfRequestIsValid(otplessRequest)
     }
     
-    public func authorizeViaPasskey(withRequest otplessRequest: OtplessRequest, windowScene: UIWindowScene) async {
-        self.otplessRequest = otplessRequest
+    @objc public func authorizeViaPasskey(withRequest otplessRequest: OtplessRequest, windowScene: UIWindowScene) async {
+        self.merchantOtplessRequest = otplessRequest
         self.merchantWindowScene = windowScene
         await processRequestIfRequestIsValid(otplessRequest)
     }
     
-    public func handleDeeplink(_ url: URL) async {
+    @objc public func handleDeeplink(_ url: URL) async {
         guard url.host == "otpless" else {
             log(message: "Invalid deeplink: \(url.absoluteString)", type: .INVALID_DEEPLINK)
             return
@@ -187,12 +213,35 @@ import UIKit
     @MainActor
     @objc public func registerFBApp(
         openURLContexts URLContexts: Set<UIOpenURLContext>
-    ) {
-        if let FacebookAuthClass = NSClassFromString("OtplessSDK.OtplessFBSignIn") as? NSObject.Type {
+    ) async {
+        if let FacebookAuthClass = NSClassFromString("OtplessBM.FBSdkUseCase") as? NSObject.Type {
             let facebookAuthHandler = FacebookAuthClass.init()
             if let handler = facebookAuthHandler as? FacebookAuthProtocol {
-                handler.register(openURLContexts: URLContexts)
+                await handler.register(openURLContexts: URLContexts)
             }
+        }
+    }
+    
+    public func commitOtplessResponse(_ otplessResponse: OtplessResponse) {
+        if (otplessResponse.statusCode == 5005) {
+            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
+        } else {
+            Utils.convertToEventParamsJson(
+                otplessResponse: otplessResponse,
+                callback: { extras, requestId, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+                }
+            )
+        }
+    }
+    
+    public func performOneTap(forIdentity oneTapIdentity: OneTapIdentity) async {
+        let oneTapRequest = OtplessRequest()
+        oneTapRequest.set(oneTapValue: oneTapIdentity.identity)
+        let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [oneTapIdentity.uiId], uid: self.uid)
+        
+        if let otplessResponse = intentResponse.otplessResponse {
+            invokeResponse(otplessResponse)
         }
     }
 }
@@ -211,6 +260,7 @@ internal extension Otpless {
 extension Otpless {
     public func setResponseDelegate(_ otplessResponseDelegate: OtplessResponseDelegate) {
         self.responseDelegate = otplessResponseDelegate
+        sendEvent(event: .SET_HEADLESS_CALLBACK)
     }
     
     public func setLoggerDelegate(_ otplessLoggerDelegate: OtplessLoggerDelegate) {
@@ -235,6 +285,7 @@ private extension Otpless {
             
             self?.state = state
             SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
+            sendEvent(event: .INIT_HEADLESS)
             self?.fetchMerchantConfig()
         })
     }
@@ -261,6 +312,10 @@ private extension Otpless {
                 self?.merchantConfig = config
                 self?.phoneIntentChannel = self?.getIntentChannelFromConfig(channelConfig: config?.channelConfig, isMobile: true) ?? ""
                 self?.emailIntentChannel = self?.getIntentChannelFromConfig(channelConfig: config?.channelConfig, isMobile: false) ?? ""
+                
+                if let oneTapDataDelegate = self?.oneTapDataDelegate {
+                    await oneTapDataDelegate.onOneTapData(config?.userDetails?.toOneTapIdentities())
+                }
             }
         }
     }
@@ -270,7 +325,7 @@ private extension Otpless {
             return
         }
         
-        if !otplessRequest.hasOtp() {
+        if !otplessRequest.hasOtp() && otplessRequest.getRequestId().isEmpty {
             let oneTapIdentity = await showOneTapViewIfIdentityExists(request: otplessRequest)
             if let identity = oneTapIdentity {
                 let oneTapRequest = OtplessRequest()
@@ -359,6 +414,15 @@ private extension Otpless {
         if let intent = intentResponse.intent {
             let urlWithOutDecoding = intent.removingPercentEncoding
             if let link = URL(string: (urlWithOutDecoding!.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed))!) {
+                var params: [String: String] = [:]
+                var channel = ""
+                if #available(iOS 16.0, *) {
+                    channel = link.scheme ?? "" + "://" + (link.host() ?? "")
+                } else {
+                    channel = link.scheme ?? "" + "://" + (link.host ?? "")
+                }
+                params["channel"] = channel
+                sendEvent(event: .DEEPLINK_SDK, extras: params)
                 await UIApplication.shared.open(link, options: [:], completionHandler: nil)
             }
         }
@@ -584,4 +648,9 @@ extension Otpless {
 @MainActor
 public protocol OtplessResponseDelegate: NSObjectProtocol {
     func onResponse(_ response: OtplessResponse)
+}
+
+@MainActor
+public protocol OneTapDataDelegate: NSObjectProtocol {
+    func onOneTapData(_ identities: [OneTapIdentity]?)
 }

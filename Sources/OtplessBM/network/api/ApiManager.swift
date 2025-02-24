@@ -85,13 +85,62 @@ final class ApiManager: Sendable {
             return data
         } catch {
             if let apiError = error as? ApiError {
+                sendEvent(event: .ERROR_API_RESPONSE, extras: apiError.getResponse())
                 throw apiError
             } else if let urlError = error as? URLError {
                 let code = urlError.errorCode
                 let errorBody = urlError.errorUserInfo
+                sendEvent(event: .ERROR_API_RESPONSE, extras: [
+                    "errorCode": String(code),
+                    "errorMessage": urlError.localizedDescription
+                ])
                 let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"
-                throw ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)
+
+                switch urlError.code {
+                case .timedOut, .notConnectedToInternet:
+                    throw ApiError(message: "Request timeout", statusCode: 9100, responseJson: [
+                        "errorCode": "9100",
+                        "errorMessage": "Request timeout"
+                    ])
+
+                case .networkConnectionLost:
+                    throw ApiError(message: "Network connection was lost", statusCode: 9101, responseJson: [
+                        "errorCode": "9101",
+                        "errorMessage": "Network connection was lost"
+                    ])
+
+                case .dnsLookupFailed:
+                    throw ApiError(message: "DNS lookup failed", statusCode: 9102, responseJson: [
+                        "errorCode": "9102",
+                        "errorMessage": "DNS lookup failed"
+                    ])
+
+                case .cannotConnectToHost:
+                    throw ApiError(message: "Cannot connect to the server", statusCode: 9103, responseJson: [
+                        "errorCode": "9103",
+                        "errorMessage": "Cannot connect to the server"
+                    ])
+
+                case .notConnectedToInternet:
+                    throw ApiError(message: "No internet connection", statusCode: 9104, responseJson: [
+                        "errorCode": "9104",
+                        "errorMessage": "No internet connection"
+                    ])
+
+                case .secureConnectionFailed:
+                    throw ApiError(message: "Secure connection failed (SSL issue)", statusCode: 9105, responseJson: [
+                        "errorCode": "9105",
+                        "errorMessage": "Secure connection failed (SSL issue)"
+                    ])
+
+                default:
+                    throw ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)
+                }
             } else {
+                sendEvent(event: .ERROR_API_RESPONSE, extras: [
+                    "errorCode": "500",
+                    "errorMessage": error.localizedDescription
+                ])
                 throw ApiError(message: error.localizedDescription, statusCode: 500, responseJson: [
                     "errorCode": "500",
                     "errorMessage": "Something Went Wrong!"
@@ -111,7 +160,7 @@ final class ApiManager: Sendable {
         mutableBody["version"] = "V4"
         mutableBody["tsId"] = Otpless.shared.tsid
         mutableBody["inId"] = Otpless.shared.inid
-        mutableBody["deviceInfo"] = Otpless.shared.deviceInfo
+        mutableBody["deviceInfo"] = Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
         mutableBody["loginUri"] = Otpless.shared.merchantLoginUri
         mutableBody["appId"] = Otpless.shared.merchantAppId
         mutableBody["isHeadless"] = true
@@ -119,6 +168,11 @@ final class ApiManager: Sendable {
         mutableBody["package"] = Otpless.shared.packageName
         mutableBody["platform"] = "HEADLESS"
         mutableBody["uid"] = Otpless.shared.uid
+        
+        mutableBody["metadata"] = Utils.convertDictionaryToString([
+            "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),
+            "deviceInfo": Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
+        ])
         
         return mutableBody
     }
@@ -145,11 +199,11 @@ final class ApiManager: Sendable {
             URLQueryItem(name: "isHeadless", value: "true"),
             URLQueryItem(name: "platform", value: "iOS"),
             URLQueryItem(name: "isLoginPage", value: "false"),
-            URLQueryItem(name: "packageName", value: "com.digvijayanubhav.app"),
-            URLQueryItem(name: "package", value: "com.digvijayanubhav.app"),
-            URLQueryItem(name: "loginUri", value: "otpless.ztdr74hfnt0l7cp504zf://otpless"),
+            URLQueryItem(name: "packageName", value: Otpless.shared.packageName),
+            URLQueryItem(name: "package", value: Otpless.shared.packageName),
+            URLQueryItem(name: "loginUri", value: Otpless.shared.merchantLoginUri),
             URLQueryItem(name: "appId", value: Otpless.shared.merchantAppId),
-            URLQueryItem(name: "deviceInfo", value: Otpless.shared.deviceInfo)
+            URLQueryItem(name: "deviceInfo", value: Utils.convertDictionaryToString(Otpless.shared.deviceInfo))
         ]
         
         if !Otpless.shared.uid.isEmpty {

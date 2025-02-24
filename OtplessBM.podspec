@@ -15,13 +15,13 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '13.0'
   
   s.subspec 'Core' do |core|
-    core.source_files = 'Sources/OtplessSDK/**/*'
+    core.source_files = 'Sources/OtplessBM/**/*'
   end
   
   s.subspec 'FacebookSupport' do |fb|
     fb.ios.deployment_target = '13.0'
     fb.dependency 'OtplessBM/Core'
-    fb.source_files = 'Sources/OtplessSDK/sdkLogin/FacebookSupport/**/*'
+    fb.source_files = 'Sources/OtplessBM/sdkLogin/FacebookSupport/**/*'
     fb.dependency 'FBSDKCoreKit', '~> 17.0.2'
     fb.dependency 'FBSDKLoginKit', '~> 17.0.2'
   end
@@ -29,7 +29,7 @@ Pod::Spec.new do |s|
   s.subspec 'GoogleSupport' do |google|
     google.ios.deployment_target = '13.0'
     google.dependency 'OtplessBM/Core'
-    google.source_files = 'Sources/OtplessSDK/sdkLogin/GoogleSupport/**/*'
+    google.source_files = 'Sources/OtplessBM/sdkLogin/GoogleSupport/**/*'
     google.dependency 'GoogleSignIn', '~> 8.1.0-vwg-eap-1.0.0'
     google.dependency 'GoogleSignInSwiftSupport', '~> 8.0.0'
   end

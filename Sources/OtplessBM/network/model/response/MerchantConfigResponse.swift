@@ -178,7 +178,7 @@ struct Channel: Codable {
     let type: String?
 }
 
-struct OneTapIdentity {
+public struct OneTapIdentity: Sendable {
     let name: String?
     let identity: String
     let uiId: String

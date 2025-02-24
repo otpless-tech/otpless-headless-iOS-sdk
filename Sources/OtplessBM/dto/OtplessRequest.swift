@@ -182,17 +182,17 @@ internal extension OtplessRequest {
         return false
     }
     
-     func isEmailAuth() -> Bool {
-         return email != nil
-     }
+    func isEmailAuth() -> Bool {
+        return email != nil
+    }
     
     func getQueryParams() -> [String: String] {
         var queryParams = [String: String]()
-
+        
         if let otp = self.otp {
             queryParams["otp"] = otp
         }
-
+        
         if let mobile = self.phoneNumber {
             queryParams["mobile"] = mobile
             queryParams["selectedCountryCode"] = self.countryCode?.replacingOccurrences(of: "+", with: "") ?? ""
@@ -201,7 +201,7 @@ internal extension OtplessRequest {
             queryParams["email"] = self.email ?? ""
             queryParams["value"] = self.email ?? ""
         }
-
+        
         return queryParams
     }
     
@@ -213,7 +213,7 @@ internal extension OtplessRequest {
         let emailPredicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
         return emailPredicate.evaluate(with: email)
     }
-
+    
     func isPhoneNumberWithCountryCodeValid() -> Bool {
         guard let phoneNumber = self.phoneNumber, !phoneNumber.isEmpty else {
             return false
@@ -257,7 +257,68 @@ internal extension OtplessRequest {
     func getCountryCode() -> String? {
         return self.countryCode
     }
-
+    
+    func getEventDict() -> [String: String] {
+        var requestJson = [String: String]()
+        requestJson["channel"] = authenticationMedium?.rawValue ?? ""
+        
+        if let phoneNumber = phoneNumber {
+            requestJson["phone"] = phoneNumber
+        }
+        
+        switch authenticationMedium {
+        case .PHONE:
+            if let phoneNumber = phoneNumber,
+               let countryCode = countryCode
+            {
+                requestJson["phone"] = phoneNumber
+                requestJson["countryCode"] = countryCode
+            }
+            break
+            
+        case .EMAIL:
+            if let email = email {
+                requestJson["email"] = email
+            }
+            break
+            
+        case .OAUTH:
+            if let channelType = channelType {
+                requestJson["channelType"] = channelType.rawValue
+            }
+            break
+            
+        default:
+            break
+        }
+        
+        if let otp = otp {
+            requestJson["otp"] = otp
+        }
+        
+        if let code = code {
+            requestJson["code"] = code
+        }
+        
+        if let otpLength = otpLength {
+            requestJson["otpLength"] = otpLength
+        }
+        
+        if let expiry = expiry {
+            requestJson["expiry"] = expiry
+        }
+        
+        if let deliveryChannel = deliveryChannel {
+            requestJson["deliveryChannel"] = deliveryChannel
+        }
+        
+        if let locale = locale {
+            requestJson["locale"] = locale
+        }
+        
+        return requestJson
+    }
+    
 }
 
 internal struct RequestKeys {

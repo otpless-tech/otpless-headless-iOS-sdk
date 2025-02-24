@@ -174,8 +174,8 @@ class OneTapCell: UITableViewCell {
             
             stackView.leadingAnchor.constraint(equalTo: iconImageView.trailingAnchor, constant: 12),
             stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            stackView.bottomAnchor.constraint(equalTo: dividerView.topAnchor, constant: -15),
+            stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 22),
+            stackView.bottomAnchor.constraint(equalTo: dividerView.topAnchor, constant: -22),
             
             dividerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             dividerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
@@ -183,7 +183,6 @@ class OneTapCell: UITableViewCell {
             dividerView.heightAnchor.constraint(equalToConstant: 0.4)
         ])
         
-        // Remove fixed height constraints from icon
         iconImageView.setContentHuggingPriority(.required, for: .horizontal)
         iconImageView.setContentHuggingPriority(.required, for: .vertical)
     }

@@ -10,17 +10,10 @@ public struct OtplessResponse: @unchecked Sendable {
     let response: [String: Any]?
     let statusCode: Int
     
-    internal static func createNoInternetResponse() -> OtplessResponse {
-        let json: [String: Any] = [
-            "errorMessage": "Internet Error",
-            "errorCode": "-1009"
-        ]
-        return OtplessResponse(
-            responseType: .INTERNET_ERR,
-            response: json,
-            statusCode: 5002
-        )
-    }
+    static let failedToInitializeResponse = OtplessResponse(responseType: .FAILED, response: [
+        "errorCode": "5003",
+        "errorMessage": "Failed to initialize the SDK"
+    ], statusCode: 5003)
     
     internal static func createUnauthorizedResponse(
         errorCode: String = "401",

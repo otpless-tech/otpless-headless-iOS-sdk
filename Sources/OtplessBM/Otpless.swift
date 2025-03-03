@@ -80,6 +80,8 @@ import UIKit
     
     private var eventCounter = 1
     
+    private var shouldShowOtplessOneTapUI: Bool = true
+    
     public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
         self.oneTapDataDelegate = oneTapDataDelegate
     }
@@ -87,7 +89,8 @@ import UIKit
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
-        vc: UIViewController
+        vc: UIViewController,
+        shouldShowOtplessOneTapUI: Bool = true
     ) {
         self.merchantAppId = appId
         self.merchantVC = vc
@@ -233,17 +236,12 @@ import UIKit
     }
     
     public func commitOtplessResponse(_ otplessResponse: OtplessResponse) {
-        if otplessResponse.statusCode == 5005 ||
-            (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
-            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
-        } else {
-            Utils.convertToEventParamsJson(
-                otplessResponse: otplessResponse,
-                callback: { extras, requestId, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
-                }
-            )
-        }
+        Utils.convertToEventParamsJson(
+            otplessResponse: otplessResponse,
+            callback: { extras, requestId, musId in
+                sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+            }
+        )
     }
     
     public func performOneTap(forIdentity oneTapIdentity: OneTapIdentity) async {
@@ -296,7 +294,6 @@ private extension Otpless {
             
             self?.state = state
             SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
-            sendEvent(event: .INIT_HEADLESS)
             self?.fetchMerchantConfig()
         })
     }
@@ -306,7 +303,7 @@ private extension Otpless {
            !savedState.isEmpty {
             onFetch(savedState)
         } else {
-            Task.detached { [weak self] in
+            Task(priority: .background) { [weak self] in
                 let stateResponse = await self?.getStateUseCase
                     .invoke(queryParams: self?.getMerchantConfigQueryParams() ?? [:], isRetry: false)
                 let state = stateResponse?.0?.state
@@ -322,7 +319,7 @@ private extension Otpless {
     
     func fetchMerchantConfig() {
         if let state = self.state {
-            Task.detached { [weak self] in
+            Task(priority: .background) { [weak self] in
                 let configResponse = await self?.getMerchantConfigUseCase.invoke(state: state, queryParams: [:], isRetry: false)
                 self?.merchantConfig = configResponse?.0
                 self?.phoneIntentChannel = self?.getIntentChannelFromConfig(channelConfig: configResponse?.0?.channelConfig, isMobile: true) ?? ""
@@ -332,29 +329,37 @@ private extension Otpless {
                     self?.invokeResponse(otplessResponse)
                 }
                 
+                sendEvent(event: .INIT_HEADLESS)
+                
+                self?.invokeResponse(OtplessResponse.sdkReady)
+                
                 if let oneTapDataDelegate = self?.oneTapDataDelegate {
-                    await oneTapDataDelegate.onOneTapData(configResponse?.0?.userDetails?.toOneTapIdentities())
+                    await MainActor.run {
+                        oneTapDataDelegate.onOneTapData(configResponse?.0?.userDetails?.toOneTapIdentities())
+                    }
                 }
             }
         }
     }
     
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
-        if await !canRequestBeMade(request: otplessRequest, shouldRetryStateAndMerchantConfigFetch: nil) {
+        if await !canRequestBeMade(request: otplessRequest) {
             return
         }
         
         if !otplessRequest.hasOtp() && otplessRequest.getRequestId().isEmpty {
-            let oneTapIdentity = await showOneTapViewIfIdentityExists(request: otplessRequest)
-            if let identity = oneTapIdentity {
-                let oneTapRequest = OtplessRequest()
-                oneTapRequest.set(oneTapValue: identity.identity)
-                let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [identity.uiId], uid: self.uid)
-                
-                if let otplessResponse = intentResponse.otplessResponse {
-                    invokeResponse(otplessResponse)
+            if self.shouldShowOtplessOneTapUI {
+                let oneTapIdentity = await showOneTapViewIfIdentityExists(request: otplessRequest)
+                if let identity = oneTapIdentity {
+                    let oneTapRequest = OtplessRequest()
+                    oneTapRequest.set(oneTapValue: identity.identity)
+                    let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [identity.uiId], uid: self.uid)
+                    
+                    if let otplessResponse = intentResponse.otplessResponse {
+                        invokeResponse(otplessResponse)
+                    }
+                    return
                 }
-                return
             }
         }
         
@@ -455,26 +460,19 @@ private extension Otpless {
     }
     
     func canRequestBeMade(
-        request: OtplessRequest,
-        shouldRetryStateAndMerchantConfigFetch: (() async -> (String?, MerchantConfigResponse?))?
+        request: OtplessRequest
     ) async -> Bool {
         
         if let state = self.state, state.isEmpty {
             invokeResponse(
-                OtplessResponse.createUnauthorizedResponse(
-                    errorCode: "5003",
-                    errorMessage: "Failed to fetch."
-                )
+                OtplessResponse.failedToInitializeResponse
             )
             return false
         }
         
         guard let merchantConfig = merchantConfig else {
             invokeResponse(
-                OtplessResponse.createUnauthorizedResponse(
-                    errorCode: "5003",
-                    errorMessage: "Failed to initialize."
-                )
+                OtplessResponse.failedToInitializeResponse
             )
             return false
         }

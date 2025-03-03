@@ -137,10 +137,4 @@ class TransactionStatusUseCase {
             statusCode: 200
         )
     }
-    
-    func didBecomeActive() async {
-        if isPolling {
-            await invoke(queryParams: self.queryParams, state: self.state, timerSettings: self.timerSettings, onResponse: self.responseCallback)
-        }
-    }
 }

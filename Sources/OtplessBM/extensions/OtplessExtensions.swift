@@ -254,7 +254,7 @@ extension Otpless {
             Otpless.shared.resetStates()
         }
         
-        if (otplessResponse.statusCode == 5005) {
+        if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
             Utils.convertToEventParamsJson(

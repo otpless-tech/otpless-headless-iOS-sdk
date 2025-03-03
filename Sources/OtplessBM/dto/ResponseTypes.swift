@@ -12,5 +12,6 @@ public enum ResponseTypes: String {
          INTERNET_ERR,
          ONETAP,
          FALLBACK_TRIGGERED,
-         FAILED
+         FAILED,
+         SDK_READY
 }

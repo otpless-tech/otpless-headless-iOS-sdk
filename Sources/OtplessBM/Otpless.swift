@@ -96,6 +96,7 @@ import UIKit
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
+        self.shouldShowOtplessOneTapUI = shouldShowOtplessOneTapUI
         
         Task(priority: .background) { [weak self] in
             guard let self = self else { return }

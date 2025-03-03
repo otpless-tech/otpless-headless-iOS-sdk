@@ -21,8 +21,11 @@ extension Otpless {
                     let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
                     let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
-                    if let otplessResponse = response {
+                    if let otplessResponse = response.0 {
                         self.invokeResponse(otplessResponse)
+                    }
+                    if let uid = response.1 {
+                        SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
                     }
                 })
             } else {
@@ -35,8 +38,11 @@ extension Otpless {
                         .replacingOccurrences(of: " ", with: "")
                     let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
                     
-                    if let otplessResponse = response {
+                    if let otplessResponse = response.0 {
                         self.invokeResponse(otplessResponse)
+                    }
+                    if let uid = response.1 {
+                        SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
                     }
                 })
             }
@@ -248,7 +254,7 @@ extension Otpless {
             Otpless.shared.resetStates()
         }
         
-        if (otplessResponse.statusCode == 5005) {
+        if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
             Utils.convertToEventParamsJson(
@@ -369,8 +375,12 @@ extension Otpless {
             "ssoSdkResponse": Utils.convertDictionaryToString(queryParams)
         ]
         let verifyCodeResponse = await verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: mappedQueryParams, getTransactionStatusUseCase: transactionStatusUseCase)
-        if let otplessResponse = verifyCodeResponse {
+        if let otplessResponse = verifyCodeResponse.0 {
             invokeResponse(otplessResponse)
+        }
+        
+        if let uid = verifyCodeResponse.1 {
+            SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
         }
     }
 }

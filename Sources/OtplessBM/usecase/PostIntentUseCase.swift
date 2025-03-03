@@ -55,7 +55,8 @@ class PostIntentUseCase {
             otpLength: requestDict[RequestKeys.otpLengthKey] as? String,
             uiIds: uiId,
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
-            requestId: requestDict[RequestKeys.requestIdKey] as? String
+            requestId: requestDict[RequestKeys.requestIdKey] as? String,
+            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 })
         )
     }
     
@@ -73,6 +74,21 @@ class PostIntentUseCase {
         }
         
         return channel
+    }
+    
+    private func getJSONClientMetaDataAsString(requestJson: [String: Any]) -> String? {
+        do {
+            var clientMetaJson: [String: Any] = [:]
+            
+            if let templateId = requestJson[RequestKeys.tidKey] as? String, !templateId.isEmpty {
+                clientMetaJson["tid"] = templateId
+            }
+            
+            let jsonData = try JSONSerialization.data(withJSONObject: clientMetaJson, options: [])
+            return String(data: jsonData, encoding: .utf8)
+        } catch {
+            return nil
+        }
     }
     
     func parseSuccessResponse(_ response: IntentResponse, postIntentRequestBody: PostIntentRequestBody) -> PostIntentUseCaseResponse {

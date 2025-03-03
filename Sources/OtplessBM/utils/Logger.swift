@@ -9,9 +9,6 @@ import Foundation
 import os
 
 func log(message: String, type: LogType) {
-    if type != .API_REQUEST_AND_RESPONSE {
-        print("\n\n" + message + "\n\n")
-    }
     DispatchQueue.main.async {
         Otpless.shared.loggerDelegate?.log(message: message, type: type)
     }

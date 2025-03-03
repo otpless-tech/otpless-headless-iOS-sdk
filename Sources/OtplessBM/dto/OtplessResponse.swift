@@ -6,21 +6,26 @@
 //
 
 public struct OtplessResponse: @unchecked Sendable {
-    let responseType: ResponseTypes
-    let response: [String: Any]?
-    let statusCode: Int
+    public let responseType: ResponseTypes
+    public let response: [String: Any]?
+    public let statusCode: Int
     
-    internal static func createNoInternetResponse() -> OtplessResponse {
-        let json: [String: Any] = [
-            "errorMessage": "Internet Error",
-            "errorCode": "-1009"
-        ]
-        return OtplessResponse(
-            responseType: .INTERNET_ERR,
-            response: json,
-            statusCode: 5002
-        )
+    public init(
+      responseType: ResponseTypes,
+      response: [String: Any]?,
+      statusCode: Int
+    ) {
+      self.responseType = responseType
+      self.response = response
+      self.statusCode = statusCode
     }
+    
+    internal static let failedToInitializeResponse = OtplessResponse(responseType: .FAILED, response: [
+        "errorCode": "5003",
+        "errorMessage": "Failed to initialize the SDK"
+    ], statusCode: 5003)
+    
+    internal static let sdkReady = OtplessResponse(responseType: .SDK_READY, response: ["success" : true], statusCode: 200)
     
     internal static func createUnauthorizedResponse(
         errorCode: String = "401",

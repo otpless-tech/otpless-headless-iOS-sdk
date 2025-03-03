@@ -251,9 +251,9 @@ final class ApiManager: Sendable {
                 "errorMessage": "Secure connection failed (SSL issue)"
             ])
         case .cancelled:
-            return ApiError(message: "Api request cancelled", statusCode: 9110, responseJson: [
+            return ApiError(message: "Otpless authentication request cancelled", statusCode: 9110, responseJson: [
                 "errorCode": "9110",
-                "errorMessage": "Api request cancelled"
+                "errorMessage": "Otpless authentication request cancelled"
             ])
         default:
             let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"

@@ -96,7 +96,7 @@ import UIKit
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
         initialiseEventCounter()
         
-        Task { [weak self] in
+        Task(priority: .background) { [weak self] in
             guard let self = self else { return }
             
             await DeviceInfoUtils.shared.initialise()
@@ -236,7 +236,7 @@ import UIKit
     
     public func commitOtplessResponse(_ otplessResponse: OtplessResponse) {
         if otplessResponse.statusCode == 5005 ||
-            (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9199) {
+            (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
             Utils.convertToEventParamsJson(

@@ -38,6 +38,6 @@ Pod::Spec.new do |s|
     'OtplessBM' => ['Sources/PrivacyInfo.xcprivacy']
   }
   
-  s.swift_versions = ['5.5', '5.6', '5.7', '5.8', '6.0']
+  s.swift_versions = ['5.5', '5.6', '5.7', '5.8', '5.9, '6.0']
 
 end

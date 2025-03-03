@@ -250,6 +250,11 @@ final class ApiManager: Sendable {
                 "errorCode": "9105",
                 "errorMessage": "Secure connection failed (SSL issue)"
             ])
+        case .cancelled:
+            return ApiError(message: "Api request cancelled", statusCode: 9110, responseJson: [
+                "errorCode": "9110",
+                "errorMessage": "Api request cancelled"
+            ])
         default:
             let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"
             return ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)

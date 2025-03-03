@@ -6,11 +6,21 @@
 //
 
 public struct OtplessResponse: @unchecked Sendable {
-    let responseType: ResponseTypes
-    let response: [String: Any]?
-    let statusCode: Int
+    public let responseType: ResponseTypes
+    public let response: [String: Any]?
+    public let statusCode: Int
     
-    static let failedToInitializeResponse = OtplessResponse(responseType: .FAILED, response: [
+    public init(
+      responseType: ResponseTypes,
+      response: [String: Any]?,
+      statusCode: Int
+    ) {
+      self.responseType = responseType
+      self.response = response
+      self.statusCode = statusCode
+    }
+    
+    internal static let failedToInitializeResponse = OtplessResponse(responseType: .FAILED, response: [
         "errorCode": "5003",
         "errorMessage": "Failed to initialize the SDK"
     ], statusCode: 5003)

@@ -326,12 +326,13 @@ private extension Otpless {
                 self?.emailIntentChannel = self?.getIntentChannelFromConfig(channelConfig: configResponse?.0?.channelConfig, isMobile: false) ?? ""
                 
                 if let otplessResponse = configResponse?.1 {
+                    // Error while fetching config
                     self?.invokeResponse(otplessResponse)
+                } else {
+                    self?.invokeResponse(OtplessResponse.sdkReady)
                 }
                 
                 sendEvent(event: .INIT_HEADLESS)
-                
-                self?.invokeResponse(OtplessResponse.sdkReady)
                 
                 if let oneTapDataDelegate = self?.oneTapDataDelegate {
                     await MainActor.run {

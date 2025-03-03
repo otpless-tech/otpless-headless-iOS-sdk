@@ -22,6 +22,7 @@ import Foundation
     private var requestId: String?
     private var extras: [String: String]?
     private var oneTapValue: String?
+    private var tid: String?
     
     public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
@@ -76,6 +77,10 @@ import Foundation
     
     public func set(extras: [String: String]) {
         self.extras = extras
+    }
+    
+    public func set(tid: String) {
+        self.tid = tid
     }
     
     public func getRequestId() -> String {
@@ -155,6 +160,9 @@ internal extension OtplessRequest {
         }
         if let locale = locale {
             requestDict[RequestKeys.localeKey] = locale
+        }
+        if let tid = tid {
+            requestDict[RequestKeys.tidKey] = tid
         }
         
         for (key, value) in extras ?? [:] {
@@ -336,6 +344,7 @@ internal struct RequestKeys {
     static let deliveryChannelKey = "deliveryChannel"
     static let localeKey = "locale"
     static let valueKey = "value"
+    static let tidKey = "tid"
     
     // Values
     static let mobileValue = "MOBILE"

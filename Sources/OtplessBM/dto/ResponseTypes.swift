@@ -11,5 +11,6 @@ public enum ResponseTypes: String {
          VERIFY,
          INTERNET_ERR,
          ONETAP,
-         FALLBACK_TRIGGERED
+         FALLBACK_TRIGGERED,
+         FAILED
 }

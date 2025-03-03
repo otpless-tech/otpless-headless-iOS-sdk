@@ -12,7 +12,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
     var params = [String: String]()
     params["event_name"] = event.rawValue
     params["platform"] = "iOS-headless"
-    params["sdk_version"] = "1.0.0"
+    params["sdk_version"] = "1.0.1"
     params["mid"] = Otpless.shared.merchantAppId
     params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
     
@@ -22,6 +22,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
     
     params["tsid"] = Otpless.shared.tsid
     params["inid"] = Otpless.shared.inid
+    params["event_id"] = String(Otpless.shared.getEventCounterAndIncrement())
     
     if !requestId.isEmpty {
         params["token"] = requestId

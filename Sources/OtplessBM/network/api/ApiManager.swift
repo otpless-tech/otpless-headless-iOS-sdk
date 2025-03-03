@@ -88,54 +88,7 @@ final class ApiManager: Sendable {
                 sendEvent(event: .ERROR_API_RESPONSE, extras: apiError.getResponse())
                 throw apiError
             } else if let urlError = error as? URLError {
-                let code = urlError.errorCode
-                let errorBody = urlError.errorUserInfo
-                sendEvent(event: .ERROR_API_RESPONSE, extras: [
-                    "errorCode": String(code),
-                    "errorMessage": urlError.localizedDescription
-                ])
-                let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"
-
-                switch urlError.code {
-                case .timedOut, .notConnectedToInternet:
-                    throw ApiError(message: "Request timeout", statusCode: 9100, responseJson: [
-                        "errorCode": "9100",
-                        "errorMessage": "Request timeout"
-                    ])
-
-                case .networkConnectionLost:
-                    throw ApiError(message: "Network connection was lost", statusCode: 9101, responseJson: [
-                        "errorCode": "9101",
-                        "errorMessage": "Network connection was lost"
-                    ])
-
-                case .dnsLookupFailed:
-                    throw ApiError(message: "DNS lookup failed", statusCode: 9102, responseJson: [
-                        "errorCode": "9102",
-                        "errorMessage": "DNS lookup failed"
-                    ])
-
-                case .cannotConnectToHost:
-                    throw ApiError(message: "Cannot connect to the server", statusCode: 9103, responseJson: [
-                        "errorCode": "9103",
-                        "errorMessage": "Cannot connect to the server"
-                    ])
-
-                case .notConnectedToInternet:
-                    throw ApiError(message: "No internet connection", statusCode: 9104, responseJson: [
-                        "errorCode": "9104",
-                        "errorMessage": "No internet connection"
-                    ])
-
-                case .secureConnectionFailed:
-                    throw ApiError(message: "Secure connection failed (SSL issue)", statusCode: 9105, responseJson: [
-                        "errorCode": "9105",
-                        "errorMessage": "Secure connection failed (SSL issue)"
-                    ])
-
-                default:
-                    throw ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)
-                }
+                throw handleURLError(urlError)
             } else {
                 sendEvent(event: .ERROR_API_RESPONSE, extras: [
                     "errorCode": "500",
@@ -256,6 +209,56 @@ final class ApiManager: Sendable {
             """,
             type: .API_REQUEST_AND_RESPONSE
         )
+    }
+    
+    private func handleURLError(_ urlError: URLError) -> ApiError {
+        let code = urlError.errorCode
+        let errorBody = urlError.errorUserInfo
+        sendEvent(event: .ERROR_API_RESPONSE, extras: [
+            "errorCode": String(code),
+            "errorMessage": urlError.localizedDescription
+        ])
+        
+        switch urlError.code {
+        case .timedOut:
+            return ApiError(message: "Request timeout", statusCode: 9100, responseJson: [
+                "errorCode": "9100",
+                "errorMessage": "Request timeout"
+            ])
+        case .networkConnectionLost:
+            return ApiError(message: "Network connection was lost", statusCode: 9101, responseJson: [
+                "errorCode": "9101",
+                "errorMessage": "Network connection was lost"
+            ])
+        case .dnsLookupFailed:
+            return ApiError(message: "DNS lookup failed", statusCode: 9102, responseJson: [
+                "errorCode": "9102",
+                "errorMessage": "DNS lookup failed"
+            ])
+        case .cannotConnectToHost:
+            return ApiError(message: "Cannot connect to the server", statusCode: 9103, responseJson: [
+                "errorCode": "9103",
+                "errorMessage": "Cannot connect to the server"
+            ])
+        case .notConnectedToInternet:
+            return ApiError(message: "No internet connection", statusCode: 9104, responseJson: [
+                "errorCode": "9104",
+                "errorMessage": "No internet connection"
+            ])
+        case .secureConnectionFailed:
+            return ApiError(message: "Secure connection failed (SSL issue)", statusCode: 9105, responseJson: [
+                "errorCode": "9105",
+                "errorMessage": "Secure connection failed (SSL issue)"
+            ])
+        case .cancelled:
+            return ApiError(message: "Otpless authentication request cancelled", statusCode: 9110, responseJson: [
+                "errorCode": "9110",
+                "errorMessage": "Otpless authentication request cancelled"
+            ])
+        default:
+            let errorMessage = errorBody["message"] as? String ?? "Something Went Wrong!"
+            return ApiError(message: errorMessage, statusCode: code, responseJson: errorBody)
+        }
     }
 }
 

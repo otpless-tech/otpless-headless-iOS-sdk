@@ -8,9 +8,9 @@
 
 internal struct Constants {
     // MARK: - Keychain & UserDefault keys
-    static let STATE_KEY = "otpless_bmum_state"
-    static let INID_KEY = "otpless_bmum_inid"
-    static let UID_KEY = "otpless_bmum_uid"
+    static let STATE_KEY = "otpless_bm_state"
+    static let INID_KEY = "otpless_bm_inid"
+    static let UID_KEY = "otpless_bm_uid"
     
     // MARK: - Transaction Status
     static let SUCCESS = "SUCCESS"

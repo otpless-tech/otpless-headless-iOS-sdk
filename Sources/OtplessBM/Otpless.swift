@@ -78,8 +78,7 @@ import UIKit
     
     internal private(set) weak var merchantVC: UIViewController?
     
-    private var eventCounter = -1
-    private let eventCounterLock = NSLock()
+    private var eventCounter = 1
     
     public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
         self.oneTapDataDelegate = oneTapDataDelegate
@@ -94,7 +93,6 @@ import UIKit
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
-        initialiseEventCounter()
         
         Task(priority: .background) { [weak self] in
             guard let self = self else { return }
@@ -661,25 +659,10 @@ extension Otpless {
 }
 
 extension Otpless {
-    private func initialiseEventCounter() {
-        let existingEventCounterString = SecureStorage.shared.retrieve(key: Constants.EVENT_COUNTER_KEY) ?? "-1"
-        let existingEventCounterInt = Int(existingEventCounterString) ?? -1
-        
-        if existingEventCounterInt != -1 {
-            self.eventCounter = existingEventCounterInt // Existing EVENT_COUNTER was for the previous session, so increment it by 1 to avoid duplicity.
-            return
-        }
-        // EVENT_COUNTER does not exist, so initialize it with 1
-        self.eventCounter = 1
-    }
-    
     func getEventCounterAndIncrement() -> Int {
-        eventCounterLock.lock()
-        defer { eventCounterLock.unlock() }
-        let currentValue = eventCounter
+        let currentCounter = eventCounter
         eventCounter += 1
-        SecureStorage.shared.save(key: Constants.EVENT_COUNTER_KEY, value: String(eventCounter))
-        return currentValue
+        return currentCounter
     }
 }
 

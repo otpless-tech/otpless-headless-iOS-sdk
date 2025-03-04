@@ -10,7 +10,6 @@ import Foundation
 
 class VerifyCodeUseCase {
     func invoke(state: String, queryParams: [String: Any], getTransactionStatusUseCase: TransactionStatusUseCase) async -> (OtplessResponse?, String?) {
-        getTransactionStatusUseCase.stopPolling()
         
         let response = await Otpless.shared.apiRepository
             .verifySSOCode(queryParams: queryParams, state: state)

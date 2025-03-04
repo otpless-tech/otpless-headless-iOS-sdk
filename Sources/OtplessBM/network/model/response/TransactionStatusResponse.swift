@@ -60,10 +60,10 @@ struct AuthDetail: Codable {
     let communicationDelivered: Bool
     let isCrossDevice: Bool?
     let status: String
-    let token: String
+    let token: String?
     let uiId: String?
     let user: User?
-    let webauthnRegistered: Bool
+    let webauthnRegistered: Bool?
     let communicationMode: String?
     let errorDetails: String?
 }

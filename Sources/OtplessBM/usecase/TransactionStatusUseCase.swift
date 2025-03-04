@@ -13,6 +13,7 @@ class TransactionStatusUseCase {
     private var timerSettings: TimerSettings?
     private var attempt: Int64 = 0
     private var queryParams: [String: String] = [:]
+    private var isCommunicationDelivered: Bool? = nil
     
     private var responseCallback: ((OtplessResponse) -> Void)?
     
@@ -61,7 +62,7 @@ class TransactionStatusUseCase {
             case .success(let success):
                 switch success.authDetail.status {
                 case Constants.SUCCESS:
-                    stopPolling()
+                    stopPolling(dueToSuccessfulVerification: true)
                     let response = OtplessResponse(
                         responseType: ResponseTypes.ONETAP,
                         response: success.oneTap?.toDict(),
@@ -72,7 +73,7 @@ class TransactionStatusUseCase {
                     
                 case Constants.FAILED:
                     // Stop polling, don't send failure resposne, there's no point in notifying client why polling failed.
-                    stopPolling()
+                    stopPolling(dueToSuccessfulVerification: false)
                     return
                     
                 case Constants.PENDING:
@@ -80,9 +81,10 @@ class TransactionStatusUseCase {
                     if success.authDetail.channel == "OTP" &&
                         success.authDetail.communicationDelivered == true
                     {
+                        self.isCommunicationDelivered = true
                         // Only stop polling when channel is OTP.
                         log(message: "Stopping polling because OTP is delivered", type: .POLLING_STOPPED)
-                        stopPolling()
+                        stopPolling(dueToSuccessfulVerification: false)
                         return
                     }
                 default:
@@ -91,7 +93,7 @@ class TransactionStatusUseCase {
                 
             case .failure(_):
                 // Stop polling, don't send failure resposne, there's no point in notifying client why polling failed.
-                stopPolling()
+                stopPolling(dueToSuccessfulVerification: false)
                 return
             }
         }
@@ -117,10 +119,20 @@ class TransactionStatusUseCase {
         }
     }
     
-    func stopPolling() {
-        self.isPolling = false
-        self.attempt = 0
-        log(message: "Polling stopped.", type: .POLLING_STOPPED)
+    func stopPolling(dueToSuccessfulVerification: Bool) {
+        if dueToSuccessfulVerification {
+            self.isPolling = false
+            self.attempt = 0
+            log(message: "Polling stopped.", type: .POLLING_STOPPED)
+        } else {
+            if isCommunicationDelivered != nil && isCommunicationDelivered == true {
+                self.isPolling = false
+                self.attempt = 0
+                log(message: "Polling stopped.", type: .POLLING_STOPPED)
+            } else {
+                // Keep on polling
+            }
+        }
     }
     
     private func parseFallbackTriggered(

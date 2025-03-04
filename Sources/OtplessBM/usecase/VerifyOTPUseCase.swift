@@ -10,7 +10,6 @@ import Foundation
 
 class VerifyOTPUseCase {
     func invoke(state: String, queryParams: [String: String], getTransactionStatusUseCase: TransactionStatusUseCase) async -> OtplessResponse {
-        getTransactionStatusUseCase.stopPolling()
         
         let response = await Otpless.shared.apiRepository
             .verifyOTP(queryParams: queryParams, state: state)

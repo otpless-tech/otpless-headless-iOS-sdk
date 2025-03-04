@@ -14,7 +14,7 @@ class PostIntentUseCase {
         uiId: [String]?,
         uid: String?
     ) async -> PostIntentUseCaseResponse {
-        Otpless.shared.transactionStatusUseCase.stopPolling()
+        Otpless.shared.transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: false)
         Otpless.shared.snaUseCase.stopPolling()
         
         flushExistingAuthTypeAndDeliveryChannel()

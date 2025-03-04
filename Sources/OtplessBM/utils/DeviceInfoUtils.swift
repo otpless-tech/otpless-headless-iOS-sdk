@@ -130,6 +130,10 @@ class DeviceInfoUtils : @unchecked Sendable {
             params["isWebAuthnSupported"] = "true"
         }
         
+        if let teamId = Bundle.main.infoDictionary?["AppIdentifierPrefix"] as? String {
+            params["appleTeamId"] = teamId
+        }
+        
         params["isDeviceSimulator"] = "\(isDeviceSimulator())"
         
         return params

@@ -14,7 +14,7 @@ import Foundation
  */
 internal final class SNAUseCase: @unchecked Sendable {
     private var isPolling = true
-    private var lapseDataQueryParams = [String: String]()
+    private var snaStatusPollingLapse: Bool = false
 
     func invoke(
         state: String,
@@ -22,9 +22,10 @@ internal final class SNAUseCase: @unchecked Sendable {
         timerSettings: TimerSettings
     ) async -> SNAUseCaseResponse {
         isPolling = true
+        snaStatusPollingLapse = false
 
         async let snaApiCall: Void = Otpless.shared.apiRepository
-            .makeSNACall(url: url) { snaResponse in
+            .makeSNACall(url: url) { [weak self] snaResponse in
                 log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
                 sendEvent(event: .SNA_CALLBACK_RESULT)
         }
@@ -42,11 +43,11 @@ internal final class SNAUseCase: @unchecked Sendable {
         
         while startTime <= endTime && isPolling {
             let response = await Otpless.shared.apiRepository
-                .getSNATransactionStatus(queryParams: lapseDataQueryParams, state: state)
+                .getSNATransactionStatus(queryParams: [:], state: state)
             
             switch response {
             case .failure(let error):
-                lapseDataQueryParams["lapseMeta"] = error.localizedDescription
+                log(message: "SNA polling error: \(error)", type: .API_RESPONSE_FAILURE)
                 
             case .success(let data):
                 
@@ -68,28 +69,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                     )
                     
                 case Constants.FAILED:
-                    isPolling = false
-                    Otpless.shared.onAuthTypeChange(newAuthType: data.quantumLeap?.channel ?? "")
-                    Otpless.shared.onCommunicationModeChange(data.quantumLeap?.communicationMode ?? "NA")
-                    
-                    return SNAUseCaseResponse(
-                        tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings(
-                            token: data.quantumLeap?.channelAuthToken ?? "",
-                            asId: data.quantumLeap?.asId ?? "",
-                            uid: data.quantumLeap?.uid ?? "",
-                            timerSettings: data.quantumLeap?.pollingRequired == true ? data.quantumLeap?.timerSettings : TimerSettings(interval: 3, timeout: 60)
-                        ),
-                        otplessResponse: OtplessResponse(
-                            responseType: .INITIATE,
-                            response: [
-                                "requestId": data.quantumLeap?.channelAuthToken ?? "",
-                                "deliveryChannel": data.quantumLeap?.communicationMode ?? "Unknown",
-                                "channel": Otpless.shared.authType,
-                                "authType": Otpless.shared.authType
-                            ],
-                            statusCode: 200
-                        )
-                    )
+                    return handleStatusFailed(data)
                     
                 case Constants.PENDING:
                     // Continue polling
@@ -104,10 +84,69 @@ internal final class SNAUseCase: @unchecked Sendable {
             startTime += pollingInterval
         }
         
+        return await performFallbackTransactionRequest(state: state)
+    }
+    
+    private func handleStatusFailed(_ data: TransactionStatusResponse) -> SNAUseCaseResponse {
+        isPolling = false
+        Otpless.shared.onAuthTypeChange(newAuthType: data.quantumLeap?.channel ?? "")
+        Otpless.shared.onCommunicationModeChange(data.quantumLeap?.communicationMode ?? "NA")
+        
         return SNAUseCaseResponse(
-            tokenAsIdUIdAndTimerSettings: nil,
-            otplessResponse: nil
+            tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings(
+                token: data.quantumLeap?.channelAuthToken ?? "",
+                asId: data.quantumLeap?.asId ?? "",
+                uid: data.quantumLeap?.uid ?? "",
+                timerSettings: data.quantumLeap?.pollingRequired == true ? data.quantumLeap?.timerSettings : TimerSettings(interval: 3, timeout: 60)
+            ),
+            otplessResponse: OtplessResponse(
+                responseType: .INITIATE,
+                response: [
+                    "requestId": data.quantumLeap?.channelAuthToken ?? "",
+                    "deliveryChannel": data.quantumLeap?.communicationMode ?? "Unknown",
+                    "channel": Otpless.shared.authType,
+                    "authType": Otpless.shared.authType
+                ],
+                statusCode: 200
+            )
         )
+    }
+    
+    private func performFallbackTransactionRequest(state: String) async -> SNAUseCaseResponse {
+        stopPolling()
+        self.snaStatusPollingLapse = true
+        let response = await Otpless.shared.apiRepository
+            .getSNATransactionStatus(queryParams: [:], state: state)
+        
+        let snaUseCaseResponse: SNAUseCaseResponse
+            
+        switch response {
+        case .success(let data):
+            if data.authDetail.status == Constants.FAILED {
+                return handleStatusFailed(data)
+            } else {
+                snaUseCaseResponse = SNAUseCaseResponse(tokenAsIdUIdAndTimerSettings: nil, otplessResponse: OtplessResponse(responseType: .INITIATE, response: [
+                    "errorCode": "9106",
+                    "errorMessage": "Transaction timeout"
+                ], statusCode: 9106))
+            }
+            
+        case .failure(let error):
+            guard let apiError = error as? ApiError else {
+                snaUseCaseResponse = SNAUseCaseResponse(tokenAsIdUIdAndTimerSettings: nil, otplessResponse: OtplessResponse(
+                    responseType: .INITIATE,
+                    response: Utils.createErrorDictionary(
+                        errorCode: "9106",
+                        errorMessage: "Transaction timeout"
+                    ), statusCode: 9106
+                ))
+                return snaUseCaseResponse
+            }
+            
+            snaUseCaseResponse = SNAUseCaseResponse(tokenAsIdUIdAndTimerSettings: nil, otplessResponse: OtplessResponse(responseType: .INITIATE, response: apiError.getResponse(), statusCode: apiError.statusCode))
+        }
+        
+        return snaUseCaseResponse
     }
     
     func stopPolling() {

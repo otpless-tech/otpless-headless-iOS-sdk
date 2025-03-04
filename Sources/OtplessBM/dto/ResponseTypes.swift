@@ -9,7 +9,6 @@
 public enum ResponseTypes: String {
     case INITIATE,
          VERIFY,
-         INTERNET_ERR,
          ONETAP,
          FALLBACK_TRIGGERED,
          FAILED,

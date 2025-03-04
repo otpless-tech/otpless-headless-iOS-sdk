@@ -25,7 +25,7 @@ internal final class SNAUseCase: @unchecked Sendable {
         snaStatusPollingLapse = false
 
         async let snaApiCall: Void = Otpless.shared.apiRepository
-            .makeSNACall(url: url) { [weak self] snaResponse in
+            .makeSNACall(url: url) { snaResponse in
                 log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
                 sendEvent(event: .SNA_CALLBACK_RESULT)
         }

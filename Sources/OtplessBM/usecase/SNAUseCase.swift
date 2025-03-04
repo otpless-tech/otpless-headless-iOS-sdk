@@ -38,7 +38,7 @@ internal final class SNAUseCase: @unchecked Sendable {
 
     private func pollSNATransaction(state: String, timerSettings: TimerSettings) async -> SNAUseCaseResponse {
         var startTime: TimeInterval = 0
-        let endTime = TimeInterval(timerSettings.timeout ?? 7_000)
+        let endTime = TimeInterval(timerSettings.timeout ?? 10_000)
         let pollingInterval = TimeInterval(timerSettings.interval ?? 200)
         
         while startTime <= endTime && isPolling {
@@ -116,7 +116,12 @@ internal final class SNAUseCase: @unchecked Sendable {
         stopPolling()
         self.snaStatusPollingLapse = true
         let response = await Otpless.shared.apiRepository
-            .getSNATransactionStatus(queryParams: [:], state: state)
+            .getSNATransactionStatus(queryParams: [
+                "lapseMeta": Utils.convertDictionaryToString([
+                    "error": "sdk_polling_timeout",
+                    "error_description": "Transaction could not be polled anymore."
+                ])
+            ], state: state)
         
         let snaUseCaseResponse: SNAUseCaseResponse
             

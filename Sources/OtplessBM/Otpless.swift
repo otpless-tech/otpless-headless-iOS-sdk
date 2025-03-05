@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import Network
 
 @objc final public class Otpless: NSObject, @unchecked Sendable {
     @objc public static let shared: Otpless = {
@@ -82,6 +83,9 @@ import UIKit
     
     private var shouldShowOtplessOneTapUI: Bool = true
     
+    let cellularMonitor = NWPathMonitor(requiredInterfaceType: .cellular)
+    internal private(set) var isMobileDataEnabled: Bool = true
+    
     public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
         self.oneTapDataDelegate = oneTapDataDelegate
     }
@@ -97,6 +101,7 @@ import UIKit
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
         self.shouldShowOtplessOneTapUI = shouldShowOtplessOneTapUI
+        startMobileDataMonitoring()
         
         Task(priority: .background) { [weak self] in
             guard let self = self else { return }
@@ -254,6 +259,13 @@ import UIKit
             invokeResponse(otplessResponse)
         }
     }
+    
+    @objc public func cleanup() {
+        self.merchantVC = nil
+        cellularMonitor.cancel()
+        self.responseDelegate = nil
+        self.oneTapDataDelegate = nil
+    }
 }
 
 internal extension Otpless {
@@ -405,10 +417,9 @@ private extension Otpless {
         
         if intentResponse.isSNA,
            let snaUrl = intentResponse.intent,
-           let state = self.state,
            let timerSettings = intentResponse.tokenAsIdUIdAndTimerSettings?.timerSettings
         {
-            let response = await self.snaUseCase.invoke(state: state, url: snaUrl, timerSettings: timerSettings)
+            let response = await self.snaUseCase.invoke(url: snaUrl, timerSettings: timerSettings)
             if let otplessResponse = response.otplessResponse {
                 invokeResponse(otplessResponse)
                 if otplessResponse.responseType == ResponseTypes.ONETAP {
@@ -619,6 +630,15 @@ private extension Otpless {
         }
         
         return ""
+    }
+    
+    private func startMobileDataMonitoring() {
+        cellularMonitor.pathUpdateHandler = { path in
+            DispatchQueue.main.async { [weak self] in
+                self?.isMobileDataEnabled = path.status == .satisfied
+            }
+        }
+        cellularMonitor.start(queue: DispatchQueue.global())
     }
     
     func getMerchantConfigQueryParams() -> [String: String] {

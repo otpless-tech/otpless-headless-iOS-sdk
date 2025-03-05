@@ -15,35 +15,52 @@ import Foundation
 internal final class SNAUseCase: @unchecked Sendable {
     private var isPolling = true
     private var snaStatusPollingLapse: Bool = false
+    private var snaUrlHitError: [String: String]?
 
     func invoke(
-        state: String,
         url: String,
         timerSettings: TimerSettings
     ) async -> SNAUseCaseResponse {
         isPolling = true
         snaStatusPollingLapse = false
+        
+        let receivedSNAConnectionTimeout = timerSettings.timeout
+        
+        let snaConnectionTimeout: Double
+        if let receivedSNAConnectionTimeout = receivedSNAConnectionTimeout {
+            snaConnectionTimeout = Double(receivedSNAConnectionTimeout / 1000)
+        } else {
+            snaConnectionTimeout = 7.0
+        }
+        Otpless.shared.apiRepository.updateSNAConnectionTimeout(connectionTimeout: snaConnectionTimeout)
 
         async let snaApiCall: Void = Otpless.shared.apiRepository
-            .makeSNACall(url: url) { snaResponse in
+            .makeSNACall(url: url) { [weak self] snaResponse in
+                let status = snaResponse["status"] as? String
+                
+                if status == nil || status?.lowercased() != "ok" {
+                    self?.snaUrlHitError = ["lapseMeta": Utils.convertDictionaryToString(snaResponse)]
+                    self?.stopPolling()
+                }
+                
                 log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
                 sendEvent(event: .SNA_CALLBACK_RESULT)
         }
 
-        async let snaTransactionApiCall = pollSNATransaction(state: state, timerSettings: timerSettings)
+        async let snaTransactionApiCall = pollSNATransaction(timerSettings: timerSettings)
 
         let (_, transactionResponse) = await (snaApiCall, snaTransactionApiCall)
         return transactionResponse
     }
 
-    private func pollSNATransaction(state: String, timerSettings: TimerSettings) async -> SNAUseCaseResponse {
+    private func pollSNATransaction(timerSettings: TimerSettings) async -> SNAUseCaseResponse {
         var startTime: TimeInterval = 0
-        let endTime = TimeInterval(timerSettings.timeout ?? 10_000)
+        let endTime = TimeInterval(timerSettings.timeout ?? 7_000)
         let pollingInterval = TimeInterval(timerSettings.interval ?? 200)
         
         while startTime <= endTime && isPolling {
             let response = await Otpless.shared.apiRepository
-                .getSNATransactionStatus(queryParams: [:], state: state)
+                .getSNATransactionStatus(queryParams: [:], state: Otpless.shared.state ?? "")
             
             switch response {
             case .failure(let error):
@@ -84,7 +101,14 @@ internal final class SNAUseCase: @unchecked Sendable {
             startTime += pollingInterval
         }
         
-        return await performFallbackTransactionRequest(state: state)
+        return await performFallbackTransactionRequest(
+            withErrorDict: snaUrlHitError ?? [
+                "lapseMeta": Utils.convertDictionaryToString([
+                    "error": "sdk_polling_timeout",
+                    "error_description": "Transaction could not be polled anymore."
+                ])
+            ]
+        )
     }
     
     private func handleStatusFailed(_ data: TransactionStatusResponse) -> SNAUseCaseResponse {
@@ -112,16 +136,11 @@ internal final class SNAUseCase: @unchecked Sendable {
         )
     }
     
-    private func performFallbackTransactionRequest(state: String) async -> SNAUseCaseResponse {
+    private func performFallbackTransactionRequest(withErrorDict errorDict: [String: String]) async -> SNAUseCaseResponse {
         stopPolling()
         self.snaStatusPollingLapse = true
         let response = await Otpless.shared.apiRepository
-            .getSNATransactionStatus(queryParams: [
-                "lapseMeta": Utils.convertDictionaryToString([
-                    "error": "sdk_polling_timeout",
-                    "error_description": "Transaction could not be polled anymore."
-                ])
-            ], state: state)
+            .getSNATransactionStatus(queryParams: errorDict, state: Otpless.shared.state ?? "")
         
         let snaUseCaseResponse: SNAUseCaseResponse
             

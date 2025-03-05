@@ -141,7 +141,7 @@ class TransactionStatusUseCase {
         return OtplessResponse(
             responseType: .FALLBACK_TRIGGERED,
             response: [
-                "requestId": data.authDetail.token,
+                "requestId": data.authDetail.token ?? "",
                 "deliveryChannel": data.authDetail.communicationMode ?? "Unknown",
                 "channel": Otpless.shared.authType,
                 "authType": Otpless.shared.authType

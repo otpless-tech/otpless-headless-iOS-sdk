@@ -170,3 +170,9 @@ extension ApiRepository {
         }
     }
 }
+
+extension ApiRepository {
+    func updateSNAConnectionTimeout(connectionTimeout: Double) {
+        self.otplessCellularNetwork?.updateConnectionTimeout(connectionTimeout)
+    }
+}

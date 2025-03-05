@@ -149,17 +149,28 @@ struct Identity: Codable {
     let verified: Bool
     let verifiedAt: String
     let type: String?
+    let providerMetadata: [String: CodableValue]?
+    let picture: String?
+    let isCompanyEmail: Bool?
     
     func toDict() -> [String: Any] {
-        [
+        var dict = [
             "channel": channel,
             "identityType": identityType as Any,
             "identityValue": identityValue as Any,
             "methods": methods as Any,
             "verified": verified,
             "verifiedAt": verifiedAt,
-            "type": type as Any
-        ].compactMapValues { $0 }
+            "type": type as Any,
+            "picture": picture as Any,
+            "isCompanyEmail": isCompanyEmail as Any
+        ]
+        
+        if let additionalData = providerMetadata {
+            dict["providerMetadata"] = additionalData.mapValues { $0.value }
+        }
+        
+        return dict.compactMapValues { $0 }
     }
 }
 
@@ -251,5 +262,63 @@ struct OtpVerificationDetail: Codable {
             "code": code,
             "isOTPVerified": isOTPVerified
         ]
+    }
+}
+
+enum CodableValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case dictionary([String: CodableValue])
+    case array([CodableValue])
+
+    var value: Any {
+        switch self {
+        case .string(let value): return value
+        case .int(let value): return value
+        case .double(let value): return value
+        case .bool(let value): return value
+        case .dictionary(let value): return value.mapValues { $0.value }
+        case .array(let value): return value.map { $0.value }
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode([String: CodableValue].self) {
+            self = .dictionary(value)
+        } else if let value = try? container.decode([CodableValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported type")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .dictionary(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        }
     }
 }

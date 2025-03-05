@@ -258,7 +258,7 @@ class PostIntentUseCase {
         
         var otplessResponse: OtplessResponse? = nil
         if apiError.statusCode == 400 {
-            otplessResponse = parseBadRequest(errorDescription: apiError.message, request: request, errorCode: String(apiError.statusCode))
+            otplessResponse = parseBadRequest(errorDescription: apiError.message, request: request, errorCode: apiError.getResponse()["errorCode"] ?? "400")
         } else {
             otplessResponse = OtplessResponse(
                 responseType: .INITIATE,

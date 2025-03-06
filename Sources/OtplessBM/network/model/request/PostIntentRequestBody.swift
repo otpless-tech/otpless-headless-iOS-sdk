@@ -28,6 +28,7 @@ struct PostIntentRequestBody: Codable, Sendable {
     let fireIntent: Bool?
     let requestId: String?
     let clientMetaData: String? // Must a dictionary converted to String
+    let asId: String?
     
     init(
         channel: String,
@@ -47,7 +48,8 @@ struct PostIntentRequestBody: Codable, Sendable {
         uiIds: [String]?,
         fireIntent: Bool?,
         requestId: String?,
-        clientMetaData: String?
+        clientMetaData: String?,
+        asId: String?
     ) {
         self.channel = channel
         self.email = email
@@ -73,6 +75,7 @@ struct PostIntentRequestBody: Codable, Sendable {
         self.fireIntent = fireIntent
         self.requestId = requestId
         self.clientMetaData = clientMetaData
+        self.asId = asId
     }
     
     func toDict() -> [String: Any] {

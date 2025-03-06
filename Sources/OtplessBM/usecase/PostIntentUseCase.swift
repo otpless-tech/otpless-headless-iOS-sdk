@@ -56,7 +56,8 @@ class PostIntentUseCase {
             uiIds: uiId,
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
             requestId: requestDict[RequestKeys.requestIdKey] as? String,
-            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 })
+            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 }),
+            asId: Otpless.shared.asId
         )
     }
     

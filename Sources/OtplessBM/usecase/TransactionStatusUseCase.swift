@@ -91,10 +91,13 @@ class TransactionStatusUseCase {
                     break
                 }
                 
-            case .failure(_):
+            case .failure(let error):
                 // Stop polling, don't send failure resposne, there's no point in notifying client why polling failed.
-                stopPolling(dueToSuccessfulVerification: false)
-                return
+                if let apiError = error as? ApiError {
+                    if apiError.statusCode >= 400 && apiError.statusCode <= 500 {
+                        stopPolling(dueToSuccessfulVerification: false)
+                    }
+                }
             }
         }
     }
@@ -141,7 +144,7 @@ class TransactionStatusUseCase {
         return OtplessResponse(
             responseType: .FALLBACK_TRIGGERED,
             response: [
-                "requestId": data.authDetail.token,
+                "requestId": data.authDetail.token ?? "",
                 "deliveryChannel": data.authDetail.communicationMode ?? "Unknown",
                 "channel": Otpless.shared.authType,
                 "authType": Otpless.shared.authType

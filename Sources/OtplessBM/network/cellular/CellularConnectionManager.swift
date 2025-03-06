@@ -23,7 +23,7 @@ final class CellularConnectionManager: @unchecked Sendable {
     
     //Mitigation for tcp timeout not triggering any events.
     private var timer: Timer?
-    private var CONNECTION_TIME_OUT = 5.0
+    private var CONNECTION_TIME_OUT = 7.0
     private var pathMonitor: NWPathMonitor?
     private let accessQueue = DispatchQueue(label: "com.otpless.cellular.connection.manager")
        private var _checkResponseHandler: ResultHandler?
@@ -41,12 +41,17 @@ final class CellularConnectionManager: @unchecked Sendable {
         self.CONNECTION_TIME_OUT = connectionTimeout
     }
     
+    func updateConnectionTimeout(_ connectionTimeout: Double) {
+        self.CONNECTION_TIME_OUT = connectionTimeout
+    }
+    
     func open(url: URL, operators: String?, completion: @Sendable @escaping ([String : Any]) -> Void) {
         guard let _ = url.scheme, let _ = url.host else {
             completion(convertNetworkErrorToDictionary(err: NetworkError.other("No scheme or host found")))
             return
         }
         
+        print("Connection timeout is \(CONNECTION_TIME_OUT)")
         
         // This closure will be called on main thread
         checkResponseHandler = { [weak self] (response) -> Void in

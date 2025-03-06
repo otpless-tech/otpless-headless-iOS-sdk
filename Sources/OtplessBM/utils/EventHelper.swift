@@ -9,45 +9,50 @@ import Foundation
 import Network
 
 func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = "", requestId: String = ""){
-    var params = [String: String]()
-    params["event_name"] = event.rawValue
-    params["platform"] = "iOS-headless"
-    params["sdk_version"] = "1.0.2"
-    params["mid"] = Otpless.shared.merchantAppId
-    params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
-    
-    if let request = Otpless.shared.merchantOtplessRequest {
-        params["request"] = Utils.convertDictionaryToString(request.getEventDict(), options: [])
+    do {
+        var params = [String: String]()
+        params["event_name"] = event.rawValue
+        params["platform"] = "iOS-headless"
+        params["sdk_version"] = "1.0.3"
+        params["mid"] = Otpless.shared.merchantAppId
+        params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
+        
+        if let request = Otpless.shared.merchantOtplessRequest {
+            params["request"] = Utils.convertDictionaryToString(request.getEventDict(), options: [])
+        }
+        
+        params["tsid"] = Otpless.shared.tsid
+        params["inid"] = Otpless.shared.inid
+        params["event_id"] = String(Otpless.shared.getEventCounterAndIncrement())
+        
+        if !requestId.isEmpty {
+            params["token"] = requestId
+        }
+        
+        if !musId.isEmpty {
+            params["musid"] = musId
+        }
+        
+        var eventParams = extras
+        
+        var deviceInfo = Otpless.shared.deviceInfo
+        deviceInfo.removeValue(forKey: "userAgent") // Remove userAgent key because parsing is failing on backend due to this and userAgent is by default added so we don't need it
+        
+        eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfo)
+        
+        if let eventParamsData = try? JSONSerialization.data(withJSONObject: eventParams, options: []),
+           let eventParamsString = String(data: eventParamsData, encoding: .utf8) {
+            params["event_params"] = eventParamsString
+        }
+        
+        fetchDataWithGET(
+            apiRoute: "https://mtkikwb8yc.execute-api.ap-south-1.amazonaws.com/prod/appevent",
+            params: params
+        )
     }
-    
-    params["tsid"] = Otpless.shared.tsid
-    params["inid"] = Otpless.shared.inid
-    params["event_id"] = String(Otpless.shared.getEventCounterAndIncrement())
-    
-    if !requestId.isEmpty {
-        params["token"] = requestId
+    catch {
+        log(message: "sendEvent failed: \(error)", type: .EVENT_CREATING_FAILED)
     }
-    
-    if !musId.isEmpty {
-        params["musid"] = musId
-    }
-    
-    var eventParams = extras
-    
-    var deviceInfo = Otpless.shared.deviceInfo
-    deviceInfo.removeValue(forKey: "userAgent") // Remove userAgent key because parsing is failing on backend due to this and userAgent is by default added so we don't need it
-
-    eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfo)
-    
-    if let eventParamsData = try? JSONSerialization.data(withJSONObject: eventParams, options: []),
-       let eventParamsString = String(data: eventParamsData, encoding: .utf8) {
-        params["event_params"] = eventParamsString
-    }
-
-    fetchDataWithGET(
-        apiRoute: "https://mtkikwb8yc.execute-api.ap-south-1.amazonaws.com/prod/appevent",
-        params: params
-    )
 }
 
 

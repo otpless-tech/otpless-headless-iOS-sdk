@@ -45,7 +45,7 @@ class PostIntentUseCase {
             mobile: requestDict[RequestKeys.mobileKey] as? String,
             selectedCountryCode: requestDict[RequestKeys.countryCodeKey] as? String,
             silentAuthEnabled: (Otpless.shared.merchantConfig?.merchant?.config?.isSilentAuthEnabled
-                                ?? false) && otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest(),
+                                ?? false) && otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest() && Otpless.shared.isMobileDataEnabled,
             triggerWebauthn: shouldTriggerWebAuthn(otplessRequest),
             type: (requestDict[RequestKeys.typeKey] ?? "") ?? "",
             uid: uid,
@@ -258,7 +258,7 @@ class PostIntentUseCase {
         
         var otplessResponse: OtplessResponse? = nil
         if apiError.statusCode == 400 {
-            otplessResponse = parseBadRequest(errorDescription: apiError.message, request: request, errorCode: String(apiError.statusCode))
+            otplessResponse = parseBadRequest(errorDescription: apiError.message, request: request, errorCode: apiError.getResponse()["errorCode"] ?? "400")
         } else {
             otplessResponse = OtplessResponse(
                 responseType: .INITIATE,

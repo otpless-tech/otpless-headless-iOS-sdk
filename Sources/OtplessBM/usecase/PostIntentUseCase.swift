@@ -56,7 +56,8 @@ class PostIntentUseCase {
             uiIds: uiId,
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
             requestId: requestDict[RequestKeys.requestIdKey] as? String,
-            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 })
+            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 }),
+            asId: Otpless.shared.asId
         )
     }
     
@@ -257,15 +258,11 @@ class PostIntentUseCase {
         log(message: "Could not get data from intent: " + apiError.localizedDescription, type: .API_RESPONSE_FAILURE)
         
         var otplessResponse: OtplessResponse? = nil
-        if apiError.statusCode == 400 {
-            otplessResponse = parseBadRequest(errorDescription: apiError.message, request: request, errorCode: apiError.getResponse()["errorCode"] ?? "400")
-        } else {
-            otplessResponse = OtplessResponse(
-                responseType: .INITIATE,
-                response: apiError.getResponse(),
-                statusCode: apiError.statusCode
-            )
-        }
+        otplessResponse = OtplessResponse(
+            responseType: .INITIATE,
+            response: apiError.getResponse(),
+            statusCode: apiError.statusCode
+        )
         
         return PostIntentUseCaseResponse(
             intent: nil,
@@ -317,23 +314,6 @@ class PostIntentUseCase {
             channel: channel,
             authType: data.quantumLeap.channel,
             deliveryChannel: data.quantumLeap.communicationMode
-        )
-    }
-    
-    /**
-     Creates a `BadRequest` response to streamline it with the responses mentioned in the documentation.
-     - Parameter errorDescription: A description of the error received.
-     - Parameter request: Instance of `OtplessRequest` received from the user.
-     - Returns: An `OtplessResponse` object with the parsed error details.
-     */
-    private func parseBadRequest(errorDescription: String?, request: OtplessRequest, errorCode: String) -> OtplessResponse {
-        return OtplessResponse(
-            responseType: .INITIATE,
-            response: [
-            "errorMessage": errorDescription ?? "Something Went Wrong!",
-            "errorCode": errorCode
-            ],
-            statusCode: 400
         )
     }
     

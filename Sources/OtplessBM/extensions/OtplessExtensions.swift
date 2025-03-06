@@ -250,6 +250,10 @@ extension Otpless {
 
 extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
+        if otplessResponse.statusCode == 9110 {
+            return
+        }
+        
         if otplessResponse.responseType == .ONETAP {
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)

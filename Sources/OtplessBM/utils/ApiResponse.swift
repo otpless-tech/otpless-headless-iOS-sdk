@@ -24,14 +24,6 @@ internal final class ApiError: Error, @unchecked Sendable {
         self.responseJson = responseJson
     }
 
-    func toJson() -> [String: Any] {
-        var json: [String: Any] = ["message": message, "statusCode": statusCode]
-        if let responseJson = responseJson {
-            json["responseJson"] = responseJson
-        }
-        return json
-    }
-
     var description: String {
         return "message: \(message)\nstatusCode: \(statusCode)\(responseJson != nil ? "\n\(responseJson!)" : "")"
     }

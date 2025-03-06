@@ -103,7 +103,7 @@ import Network
         self.shouldShowOtplessOneTapUI = shouldShowOtplessOneTapUI
         startMobileDataMonitoring()
         
-        Task(priority: .background) { [weak self] in
+        Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
             
             await DeviceInfoUtils.shared.initialise()
@@ -316,7 +316,7 @@ private extension Otpless {
            !savedState.isEmpty {
             onFetch(savedState)
         } else {
-            Task(priority: .background) { [weak self] in
+            Task(priority: .medium) { [weak self] in
                 let stateResponse = await self?.getStateUseCase
                     .invoke(queryParams: self?.getMerchantConfigQueryParams() ?? [:], isRetry: false)
                 let state = stateResponse?.0?.state
@@ -332,7 +332,7 @@ private extension Otpless {
     
     func fetchMerchantConfig() {
         if let state = self.state {
-            Task(priority: .background) { [weak self] in
+            Task(priority: .medium) { [weak self] in
                 let configResponse = await self?.getMerchantConfigUseCase.invoke(state: state, queryParams: [:], isRetry: false)
                 self?.merchantConfig = configResponse?.0
                 self?.phoneIntentChannel = self?.getIntentChannelFromConfig(channelConfig: configResponse?.0?.channelConfig, isMobile: true) ?? ""

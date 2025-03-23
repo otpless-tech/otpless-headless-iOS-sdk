@@ -197,7 +197,7 @@ class PostIntentUseCase {
             // Make SNA request. If SNA fails, it will invoke a callback that starts the polling of transactionStatusAPI
             return PostIntentUseCaseResponse(
                 intent: intent,
-                otplessResponse: nil,
+                otplessResponse: OtplessResponse.createSuccessfulInitiateResponse(requestId: response.quantumLeap.channelAuthToken, channel: response.quantumLeap.channel, authType: response.quantumLeap.channel, deliveryChannel: response.quantumLeap.communicationMode),
                 tokenAsIdUIdAndTimerSettings: tokenAsIdUIdAndTimerSettings,
                 passkeyRequestStr: nil,
                 uid: nil,

@@ -421,10 +421,12 @@ private extension Otpless {
         {
             let response = await self.snaUseCase.invoke(url: snaUrl, timerSettings: timerSettings)
             if let otplessResponse = response.otplessResponse {
-                invokeResponse(otplessResponse)
-                if otplessResponse.responseType == ResponseTypes.ONETAP {
-                    // No need to proceed further, user has been authenticated
-                    return
+                for op in otplessResponse {
+                    invokeResponse(op)
+                    if op.responseType == ResponseTypes.ONETAP {
+                        // No need to proceed further, user has been authenticated
+                        return
+                    }
                 }
             }
             

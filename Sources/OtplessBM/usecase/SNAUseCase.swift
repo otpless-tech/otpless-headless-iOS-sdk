@@ -129,7 +129,8 @@ internal final class SNAUseCase: @unchecked Sendable {
                 OtplessResponse(
                     responseType: .VERIFY, response: [
                         "errorCode": "400",
-                        "errorMessage": "Silent Authentication failed."
+                        "errorMessage": "Silent Authentication failed.",
+                        "authType": Otpless.shared.authType
                     ], statusCode: 400
                 ),
                 OtplessResponse(
@@ -166,7 +167,8 @@ internal final class SNAUseCase: @unchecked Sendable {
                             responseType: .INITIATE,
                             response: [
                                 "errorCode": "9106",
-                                "errorMessage": "Transaction timeout"
+                                "errorMessage": "Transaction timeout",
+                                "authType": Otpless.shared.authType
                             ],
                             statusCode: 9106)
                     ]
@@ -182,7 +184,8 @@ internal final class SNAUseCase: @unchecked Sendable {
                             responseType: .INITIATE,
                             response: Utils.createErrorDictionary(
                                 errorCode: "9106",
-                                errorMessage: "Transaction timeout"
+                                errorMessage: "Transaction timeout",
+                                "authType": Otpless.shared.authType
                             ),
                             statusCode: 9106
                         )
@@ -197,7 +200,8 @@ internal final class SNAUseCase: @unchecked Sendable {
                     OtplessResponse(
                         responseType: .VERIFY, response: [
                             "errorCode": "400",
-                            "errorMessage": "Silent Authentication failed."
+                            "errorMessage": "Silent Authentication failed.",
+                            "authType": Otpless.shared.authType
                         ], statusCode: 400
                     ),
                     OtplessResponse(

@@ -185,7 +185,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                             response: Utils.createErrorDictionary(
                                 errorCode: "9106",
                                 errorMessage: "Transaction timeout",
-                                "authType": Otpless.shared.authType
+                                authType: Otpless.shared.authType
                             ),
                             statusCode: 9106
                         )
@@ -198,16 +198,12 @@ internal final class SNAUseCase: @unchecked Sendable {
                 tokenAsIdUIdAndTimerSettings: nil,
                 otplessResponse: [
                     OtplessResponse(
-                        responseType: .VERIFY, response: [
+                        responseType: .VERIFY,
+                        response: [
                             "errorCode": "400",
                             "errorMessage": "Silent Authentication failed.",
                             "authType": Otpless.shared.authType
                         ], statusCode: 400
-                    ),
-                    OtplessResponse(
-                        responseType: .INITIATE,
-                        response: apiError.getResponse(),
-                        statusCode: apiError.statusCode
                     )
                 ]
             )

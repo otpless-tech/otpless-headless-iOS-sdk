@@ -78,11 +78,14 @@ final internal class Utils {
         return ""
     }
     
-    static func createErrorDictionary(errorCode: String, errorMessage: String) -> [String: String] {
-        return [
-            "errorCode": errorCode,
-            "errorMessage": errorMessage
-        ]
+    static func createErrorDictionary(errorCode: String, errorMessage: String, authType: String? = nil) -> [String: String] {
+        var errorDictionary: [String: String] = [:]
+        errorDictionary["errorCode"] = errorCode
+        errorDictionary["errorMessage"] = errorMessage
+        if let authType = authType {
+            errorDictionary["authType"] = authType
+        }
+        return errorDictionary
     }
     
     static func convertStringToDictionary(_ text: String) -> [String: Any]? {

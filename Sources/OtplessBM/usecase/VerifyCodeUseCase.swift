@@ -22,7 +22,8 @@ class VerifyCodeUseCase {
                         responseType: .VERIFY,
                         response: Utils.createErrorDictionary(
                             errorCode: "500",
-                            errorMessage: error.localizedDescription
+                            errorMessage: error.localizedDescription,
+                            authType: Otpless.shared.authType
                         ), statusCode: 500
                     ),
                     nil
@@ -31,8 +32,11 @@ class VerifyCodeUseCase {
             
             log(message: "Could not verify OTP: " + apiError.localizedDescription, type: .API_RESPONSE_FAILURE)
             
+            var response = apiError.getResponse()
+            response["authType"] = Otpless.shared.authType
+            
             return (
-                OtplessResponse(responseType: .VERIFY, response: apiError.getResponse(), statusCode: apiError.statusCode),
+                OtplessResponse(responseType: .VERIFY, response: response, statusCode: apiError.statusCode),
                 nil
             )
         case .success(let data):

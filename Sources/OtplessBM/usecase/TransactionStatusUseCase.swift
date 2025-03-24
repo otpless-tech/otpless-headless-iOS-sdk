@@ -82,7 +82,7 @@ class TransactionStatusUseCase {
                     if success.authDetail.communicationDelivered == true,
                        let communicationMode = success.authDetail.communicationMode,
                        let authType = success.authDetail.channel {
-                        sendCommunicationDeliveredResposne(deliveredOn: communicationMode, forAuthType: authType)
+                        sendCommunicationDeliveredResponse(deliveredOn: communicationMode, forAuthType: authType)
                     }
                     
                     if success.authDetail.channel == "OTP" &&
@@ -160,7 +160,7 @@ class TransactionStatusUseCase {
         )
     }
     
-    private func sendCommunicationDeliveredResposne(deliveredOn deliveryChannel: String, forAuthType authType: String) {
+    private func sendCommunicationDeliveredResponse(deliveredOn deliveryChannel: String, forAuthType authType: String) {
         responseCallback?(
             OtplessResponse(
                 responseType: .DELIVERY_STATUS,

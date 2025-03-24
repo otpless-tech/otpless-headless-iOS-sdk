@@ -12,5 +12,6 @@ public enum ResponseTypes: String {
          ONETAP,
          FALLBACK_TRIGGERED,
          FAILED,
-         SDK_READY
+         SDK_READY,
+         DELIVERY_STATUS
 }

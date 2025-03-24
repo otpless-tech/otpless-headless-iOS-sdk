@@ -78,6 +78,13 @@ class TransactionStatusUseCase {
                     
                 case Constants.PENDING:
                     await handlePendingState(success)
+                    
+                    if success.authDetail.communicationDelivered == true,
+                       let communicationMode = success.authDetail.communicationMode,
+                       let authType = success.authDetail.channel {
+                        sendCommunicationDeliveredResposne(deliveredOn: communicationMode, forAuthType: authType)
+                    }
+                    
                     if success.authDetail.channel == "OTP" &&
                         success.authDetail.communicationDelivered == true
                     {
@@ -150,6 +157,20 @@ class TransactionStatusUseCase {
                 "authType": Otpless.shared.authType
             ],
             statusCode: 200
+        )
+    }
+    
+    private func sendCommunicationDeliveredResposne(deliveredOn deliveryChannel: String, forAuthType authType: String) {
+        responseCallback?(
+            OtplessResponse(
+                responseType: .DELIVERY_STATUS,
+                response: [
+                    "deliveryChannel": deliveryChannel,
+                    "authType": authType,
+                    "communicationDelivered": true
+                ],
+                statusCode: 200
+            )
         )
     }
 }

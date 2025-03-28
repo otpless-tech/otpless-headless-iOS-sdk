@@ -413,7 +413,7 @@ extension Otpless {
         for cf in channelConfig ?? [] {
             if cf.identifierType?.uppercased() != toIterate { continue }
             for channel in cf.channel ?? [] {
-                if channel.name?.uppercased() != "OTP" { continue }
+                if channel.name?.uppercased() != "OTP" && channel.name?.uppercased() != "OTP_LINK" { continue }
                 return channel.otpLength ?? -1
             }
         }

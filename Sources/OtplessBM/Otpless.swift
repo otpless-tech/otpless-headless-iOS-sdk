@@ -90,6 +90,8 @@ import Network
         self.oneTapDataDelegate = oneTapDataDelegate
     }
     
+    internal private(set) var otpLength: Int = -1
+    
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
@@ -153,6 +155,15 @@ import Network
         self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
         
+        if otplessRequest.getOtpLength() != -1 {
+            self.otpLength = otplessRequest.getOtpLength()
+        } else {
+            // If not found, then reset again to prevent sending otpLength that may have been set in an earlier request
+            self.otpLength = getOtpLength(
+                fromChannelConfig: merchantConfig?.channelConfig,
+                forAuthenticationMedium: otplessRequest.getAuthenticationMedium()
+            )
+        }
         sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         await processRequestIfRequestIsValid(otplessRequest)
     }

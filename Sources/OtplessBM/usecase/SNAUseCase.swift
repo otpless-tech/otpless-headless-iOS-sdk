@@ -130,18 +130,14 @@ internal final class SNAUseCase: @unchecked Sendable {
                     responseType: .VERIFY, response: [
                         "errorCode": "400",
                         "errorMessage": "Silent Authentication failed.",
-                        "authType": Otpless.shared.authType
+                        "authType": "SILENT_AUTH"
                     ], statusCode: 400
                 ),
-                OtplessResponse(
-                    responseType: .INITIATE,
-                    response: [
-                        "requestId": data.quantumLeap?.channelAuthToken ?? "",
-                        "deliveryChannel": data.quantumLeap?.communicationMode ?? "Unknown",
-                        "channel": Otpless.shared.authType,
-                        "authType": Otpless.shared.authType
-                    ],
-                    statusCode: 200
+                OtplessResponse.createSuccessfulInitiateResponse(
+                    requestId: data.quantumLeap?.channelAuthToken ?? "",
+                    channel: Otpless.shared.authType,
+                    authType: Otpless.shared.authType,
+                    deliveryChannel: data.quantumLeap?.communicationMode
                 )
             ]
         )
@@ -202,7 +198,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                         response: [
                             "errorCode": "400",
                             "errorMessage": "Silent Authentication failed.",
-                            "authType": Otpless.shared.authType
+                            "authType": "SILENT_AUTH"
                         ], statusCode: 400
                     )
                 ]

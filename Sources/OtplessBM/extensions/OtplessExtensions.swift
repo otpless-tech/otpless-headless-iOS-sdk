@@ -389,3 +389,35 @@ extension Otpless {
         }
     }
 }
+
+extension Otpless {
+    func getOtpLength(
+        fromChannelConfig channelConfig: [ChannelConfig]?,
+        forAuthenticationMedium authenticationMedium: AuthenticationMedium?
+    ) -> Int {
+        let toIterate: String
+        
+        switch authenticationMedium {
+        case .PHONE:
+            toIterate = "MOBILE"
+        case .EMAIL:
+            toIterate = "EMAIL"
+        default:
+            toIterate = "NONE"
+        }
+        
+        if toIterate == "NONE" {
+            return -1
+        }
+        
+        for cf in channelConfig ?? [] {
+            if cf.identifierType?.uppercased() != toIterate { continue }
+            for channel in cf.channel ?? [] {
+                if channel.name?.uppercased() != "OTP" && channel.name?.uppercased() != "OTP_LINK" { continue }
+                return channel.otpLength ?? -1
+            }
+        }
+        
+        return -1
+    }
+}

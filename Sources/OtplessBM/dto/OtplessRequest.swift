@@ -327,6 +327,17 @@ internal extension OtplessRequest {
         return requestJson
     }
     
+    func getOtpLength() -> Int {
+        switch self.otpLength {
+        case "4":
+            return 4
+        case "6":
+            return 6
+        default:
+            return -1
+        }
+    }
+    
 }
 
 internal struct RequestKeys {

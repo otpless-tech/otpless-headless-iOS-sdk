@@ -114,6 +114,9 @@ public struct OtplessResponse: @unchecked Sendable {
         if let deliveryChannel = deliveryChannel, !deliveryChannel.isEmpty {
             json["deliveryChannel"] = deliveryChannel
         }
+        if Otpless.shared.otpLength != -1 {
+            json["otpLength"] = Otpless.shared.otpLength
+        }
         return OtplessResponse(
             responseType: .INITIATE,
             response: json,

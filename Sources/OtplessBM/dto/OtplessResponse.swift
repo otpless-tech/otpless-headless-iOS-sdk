@@ -114,7 +114,7 @@ public struct OtplessResponse: @unchecked Sendable {
         if let deliveryChannel = deliveryChannel, !deliveryChannel.isEmpty {
             json["deliveryChannel"] = deliveryChannel
         }
-        if Otpless.shared.otpLength != -1 {
+        if Otpless.shared.otpLength != -1 && (channel == "OTP" || channel == "OTP_LINK") {
             json["otpLength"] = Otpless.shared.otpLength
         }
         return OtplessResponse(

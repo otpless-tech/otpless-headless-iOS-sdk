@@ -256,7 +256,7 @@ import Network
         Utils.convertToEventParamsJson(
             otplessResponse: otplessResponse,
             callback: { extras, requestId, musId in
-                sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+                sendEvent(event: .HEADLESS_MERCHANT_COMMIT, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
             }
         )
     }

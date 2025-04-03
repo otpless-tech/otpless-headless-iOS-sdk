@@ -19,10 +19,10 @@
 
 
 ## 1.0.7 (28th March 2025)
-## Features
+### Features
 - Added `otpLength` in `INITIATE` response
 
-## Fixes
+### Fixes
 - `authType` sent incorrect in rare cases in `VERIFY` response
 
 

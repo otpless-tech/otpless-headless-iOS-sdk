@@ -51,8 +51,6 @@ final class CellularConnectionManager: @unchecked Sendable {
             return
         }
         
-        print("Connection timeout is \(CONNECTION_TIME_OUT)")
-        
         // This closure will be called on main thread
         checkResponseHandler = { [weak self] (response) -> Void in
             guard let self = self else {

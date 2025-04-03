@@ -39,7 +39,11 @@ internal final class SNAUseCase: @unchecked Sendable {
                 let status = snaResponse["status"] as? String
                 
                 if status == nil || status?.lowercased() != "ok" {
-                    self?.snaUrlHitError = ["lapseMeta": Utils.convertDictionaryToString(snaResponse)]
+                    let snaError = [
+                        "cause": snaResponse["error"],
+                        "brief": snaResponse["error_description"]
+                    ]
+                    self?.snaUrlHitError = ["lapseMeta": Utils.convertDictionaryToString(snaError)]
                     self?.stopPolling()
                 }
                 

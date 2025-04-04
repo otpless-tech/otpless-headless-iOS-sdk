@@ -72,4 +72,12 @@ internal final class SecureStorage: @unchecked Sendable {
         ]
         SecItemDelete(query as CFDictionary)
     }
+    
+    func saveToUserDefaults<T>(key: String, value: T) {
+        UserDefaults.standard.set(value, forKey: key)
+    }
+    
+    func getFromUserDefaults<T>(key: String, defaultValue: T) -> T {
+        return UserDefaults.standard.object(forKey: key) as? T ?? defaultValue
+    }
 }

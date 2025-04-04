@@ -16,6 +16,8 @@ internal final class SNAUseCase: @unchecked Sendable {
     private var isPolling = true
     private var snaStatusPollingLapse: Bool = false
     private var snaUrlHitError: [String: String]?
+    
+    private let SILENT_AUTH = "SILENT_AUTH"
 
     func invoke(
         url: String,
@@ -134,7 +136,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                     responseType: .VERIFY, response: [
                         "errorCode": "400",
                         "errorMessage": "Silent Authentication failed.",
-                        "authType": "SILENT_AUTH"
+                        "authType": SILENT_AUTH
                     ], statusCode: 400
                 ),
                 OtplessResponse.createSuccessfulInitiateResponse(
@@ -168,7 +170,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                             response: [
                                 "errorCode": "9106",
                                 "errorMessage": "Transaction timeout",
-                                "authType": Otpless.shared.authType
+                                "authType": SILENT_AUTH
                             ],
                             statusCode: 9106)
                     ]
@@ -176,7 +178,7 @@ internal final class SNAUseCase: @unchecked Sendable {
             }
             
         case .failure(let error):
-            guard let apiError = error as? ApiError else {
+            guard let _ = error as? ApiError else {
                 snaUseCaseResponse = SNAUseCaseResponse(
                     tokenAsIdUIdAndTimerSettings: nil,
                     otplessResponse: [
@@ -185,7 +187,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                             response: Utils.createErrorDictionary(
                                 errorCode: "9106",
                                 errorMessage: "Transaction timeout",
-                                authType: Otpless.shared.authType
+                                authType: SILENT_AUTH
                             ),
                             statusCode: 9106
                         )
@@ -202,7 +204,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                         response: [
                             "errorCode": "400",
                             "errorMessage": "Silent Authentication failed.",
-                            "authType": "SILENT_AUTH"
+                            "authType": SILENT_AUTH
                         ], statusCode: 400
                     )
                 ]

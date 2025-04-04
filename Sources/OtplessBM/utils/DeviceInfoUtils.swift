@@ -118,7 +118,7 @@ class DeviceInfoUtils : @unchecked Sendable {
             params["tsid"] = tsid
         }
         
-        params["sdkVersion"] = "1.1.0"
+        params["sdkVersion"] = "1.1.1"
         
         params["osVersion"] = os.majorVersion.description + "." + os.minorVersion.description
         params["hasWhatsapp"] = hasWhatsApp.description
@@ -143,11 +143,11 @@ class DeviceInfoUtils : @unchecked Sendable {
     }
     
     func generateTrackingId() {
-        if let inid = SecureStorage.shared.retrieve(key: Constants.INID_KEY) {
-            self.inid = inid
+        if let savedInid: String = SecureStorage.shared.getFromUserDefaults(key: Constants.INID_KEY, defaultValue: "") {
+            self.inid = savedInid
         } else {
             inid = generateId(withTimeStamp: true)
-            SecureStorage.shared.save(key: Constants.INID_KEY, value: inid!)
+            SecureStorage.shared.saveToUserDefaults(key: Constants.INID_KEY, value: inid!)
         }
         
         if tsid == nil {
@@ -169,7 +169,8 @@ class DeviceInfoUtils : @unchecked Sendable {
         if inid != nil {
             return inid
         }
-        return SecureStorage.shared.retrieve(key: Constants.INID_KEY)
+        let savedInid: String = SecureStorage.shared.getFromUserDefaults(key: Constants.INID_KEY, defaultValue: "")
+        return savedInid
     }
     
     func getTrackingSessionId() -> String? {

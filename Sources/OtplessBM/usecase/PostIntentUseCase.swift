@@ -44,8 +44,7 @@ class PostIntentUseCase {
             identifierType: (requestDict[RequestKeys.identifierTypeKey] ?? "") ?? "",
             mobile: requestDict[RequestKeys.mobileKey] as? String,
             selectedCountryCode: requestDict[RequestKeys.countryCodeKey] as? String,
-            silentAuthEnabled: (Otpless.shared.merchantConfig?.merchant?.config?.isSilentAuthEnabled
-                                ?? false) && otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest() && Otpless.shared.isMobileDataEnabled,
+            silentAuthEnabled: otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest() && Otpless.shared.isMobileDataEnabled,
             triggerWebauthn: shouldTriggerWebAuthn(otplessRequest),
             type: (requestDict[RequestKeys.typeKey] ?? "") ?? "",
             uid: uid,
@@ -136,21 +135,6 @@ class PostIntentUseCase {
                 )
             }
             
-            if Otpless.shared.hasMerchantSelectedExternalSDK {
-                let sdkAuthParams = getSdkAuthParamsFromIntentAndChannel(intent: response.quantumLeap.intent ?? "", channel: postIntentRequestBody.channel)
-                
-                return PostIntentUseCaseResponse(
-                    intent: nil,
-                    otplessResponse: initiateResponse,
-                    tokenAsIdUIdAndTimerSettings: tokenAsIdUIdAndTimerSettings,
-                    passkeyRequestStr: nil,
-                    uid: response.quantumLeap.uid,
-                    sdkAuthParams: sdkAuthParams,
-                    isPollingRequired: false,
-                    isSNA: false
-                )
-            }
-            
             Otpless.shared.onAuthTypeChange(newAuthType: response.quantumLeap.channel)
             
             return PostIntentUseCaseResponse(
@@ -173,25 +157,6 @@ class PostIntentUseCase {
             Otpless.shared.onAuthTypeChange(newAuthType: response.quantumLeap.channel)
         }
 
-        // Check if user wants to use Google/Facebook/Apple's SDK for authentication
-        if (Otpless.shared.hasMerchantSelectedExternalSDK) {
-            // Use the channel from requestBody
-            let sdkAuthParams = getSdkAuthParamsFromIntentAndChannel(
-                intent: response.quantumLeap.intent ?? "",
-                channel: postIntentRequestBody.channel
-            )
-            return PostIntentUseCaseResponse(
-                intent: nil,
-                otplessResponse: initiateResponse,
-                tokenAsIdUIdAndTimerSettings: tokenAsIdUIdAndTimerSettings,
-                passkeyRequestStr: nil,
-                uid: nil,
-                sdkAuthParams: sdkAuthParams,
-                isPollingRequired: true,
-                isSNA: false
-            )
-        }
-
         let intent = response.quantumLeap.intent ?? ""
         let channel = response.quantumLeap.channel
 
@@ -203,7 +168,8 @@ class PostIntentUseCase {
                     requestId: response.quantumLeap.channelAuthToken,
                     channel: response.quantumLeap.channel,
                     authType: response.quantumLeap.channel,
-                    deliveryChannel: response.quantumLeap.communicationMode
+                    deliveryChannel: response.quantumLeap.communicationMode,
+                    otpLength: response.quantumLeap.otpLength
                 ),
                 tokenAsIdUIdAndTimerSettings: tokenAsIdUIdAndTimerSettings,
                 passkeyRequestStr: nil,
@@ -301,26 +267,14 @@ class PostIntentUseCase {
             return nil
         }
         
-        let channel: String
-        if Otpless.shared.hasMerchantSelectedExternalSDK {
-            if data.quantumLeap.channel.contains("FACEBOOK") {
-                channel = OtplessChannelType.FACEBOOK_SDK.rawValue
-            } else if data.quantumLeap.channel.contains("APPLE") {
-                channel = OtplessChannelType.APPLE_SDK.rawValue
-            } else {
-                channel = OtplessChannelType.GOOGLE_SDK.rawValue
-            }
-        } else {
-            channel = data.quantumLeap.channel
-        }
-        
         Otpless.shared.onCommunicationModeChange(data.quantumLeap.communicationMode ?? "NA")
         
         return OtplessResponse.createSuccessfulInitiateResponse(
             requestId: data.quantumLeap.channelAuthToken,
-            channel: channel,
+            channel: data.quantumLeap.channel,
             authType: data.quantumLeap.channel,
-            deliveryChannel: data.quantumLeap.communicationMode
+            deliveryChannel: data.quantumLeap.communicationMode,
+            otpLength: data.quantumLeap.otpLength
         )
     }
     

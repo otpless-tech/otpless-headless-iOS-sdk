@@ -21,9 +21,6 @@ import Network
     internal private(set) var merchantAppId: String = ""
     internal private(set) var merchantOtplessRequest: OtplessRequest?
     internal private(set) var state: String?
-    internal private(set) var hasMerchantSelectedExternalSDK: Bool = false
-    internal private(set) var phoneIntentChannel: String = ""
-    internal private(set) var emailIntentChannel: String = ""
     internal private(set) var communicationMode: String = ""
     internal private(set) var authType: String = ""
     
@@ -41,7 +38,6 @@ import Network
     
     internal private(set) weak var loggerDelegate: OtplessLoggerDelegate?
     internal private(set) weak var responseDelegate: OtplessResponseDelegate?
-    internal private(set) weak var oneTapDataDelegate: OneTapDataDelegate?
     
     internal private(set) weak var merchantWindowScene: UIWindowScene?
     
@@ -49,8 +45,8 @@ import Network
     
     internal private(set) var merchantConfig: MerchantConfigResponse? = nil
     
-    private lazy var getStateUseCase: GetStateUseCase = {
-        return GetStateUseCase()
+    private lazy var getDeviceIDUseCase: GetDeviceIDUseCase = {
+        return GetDeviceIDUseCase()
     }()
     private lazy var getMerchantConfigUseCase: GetMerchantConfigUseCase = {
         return GetMerchantConfigUseCase()
@@ -86,11 +82,7 @@ import Network
     let cellularMonitor = NWPathMonitor(requiredInterfaceType: .cellular)
     internal private(set) var isMobileDataEnabled: Bool = true
     
-    public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
-        self.oneTapDataDelegate = oneTapDataDelegate
-    }
-    
-    internal private(set) var otpLength: Int = -1
+    internal private(set) var deviceId: String = ""
     
     @objc public func initialise(
         withAppId appId: String,
@@ -117,6 +109,7 @@ import Network
             self.uid = uid
             self.inid = inid
             self.tsid = tsid
+            self.state = SecureStorage.shared.retrieve(key: Constants.STATE_KEY) ?? ""
             
             await MainActor.run {
                 self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
@@ -126,7 +119,8 @@ import Network
                 self?.appInfo = self?.getAppInfoFromMainActor() ?? [:]
             }
             
-            self.fetchStateAndMerchantConfig()
+            await self.fetchStateAndMerchantConfig()
+            await self.fetchDeviceID()
         }
     }
     
@@ -154,16 +148,6 @@ import Network
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
         self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
-        
-        if otplessRequest.getOtpLength() != -1 {
-            self.otpLength = otplessRequest.getOtpLength()
-        } else {
-            // If not found, then reset again to prevent sending otpLength that may have been set in an earlier request
-            self.otpLength = getOtpLength(
-                fromChannelConfig: merchantConfig?.channelConfig,
-                forAuthenticationMedium: otplessRequest.getAuthenticationMedium()
-            )
-        }
         sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         await processRequestIfRequestIsValid(otplessRequest)
     }
@@ -261,21 +245,10 @@ import Network
         )
     }
     
-    public func performOneTap(forIdentity oneTapIdentity: OneTapIdentity) async {
-        let oneTapRequest = OtplessRequest()
-        oneTapRequest.set(oneTapValue: oneTapIdentity.identity)
-        let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [oneTapIdentity.uiId], uid: self.uid)
-        
-        if let otplessResponse = intentResponse.otplessResponse {
-            invokeResponse(otplessResponse)
-        }
-    }
-    
     @objc public func cleanup() {
         self.merchantVC = nil
         cellularMonitor.cancel()
         self.responseDelegate = nil
-        self.oneTapDataDelegate = nil
     }
 }
 
@@ -286,6 +259,10 @@ internal extension Otpless {
     
     func onCommunicationModeChange(_ newCommunicationMode: String) {
         self.communicationMode = newCommunicationMode
+    }
+    
+    func setExistingState(_ existingState: String) {
+        self.state = existingState
     }
 }
 
@@ -310,61 +287,23 @@ extension Otpless {
 }
 
 private extension Otpless {
-    func fetchStateAndMerchantConfig() {
-        requestStateForDeviceIfNil(onFetch: { [weak self] state in
-            guard let state = state else {
-                return
-            }
-            
-            self?.state = state
-            SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
-            self?.fetchMerchantConfig()
-        })
-    }
-    
-    func requestStateForDeviceIfNil(onFetch: @escaping @Sendable (String?) -> Void) {
-        if let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY),
-           !savedState.isEmpty {
-            onFetch(savedState)
+    func fetchStateAndMerchantConfig() async {
+        let configResponse = await self.getMerchantConfigUseCase.invoke(queryParams: [:], isRetry: false)
+        self.merchantConfig = configResponse.0
+        self.state = configResponse.0?.state
+        
+        if let otplessResponse = configResponse.1 {
+            // Error while fetching config
+            self.invokeResponse(otplessResponse)
         } else {
-            Task(priority: .medium) { [weak self] in
-                let stateResponse = await self?.getStateUseCase
-                    .invoke(queryParams: self?.getMerchantConfigQueryParams() ?? [:], isRetry: false)
-                let state = stateResponse?.0?.state
-                if let otplessResponse = stateResponse?.1 {
-                    self?.invokeResponse(otplessResponse)
-                }
-                await MainActor.run(body: {
-                    onFetch(state)
-                })
-            }
+            self.invokeResponse(OtplessResponse.sdkReady)
         }
+        
+        sendEvent(event: .INIT_HEADLESS)
     }
     
-    func fetchMerchantConfig() {
-        if let state = self.state {
-            Task(priority: .medium) { [weak self] in
-                let configResponse = await self?.getMerchantConfigUseCase.invoke(state: state, queryParams: [:], isRetry: false)
-                self?.merchantConfig = configResponse?.0
-                self?.phoneIntentChannel = self?.getIntentChannelFromConfig(channelConfig: configResponse?.0?.channelConfig, isMobile: true) ?? ""
-                self?.emailIntentChannel = self?.getIntentChannelFromConfig(channelConfig: configResponse?.0?.channelConfig, isMobile: false) ?? ""
-                
-                if let otplessResponse = configResponse?.1 {
-                    // Error while fetching config
-                    self?.invokeResponse(otplessResponse)
-                } else {
-                    self?.invokeResponse(OtplessResponse.sdkReady)
-                }
-                
-                sendEvent(event: .INIT_HEADLESS)
-                
-                if let oneTapDataDelegate = self?.oneTapDataDelegate {
-                    await MainActor.run {
-                        oneTapDataDelegate.onOneTapData(configResponse?.0?.userDetails?.toOneTapIdentities())
-                    }
-                }
-            }
-        }
+    func fetchDeviceID() async {
+        self.deviceId = await self.getDeviceIDUseCase.invoke(isRetry: false) ?? ""
     }
     
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
@@ -520,129 +459,7 @@ private extension Otpless {
             return false
         }
         
-        switch request.getAuthenticationMedium() {
-        case .PHONE:
-            if !isChannelEnabled(channelType: phoneIntentChannel, isPhoneAuth: true) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "phone")
-                )
-                return false
-            }
-            
-        case .EMAIL:
-            if !isChannelEnabled(channelType: emailIntentChannel, isPhoneAuth: false) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "email")
-                )
-                return false
-            }
-            
-        case .OAUTH:
-            // Check if the selected channel is enabled
-            if !isChannelEnabled(
-                channelType: request.getSelectedChannelType()?.rawValue ?? "",
-                isPhoneAuth: request.getSelectedChannelType() == .WHATSAPP ||
-                request.getSelectedChannelType() == .TRUE_CALLER
-            ) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(
-                        channel: request.getSelectedChannelType()?.rawValue ?? ""
-                    )
-                )
-                return false
-            }
-            
-        case .WEB_AUTHN:
-            if merchantConfig.merchant?.config?.isWebauthnEnabled == false {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "WebAuthn")
-                )
-                return false
-            }
-            
-        default:
-            break
-        }
-        
         return true
-    }
-    
-    func isChannelEnabled(channelType: String, isPhoneAuth: Bool?) -> Bool {
-        guard let channelConfigs = merchantConfig?.channelConfig else {
-            return false
-        }
-        
-        for channelConfig in channelConfigs {
-            if isPhoneAuth == true && channelConfig.identifierType != "MOBILE" {
-                continue
-            }
-            if isPhoneAuth == false && channelConfig.identifierType == "MOBILE" {
-                continue
-            }
-            
-            // Check each channel in the channelConfig
-            if let channels = channelConfig.channel {
-                for channel in channels {
-                    // Special cases FACEBOOK_SDK, APPLE_SDK & GOOGLE_SDK
-                    if channelType == OtplessChannelType.FACEBOOK_SDK.rawValue, let channelName = channel.name, channelName.starts(with: "FACEBOOK") {
-                        hasMerchantSelectedExternalSDK = true
-                        return true
-                    }
-                    if channelType == OtplessChannelType.GOOGLE_SDK.rawValue, let channelName = channel.name, channelName.starts(with: "GMAIL") || channelName.starts(with: "GOOGLE") {
-                        hasMerchantSelectedExternalSDK = true
-                        return true
-                    }
-                    
-                    if channelType == OtplessChannelType.APPLE_SDK.rawValue, let channelName = channel.name,
-                       channelName.starts(with: "APPLE") {
-                        hasMerchantSelectedExternalSDK = true
-                        return true
-                    }
-                    
-                    if let channelName = channel.name, channelName.contains(channelType) {
-                        return true
-                    }
-                }
-            }
-        }
-        
-        return false
-    }
-    
-    func getIntentChannelFromConfig(channelConfig: [ChannelConfig]?, isMobile: Bool) -> String {
-        guard let channelConfig = channelConfig else {
-            return ""
-        }
-        
-        if isMobile {
-            for cf in channelConfig {
-                if cf.identifierType != "MOBILE" {
-                    continue
-                }
-                if let channels = cf.channel {
-                    for channel in channels {
-                        if channel.type == "INPUT" {
-                            return channel.name ?? ""
-                        }
-                    }
-                }
-            }
-        } else {
-            for cf in channelConfig {
-                if cf.identifierType != "EMAIL" {
-                    continue
-                }
-                if let channels = cf.channel {
-                    for channel in channels {
-                        if channel.type == "INPUT" {
-                            return channel.name ?? ""
-                        }
-                    }
-                }
-            }
-        }
-        
-        return ""
     }
     
     private func startMobileDataMonitoring() {
@@ -686,7 +503,6 @@ extension Otpless {
         stateFetchRetriesCount = 0
         token = ""
         asId = ""
-        hasMerchantSelectedExternalSDK = false
         userSelectedOAuthChannel = nil
     }
 }

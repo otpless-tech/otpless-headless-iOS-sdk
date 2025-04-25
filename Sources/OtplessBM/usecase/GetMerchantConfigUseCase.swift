@@ -9,7 +9,6 @@ class GetMerchantConfigUseCase {
     private var retryCount = 0
     
     func invoke(
-        state: String,
         queryParams: [String: String],
         isRetry: Bool
     ) async -> (MerchantConfigResponse?, OtplessResponse?) {
@@ -17,11 +16,19 @@ class GetMerchantConfigUseCase {
             retryCount = 0
         }
         
+        let existingState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY)
+        if let existingState = existingState {
+            Otpless.shared.setExistingState(existingState)
+        }
+        
         let response = await Otpless.shared.apiRepository
-            .getMerchantConfig(state: state, queryParams: queryParams)
+            .getMerchantConfig(queryParams: queryParams)
         
         switch response {
         case .success(let success):
+            if success.state != nil {
+                SecureStorage.shared.save(key: Constants.STATE_KEY, value: success.state!)
+            }
             return (success, nil)
         case .failure(let failure):
             log(message: "Could not fetch merchant config: \(failure.localizedDescription)", type: .API_RESPONSE_FAILURE)
@@ -30,7 +37,7 @@ class GetMerchantConfigUseCase {
                 return (nil, OtplessResponse.failedToInitializeResponse)
             } else {
                 retryCount += 1
-                return await invoke(state: state, queryParams: queryParams, isRetry: true)
+                return await invoke(queryParams: queryParams, isRetry: true)
             }
         }
     }

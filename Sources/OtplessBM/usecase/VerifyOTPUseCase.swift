@@ -12,7 +12,9 @@ class VerifyOTPUseCase {
     func invoke(state: String, queryParams: [String: String], getTransactionStatusUseCase: TransactionStatusUseCase) async -> OtplessResponse {
         
         let response = await Otpless.shared.apiRepository
-            .verifyOTP(queryParams: queryParams, state: state)
+            .verifyOTP(requestBody: VerifyOTPRequestBody(
+                isOTPAutoRead: queryParams["isOTPAutoRead"] ?? "false", mobile: queryParams["value"], otp: queryParams["otp"] ?? "parsing_failed_ios_otp", email: queryParams["value"]
+            ))
         
         switch response {
         case .failure(let error):

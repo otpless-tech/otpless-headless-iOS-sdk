@@ -113,7 +113,6 @@ internal extension OtplessRequest {
             requestDict[RequestKeys.mobileKey] = (countryCode?.trimmingCharacters(in: .init(charactersIn: "+")) ?? "") + (self.phoneNumber ?? "")
             requestDict[RequestKeys.identifierTypeKey] = RequestKeys.mobileValue
             requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
-            requestDict[RequestKeys.channelKey] = Otpless.shared.phoneIntentChannel
             break
         case .EMAIL:
             requestDict[RequestKeys.emailKey] = self.email
@@ -121,7 +120,6 @@ internal extension OtplessRequest {
             
             requestDict[RequestKeys.identifierTypeKey] = RequestKeys.emailValue
             requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
-            requestDict[RequestKeys.channelKey] = Otpless.shared.emailIntentChannel
             break
         case .OAUTH:
             requestDict[RequestKeys.channelKey] = self.channelType?.rawValue

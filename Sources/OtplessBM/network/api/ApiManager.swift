@@ -12,17 +12,18 @@ final class ApiManager: Sendable {
     private let userAuthTimeout: TimeInterval
     private let snaTimeout: TimeInterval
     private let enableLogging: Bool
-    private let baseURLUserAuth = "https://user-auth.otpless.app"
+    private let baseURLUserAuth = "https://api.otpless.com"
     private let baseURLSekura = "http://80.in.safr.sekuramobile.com"
     
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"
-    static let POST_INTENT_PATH = "/v3/lp/user/transaction/intent/{state}"
-    static let GET_MERCHANT_CONFIG_PATH = "/v2/lp/merchant/config/{state}"
-    static let SSO_VERIFY_CODE_PATH = "/v3/lp/user/transaction/code/{state}"
-    static let TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/status/{state}"
-    static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
-    static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
+    static let POST_INTENT_PATH = "/v4/lp/user/transaction/intent"
+    static let GET_MERCHANT_CONFIG_PATH = "/v4/lp/merchant/config"
+    static let SSO_VERIFY_CODE_PATH = "/v4/lp/user/transaction/code/"
+    static let TRANSACTION_STATUS_PATH = "/v4/lp/user/transaction/status"
+    static let SNA_TRANSACTION_STATUS_PATH = "/v4/lp/user/transaction/silent-auth-status/"
+    static let OTP_VERIFICATION_PATH = "/v4/lp/user/transaction/otp"
+    static let DEVICE_ID_PATH = "/v4/lp/user/data/device"
     
     init(
         userAuthTimeout: TimeInterval = 20.0,
@@ -36,19 +37,12 @@ final class ApiManager: Sendable {
     
     // MARK: - User Auth API Request
     func performUserAuthRequest(
-        state: String?,
         path: String,
         method: String,
         body: [String: Any]? = nil,
         queryParameters: [String: Any]? = nil
     ) async throws -> Data {
-        // Replace {state} placeholder in the path
-        var newPath = path
-        if let state = state {
-            newPath = path.replacingOccurrences(of: "{state}", with: state)
-        }
-        
-        let url = constructURL(baseURL: baseURLUserAuth, path: newPath, queryParameters: queryParameters, method: method)
+        let url = constructURL(baseURL: baseURLUserAuth, path: path, queryParameters: queryParameters, method: method)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = userAuthTimeout
@@ -57,6 +51,15 @@ final class ApiManager: Sendable {
             let newBody = getBody(withExistingBody: body)
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
         }
+        
+        if let state = Otpless.shared.state, !state.isEmpty {
+            request.addValue(state, forHTTPHeaderField: "state")
+        }
+        if !Otpless.shared.deviceId.isEmpty {
+            request.addValue(Otpless.shared.deviceId, forHTTPHeaderField: "otpless-device-id")
+        }
+        
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -110,7 +113,7 @@ final class ApiManager: Sendable {
         }
         
         mutableBody["origin"] = "https://otpless.com"
-        mutableBody["version"] = "V4"
+        mutableBody["version"] = "V5"
         mutableBody["tsId"] = Otpless.shared.tsid
         mutableBody["inId"] = Otpless.shared.inid
         mutableBody["deviceInfo"] = Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
@@ -121,6 +124,10 @@ final class ApiManager: Sendable {
         mutableBody["package"] = Otpless.shared.packageName
         mutableBody["platform"] = "HEADLESS"
         mutableBody["uid"] = Otpless.shared.uid
+        
+        if !Otpless.shared.token.isEmpty {
+            mutableBody["token"] = Otpless.shared.token
+        }
         
         mutableBody["metadata"] = Utils.convertDictionaryToString([
             "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),
@@ -148,7 +155,7 @@ final class ApiManager: Sendable {
             URLQueryItem(name: "origin", value: "https://otpless.com"),
             URLQueryItem(name: "tsId", value: Otpless.shared.tsid),
             URLQueryItem(name: "inId", value: Otpless.shared.inid),
-            URLQueryItem(name: "version", value: "V4"),
+            URLQueryItem(name: "version", value: "V5"),
             URLQueryItem(name: "isHeadless", value: "true"),
             URLQueryItem(name: "platform", value: "iOS"),
             URLQueryItem(name: "isLoginPage", value: "false"),

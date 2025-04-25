@@ -143,7 +143,8 @@ internal final class SNAUseCase: @unchecked Sendable {
                     requestId: data.quantumLeap?.channelAuthToken ?? "",
                     channel: Otpless.shared.authType,
                     authType: Otpless.shared.authType,
-                    deliveryChannel: data.quantumLeap?.communicationMode
+                    deliveryChannel: data.quantumLeap?.communicationMode,
+                    otpLength: data.quantumLeap?.otpLength
                 )
             ]
         )

@@ -19,11 +19,12 @@ struct QuantumLeap: Codable {
     let channels: [String]
     let intent: String?
     let pollingRequired: Bool
-    let state: String
+    let state: String?
     let status: String
     let timerSettings: TimerSettings
     let uid: String?
     let communicationMode: String?
+    let otpLength: Int?
 }
 
 struct TimerSettings: Codable {

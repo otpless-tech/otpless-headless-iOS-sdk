@@ -18,31 +18,26 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    
-    func getState(
-        queryParams: [String: String]
-    ) async -> Result<StateResponse, Error> {
+    func generateDeviceID(
+        body: DeviceIDRequestBody
+    ) async -> Result<DeviceIDResponse, Error> {
         do {
             let data = try await self.apiManager.performUserAuthRequest(
-                state: nil,
-                path: ApiManager.GET_STATE_PATH,
-                method: "GET",
-                queryParameters: queryParams
+                path: ApiManager.DEVICE_ID_PATH,
+                method: "POST",
+                body: body.toDict()
             )
-            return try Result.success(JSONDecoder().decode(StateResponse.self, from: data))
+            return try Result.success(JSONDecoder().decode(DeviceIDResponse.self, from: data))
         } catch {
             return Result.failure(error)
         }
     }
     
-    
     func getMerchantConfig(
-        state: String,
         queryParams: [String: String]
     ) async -> Result<MerchantConfigResponse, Error> {
         do {
             let data = try await self.apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.GET_MERCHANT_CONFIG_PATH,
                 method: "GET",
                 queryParameters: queryParams
@@ -59,7 +54,6 @@ internal final class ApiRepository: @unchecked Sendable {
     ) async -> Result<IntentResponse, Error> {
         do {
             let data = try await self.apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.POST_INTENT_PATH,
                 method: "POST",
                 body: body.toDict()
@@ -74,7 +68,6 @@ internal final class ApiRepository: @unchecked Sendable {
     func verifySSOCode(queryParams: [String: Any], state: String) async -> Result<TransactionStatusResponse, Error> {
         do {
             let data = try await self.apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.SSO_VERIFY_CODE_PATH,
                 method: "GET",
                 queryParameters: queryParams
@@ -86,13 +79,12 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    func verifyOTP(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+    func verifyOTP(requestBody: VerifyOTPRequestBody) async -> Result<TransactionStatusResponse, Error> {
         do {
             let data = try await self.apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.OTP_VERIFICATION_PATH,
-                method: "GET",
-                queryParameters: queryParams
+                method: "POST",
+                body: requestBody.toDict()
             )
             
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
@@ -121,7 +113,6 @@ internal final class ApiRepository: @unchecked Sendable {
     func getSNATransactionStatus(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
         do {
             let data = try await apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.SNA_TRANSACTION_STATUS_PATH,
                 method: "GET",
                 queryParameters: queryParams
@@ -136,7 +127,6 @@ internal final class ApiRepository: @unchecked Sendable {
     func getTransactionStatus(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
         do {
             let data = try await apiManager.performUserAuthRequest(
-                state: state,
                 path: ApiManager.TRANSACTION_STATUS_PATH,
                 method: "GET",
                 queryParameters: queryParams

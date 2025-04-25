@@ -104,7 +104,8 @@ public struct OtplessResponse: @unchecked Sendable {
         requestId: String,
         channel: String,
         authType: String,
-        deliveryChannel: String?
+        deliveryChannel: String?,
+        otpLength: Int?
     ) -> OtplessResponse {
         var json: [String: Any] = [
             "requestId": requestId,
@@ -114,8 +115,9 @@ public struct OtplessResponse: @unchecked Sendable {
         if let deliveryChannel = deliveryChannel, !deliveryChannel.isEmpty {
             json["deliveryChannel"] = deliveryChannel
         }
-        if Otpless.shared.otpLength != -1 && (channel == "OTP" || channel == "OTP_LINK") {
-            json["otpLength"] = Otpless.shared.otpLength
+        if let otpLength = otpLength,
+            otpLength != -1 && (channel == "OTP" || channel == "OTP_LINK") {
+            json["otpLength"] = otpLength
         }
         return OtplessResponse(
             responseType: .INITIATE,

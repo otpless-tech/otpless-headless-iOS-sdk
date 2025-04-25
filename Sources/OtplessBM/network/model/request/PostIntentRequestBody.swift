@@ -9,7 +9,7 @@
 import Foundation
 
 struct PostIntentRequestBody: Codable, Sendable {
-    let channel: String
+    let channel: String = "OTP"
     let email: String?
     let hasWhatsapp: String
     let identifierType: String
@@ -51,7 +51,7 @@ struct PostIntentRequestBody: Codable, Sendable {
         clientMetaData: String?,
         asId: String?
     ) {
-        self.channel = channel
+//        self.channel = channel
         self.email = email
         self.hasWhatsapp = hasWhatsapp
         self.identifierType = identifierType

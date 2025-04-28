@@ -13,12 +13,17 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         var params = [String: String]()
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
-        params["sdk_version"] = "1.1.1"
+        params["sdk_version"] = "1.1.2"
         params["mid"] = Otpless.shared.merchantAppId
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
+        var newEventParams = [String: Any]()
+        for (key, value) in extras {
+            newEventParams[key] = value
+        }
+        
         if let request = Otpless.shared.merchantOtplessRequest {
-            params["request"] = Utils.convertDictionaryToString(request.getEventDict(), options: [])
+            newEventParams["request"] = Utils.convertDictionaryToString(request.getEventDict(), options: [])
         }
         
         params["tsid"] = Otpless.shared.tsid
@@ -44,7 +49,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         
         eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfo)
         
-        if let eventParamsData = try? JSONSerialization.data(withJSONObject: eventParams, options: []),
+        if let eventParamsData = try? JSONSerialization.data(withJSONObject: newEventParams, options: []),
            let eventParamsString = String(data: eventParamsData, encoding: .utf8) {
             params["event_params"] = eventParamsString
         }
@@ -94,14 +99,14 @@ enum EventConstants: String {
     case SET_HEADLESS_CALLBACK = "native_set_headless_callback"
     case START_HEADLESS = "native_start_headless"
     
-    case HEADLESS_RESPONSE_SDK = "native_headless_response_ios_headless_sdk"
+    case HEADLESS_RESPONSE_SDK = "native_response_headless_sdk"
     
     case SNA_CALLBACK_RESULT = "native_sna_callback_result"
     
-    case DEEPLINK_SDK = "native_deeplink_ios_headless_sdk"
-    case GOOGLE_SDK_IOS_SDK = "native_google_sdk_ios_headless_sdk"
-    case APPLE_SDK_IOS_SDK = "native_apple_sdk_ios_headless_sdk"
-    case FACEBOOK_SDK_IOS_SDK = "native_facebook_sdk_ios_headless_sdk"
+    case DEEPLINK_SDK = "native_deeplink_headless_sdk"
+    case GOOGLE_SDK_IOS_SDK = "native_google_sdk_headless_sdk"
+    case APPLE_SDK_IOS_SDK = "native_apple_sdk_headless_sdk"
+    case FACEBOOK_SDK_IOS_SDK = "native_facebook_sdk_headless_sdk"
     case HEADLESS_TIMEOUT = "native_headless_timeout"
     case HEADLESS_MERCHANT_COMMIT = "native_headless_merchant_commit"
     

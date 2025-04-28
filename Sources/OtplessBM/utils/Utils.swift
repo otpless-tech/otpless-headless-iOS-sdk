@@ -135,7 +135,12 @@ final internal class Utils {
                 requestId = dataJson["token"] as? String
                 musId = dataJson["userId"] as? String
             } else {
-                response["response"] = "{}"
+                if let token = otplessResponse?.response?["requestId"] as? String {
+                    requestId = token
+                }
+                if otplessResponse?.responseType != .ONETAP {
+                    response["response"] = Utils.convertDictionaryToString(otplessResponse?.response ?? [:])
+                }
             }
         }
         

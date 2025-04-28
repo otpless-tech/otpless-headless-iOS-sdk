@@ -98,6 +98,7 @@ import Network
         vc: UIViewController,
         shouldShowOtplessOneTapUI: Bool = true
     ) {
+        self.merchantOtplessRequest = nil
         self.merchantAppId = appId
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
@@ -688,6 +689,7 @@ extension Otpless {
         asId = ""
         hasMerchantSelectedExternalSDK = false
         userSelectedOAuthChannel = nil
+        merchantOtplessRequest = nil
     }
 }
 

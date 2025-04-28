@@ -58,6 +58,8 @@ final class ApiManager: Sendable {
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
         }
         
+         var xRequestId: String? = nil
+        
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             
@@ -67,6 +69,10 @@ final class ApiManager: Sendable {
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
+            }
+            
+            if let xRequestHeader = httpResponse.allHeaderFields["x-request-id"] as? String {
+                xRequestId = xRequestHeader
             }
             
             if !(200..<300).contains(httpResponse.statusCode) {
@@ -84,21 +90,33 @@ final class ApiManager: Sendable {
             
             return data
         } catch {
-            if let apiError = error as? ApiError {
-                sendEvent(event: .ERROR_API_RESPONSE, extras: apiError.getResponse())
-                throw apiError
+            let apiError: ApiError
+            var errorExtras: [String: String] = [:]
+            if let errorAsApiError = error as? ApiError {
+                apiError = errorAsApiError
             } else if let urlError = error as? URLError {
-                throw handleURLError(urlError)
+                apiError = handleURLError(urlError)
             } else {
-                sendEvent(event: .ERROR_API_RESPONSE, extras: [
-                    "errorCode": "500",
-                    "errorMessage": error.localizedDescription
-                ])
-                throw ApiError(message: error.localizedDescription, statusCode: 500, responseJson: [
+                apiError = ApiError(message: error.localizedDescription, statusCode: 500, responseJson: [
                     "errorCode": "500",
                     "errorMessage": "Something Went Wrong!"
                 ])
             }
+            errorExtras["which_api"] = path
+            for (key, value) in apiError.getResponse() {
+                errorExtras[key] = value
+            }
+            
+            if let xRequestId = xRequestId {
+                errorExtras["x-request-id"] = xRequestId
+            } else {
+                errorExtras["x-request-id"] = "Could not fetch because HTTPURLResponse parsing failed."
+            }
+            
+            errorExtras["token"] = Otpless.shared.token
+            
+            sendEvent(event: .ERROR_API_RESPONSE, extras: errorExtras)
+            throw apiError
         }
     }
     

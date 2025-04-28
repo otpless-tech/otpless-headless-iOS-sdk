@@ -32,6 +32,9 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         
         if !requestId.isEmpty {
             params["token"] = requestId
+        } else if let mToken = extras["token"],
+                  !mToken.isEmpty {
+            params["token"] = mToken
         }
         
         if !musId.isEmpty {

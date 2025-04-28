@@ -113,6 +113,8 @@ final class ApiManager: Sendable {
                 errorExtras["x-request-id"] = "Could not fetch because HTTPURLResponse parsing failed."
             }
             
+            errorExtras["token"] = Otpless.shared.token
+            
             sendEvent(event: .ERROR_API_RESPONSE, extras: errorExtras)
             throw apiError
         }

@@ -20,6 +20,17 @@ public struct OtplessResponse: @unchecked Sendable {
       self.statusCode = statusCode
     }
     
+    internal func toObjcString() -> String {
+        var dict: [String: Any] = [
+            "responseType": responseType.rawValue
+        ]
+        if let response = response {
+            dict["response"] = response
+        }
+        dict["statusCode"] = statusCode
+        return Utils.convertDictionaryToString(dict)
+    }
+    
     internal static let failedToInitializeResponse = OtplessResponse(responseType: .FAILED, response: [
         "errorCode": "5003",
         "errorMessage": "Failed to initialize the SDK"

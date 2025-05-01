@@ -57,17 +57,4 @@ public enum OtplessChannelType: String, CaseIterable {
     @objc public static let ATLASSIAN = "ATLASSIAN"
     @objc public static let GITLAB = "GITLAB"
     @objc public static let TRUE_CALLER = "TRUE_CALLER"
-    
-    @objc public static func defaultValue() -> String {
-        return WHATSAPP
-    }
-
-    @objc public static func validate(value: String) -> String {
-        let validValues = [
-            WHATSAPP, GOOGLE_SDK, FACEBOOK_SDK, APPLE_SDK, APPLE, GMAIL, TWITTER,
-            DISCORD, SLACK, FACEBOOK, LINKEDIN, MICROSOFT, LINE, LINEAR, NOTION,
-            TWITCH, GITHUB, BITBUCKET, ATLASSIAN, GITLAB, TRUE_CALLER
-        ]
-        return validValues.first { $0.caseInsensitiveCompare(value) == .orderedSame } ?? defaultValue()
-    }
 }

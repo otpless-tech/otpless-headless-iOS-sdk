@@ -272,7 +272,7 @@ extension Otpless {
         
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
-            self.objcResponseDelegate?(otplessResponse.toObjcString())
+            self.objcResponseDelegate?(otplessResponse.toJsonString())
         }
     }
 }

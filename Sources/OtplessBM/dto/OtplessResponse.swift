@@ -20,7 +20,7 @@ public struct OtplessResponse: @unchecked Sendable {
       self.statusCode = statusCode
     }
     
-    internal func toObjcString() -> String {
+    internal func toJsonString() -> String {
         var dict: [String: Any] = [
             "responseType": responseType.rawValue
         ]

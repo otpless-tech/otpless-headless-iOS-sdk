@@ -286,8 +286,8 @@ import Network
         let responseType = ResponseTypes(rawValue: responseDict["responseType"] as? String ?? "") ?? .FAILED
         let response = responseDict["response"] as? [String: Any]
         let statusCode = responseDict["statusCode"] as? Int ?? -10699
-        let responsezz = OtplessResponse(responseType: responseType, response: response, statusCode: statusCode)
-        commitOtplessResponse(responsezz)
+        let otplResponse = OtplessResponse(responseType: responseType, response: response, statusCode: statusCode)
+        commitOtplessResponse(otplResponse)
     }
 }
 

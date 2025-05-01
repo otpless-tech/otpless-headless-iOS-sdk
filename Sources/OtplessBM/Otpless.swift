@@ -92,6 +92,8 @@ import Network
     
     internal private(set) var otpLength: Int = -1
     
+    internal private(set) var objcResponseDelegate: ((String) -> Void)?
+    
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
@@ -278,6 +280,15 @@ import Network
         self.responseDelegate = nil
         self.oneTapDataDelegate = nil
     }
+    
+    @objc public func objcCommit(_ otplessResponse: String?) {
+        let responseDict = Utils.convertStringToDictionary(otplessResponse ?? "") ?? [:]
+        let responseType = ResponseTypes(rawValue: responseDict["responseType"] as? String ?? "") ?? .FAILED
+        let response = responseDict["response"] as? [String: Any]
+        let statusCode = responseDict["statusCode"] as? Int ?? -10699
+        let otplResponse = OtplessResponse(responseType: responseType, response: response, statusCode: statusCode)
+        commitOtplessResponse(otplResponse)
+    }
 }
 
 internal extension Otpless {
@@ -294,6 +305,11 @@ internal extension Otpless {
 extension Otpless {
     public func setResponseDelegate(_ otplessResponseDelegate: OtplessResponseDelegate) {
         self.responseDelegate = otplessResponseDelegate
+        sendEvent(event: .SET_HEADLESS_CALLBACK)
+    }
+    
+    @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
+        self.objcResponseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
     }
     

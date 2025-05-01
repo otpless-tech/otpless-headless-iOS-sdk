@@ -34,3 +34,27 @@ public enum OtplessChannelType: String, CaseIterable {
         return OtplessChannelType.allCases.first { $0.rawValue.caseInsensitiveCompare(value) == .orderedSame } ?? .WHATSAPP
     }
 }
+
+@objc public class OtplessChannelTypeObjC: NSObject {
+    @objc public static let WHATSAPP = "WHATSAPP"
+    @objc public static let GOOGLE_SDK = "GOOGLE_SDK"
+    @objc public static let FACEBOOK_SDK = "FACEBOOK_SDK"
+    @objc public static let APPLE_SDK = "APPLE_SDK"
+    @objc public static let APPLE = "APPLE_EMAIL"
+    @objc public static let GMAIL = "GMAIL"
+    @objc public static let TWITTER = "TWITTER"
+    @objc public static let DISCORD = "DISCORD"
+    @objc public static let SLACK = "SLACK"
+    @objc public static let FACEBOOK = "FACEBOOK"
+    @objc public static let LINKEDIN = "LINKEDIN"
+    @objc public static let MICROSOFT = "MICROSOFT"
+    @objc public static let LINE = "LINE"
+    @objc public static let LINEAR = "LINEAR"
+    @objc public static let NOTION = "NOTION"
+    @objc public static let TWITCH = "TWITCH"
+    @objc public static let GITHUB = "GITHUB"
+    @objc public static let BITBUCKET = "BITBUCKET"
+    @objc public static let ATLASSIAN = "ATLASSIAN"
+    @objc public static let GITLAB = "GITLAB"
+    @objc public static let TRUE_CALLER = "TRUE_CALLER"
+}

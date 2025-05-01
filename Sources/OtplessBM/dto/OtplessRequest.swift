@@ -24,14 +24,14 @@ import Foundation
     private var oneTapValue: String?
     private var tid: String?
     
-    public func set(phoneNumber: String, withCountryCode countryCode: String) {
+    @objc public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
         self.countryCode = countryCode
         self.authenticationMedium = .PHONE
         self.email = nil
     }
     
-    public func set(email: String) {
+    @objc public func set(email: String) {
         self.email = email
         self.authenticationMedium = .EMAIL
         self.phoneNumber = nil
@@ -46,44 +46,52 @@ import Foundation
         self.email = nil
     }
     
-    public func set(requestIdForWebAuthn requestId: String) {
+    @objc public func set(objcChannelType: String) {
+        self.channelType = OtplessChannelType.fromString(objcChannelType)
+        self.authenticationMedium = .OAUTH
+        self.phoneNumber = nil
+        self.countryCode = nil
+        self.email = nil
+    }
+    
+    @objc public func set(requestIdForWebAuthn requestId: String) {
         self.requestId = requestId
         self.authenticationMedium = .WEB_AUTHN
     }
     
-    public func set(otp: String) {
+    @objc public func set(otp: String) {
         self.otp = otp
     }
     
-    public func set(otpExpiry: String) {
+    @objc public func set(otpExpiry: String) {
         self.expiry = otpExpiry
     }
     
-    public func set(otpLength: String) {
+    @objc public func set(otpLength: String) {
         self.otpLength = otpLength
     }
     
-    public func set(deliveryChannelForTransaction deliveryChannel: String) {
+    @objc public func set(deliveryChannelForTransaction deliveryChannel: String) {
         self.deliveryChannel = deliveryChannel
     }
     
-    public func set(locale: String) {
+    @objc public func set(locale: String) {
         self.locale = locale
     }
     
-    public func set(code: String) {
+    @objc public func set(code: String) {
         self.code = code
     }
     
-    public func set(extras: [String: String]) {
+    @objc public func set(extras: [String: String]) {
         self.extras = extras
     }
     
-    public func set(tid: String) {
+    @objc public func set(tid: String) {
         self.tid = tid
     }
     
-    public func getRequestId() -> String {
+    @objc public func getRequestId() -> String {
         return self.requestId ?? ""
     }
 }

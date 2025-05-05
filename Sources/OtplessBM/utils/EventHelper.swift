@@ -8,12 +8,21 @@
 import Foundation
 import Network
 
-func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = "", requestId: String = ""){
+func sendEvent(
+    event: EventConstants,
+    extras: [String: Any] = [:],
+    musId: String = "",
+    requestId: String = ""
+) {
+    sendEvent(event: event.rawValue, extras: extras, musId: musId, requestId: requestId)
+}
+
+func sendEvent(event: String, extras: [String: Any] = [:], musId: String = "", requestId: String = ""){
     do {
         var params = [String: String]()
-        params["event_name"] = event.rawValue
+        params["event_name"] = event
         params["platform"] = "iOS-headless"
-        params["sdk_version"] = "1.1.3"
+        params["sdk_version"] = "1.1.4"
         params["mid"] = Otpless.shared.merchantAppId
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
@@ -32,7 +41,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         
         if !requestId.isEmpty {
             params["token"] = requestId
-        } else if let mToken = extras["token"],
+        } else if let mToken = extras["token"] as? String,
                   !mToken.isEmpty {
             params["token"] = mToken
         }
@@ -115,3 +124,25 @@ enum EventConstants: String {
     
     case ERROR_API_RESPONSE = "native_api_response_error"
 }
+
+@objcMembers
+public class AuthEvent: NSObject {
+    public static let authInitiated = "AUTH_INITIATED"
+    public static let authSuccess = "AUTH_SUCCESS"
+    public static let authFailed = "AUTH_FAILED"
+
+    public static func toNativeName(_ event: String) -> String {
+        return "native_headless_cle_\(event)".lowercased()
+    }
+}
+
+@objcMembers
+public class ProviderType: NSObject {
+    public static let client = "CLIENT"
+    public static let otpless = "OTPLESS"
+
+    public static func toNativeName(_ provider: String) -> String {
+        return "native_headless_cle_\(provider)".lowercased()
+    }
+}
+

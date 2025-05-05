@@ -289,6 +289,17 @@ import Network
         let otplResponse = OtplessResponse(responseType: responseType, response: response, statusCode: statusCode)
         commitOtplessResponse(otplResponse)
     }
+    
+    @objc public func userAuthEvent(event: String, providerType: String, fallback: Bool, providerInfo: [String: String]) {
+        var extras: [String: Any] = [:]
+        extras["providerType"] = ProviderType.toNativeName(providerType)
+        extras["fallback"] = fallback ? "true" : "false"
+        extras["providerInfo"] = providerInfo
+        sendEvent(
+            event: AuthEvent.toNativeName(event),
+            extras: extras
+        )
+    }
 }
 
 internal extension Otpless {

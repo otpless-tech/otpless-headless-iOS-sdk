@@ -94,6 +94,7 @@ import Network
     
     internal private(set) var objcResponseDelegate: ((String) -> Void)?
     
+    //initialize method
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,

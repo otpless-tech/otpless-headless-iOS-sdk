@@ -44,6 +44,8 @@ import Network
     internal private(set) weak var oneTapDataDelegate: OneTapDataDelegate?
     
     internal private(set) weak var merchantWindowScene: UIWindowScene?
+    internal private(set) var pendingCode = ""
+    internal private(set) var sdkState : SdkState = SdkState.NOT_READY
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
     
@@ -102,6 +104,7 @@ import Network
         shouldShowOtplessOneTapUI: Bool = true
     ) {
         self.merchantOtplessRequest = nil
+        self.sdkState = .NOT_READY
         self.merchantAppId = appId
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
@@ -156,6 +159,7 @@ import Network
     }
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
+        self.pendingCode = ""
         self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
         
@@ -198,19 +202,28 @@ import Network
             return
         }
         
-        let response = await verifyCodeUseCase.invoke(
-            state: self.state ?? "",
-            queryParams: getVerifyCodeQueryParams(code: code),
-            getTransactionStatusUseCase: transactionStatusUseCase
-        )
-        
-        if let response = response.0 {
-            invokeResponse(response)
+        if (self.sdkState == .READY){
+            await self.verifyCodeAndInvokeIfReady(code: code)
+        } else {
+            self.pendingCode.append(code)
         }
-        
-        if let uid = response.1 {
-            SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
-        }
+    }
+    
+    private func verifyCodeAndInvokeIfReady(code : String) async{
+            let response = await verifyCodeUseCase.invoke(
+                state: self.state ?? "",
+                queryParams: getVerifyCodeQueryParams(code: code),
+                getTransactionStatusUseCase: transactionStatusUseCase
+            )
+            
+            if let response = response.0 {
+                invokeResponse(response)
+            }
+            
+            if let uid = response.1 {
+                SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
+            }
+        self.pendingCode = ""
     }
     
     /// Registers the application to use Facebook Login.
@@ -371,6 +384,7 @@ private extension Otpless {
                     // Error while fetching config
                     self?.invokeResponse(otplessResponse)
                 } else {
+                    self?.sdkState = .READY
                     self?.invokeResponse(OtplessResponse.sdkReady)
                 }
                 
@@ -380,6 +394,9 @@ private extension Otpless {
                     await MainActor.run {
                         oneTapDataDelegate.onOneTapData(configResponse?.0?.userDetails?.toOneTapIdentities())
                     }
+                }
+                if (self?.pendingCode != nil && !self!.pendingCode.isEmpty) {
+                    await self?.verifyCodeAndInvokeIfReady(code: self!.pendingCode)
                 }
             }
         }

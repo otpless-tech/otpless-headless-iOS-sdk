@@ -205,7 +205,7 @@ import Network
         if (self.sdkState == .READY){
             await self.verifyCodeAndInvokeIfReady(code: code)
         } else {
-            self.pendingCode.append(code)
+            self.pendingCode = code
         }
     }
     

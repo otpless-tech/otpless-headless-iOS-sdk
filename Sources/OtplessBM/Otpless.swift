@@ -47,6 +47,9 @@ import Network
     internal private(set) var pendingCode = ""
     internal private(set) var sdkState : SdkState = SdkState.NOT_READY
     
+    public var customEnvURL = ""
+    var customEnv : ENV_TYPE = .PROD
+    
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
     
     internal private(set) var merchantConfig: MerchantConfigResponse? = nil
@@ -105,6 +108,7 @@ import Network
     ) {
         self.merchantOtplessRequest = nil
         self.sdkState = .NOT_READY
+        self.customEnv = self.getEnvironment()
         self.merchantAppId = appId
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
@@ -135,6 +139,45 @@ import Network
             
             self.fetchStateAndMerchantConfig()
         }
+    }
+    
+    private func getEnvironment() -> ENV_TYPE {
+        if let customEnv = SecureStorage.shared.getFromUserDefaults(key: "otpless_custom_environment", defaultValue: "") as? String,
+           !customEnv.isEmpty {
+            self.customEnvURL = customEnv
+            return .CUSTOM
+        }
+        
+        if let env = SecureStorage.shared.getFromUserDefaults(key: "otpless_environment", defaultValue: "") as? String,
+           env == ENV_TYPE.PREPROD.rawValue {
+            return .PREPROD
+        }
+        
+        return .PROD
+    }
+
+    
+    public func setEnvironment(_ environment: ENV_TYPE) {
+        switch environment {
+        case .PROD:
+            // remove key
+            SecureStorage.shared.deleteFromUserDefaults(key: "otpless_environment")
+            SecureStorage.shared.deleteFromUserDefaults(key: "otpless_custom_environment")
+            break
+        case .PREPROD:
+            SecureStorage.shared.saveToUserDefaults(key: "otpless_environment", value: ENV_TYPE.PREPROD.rawValue)
+            break
+        case .CUSTOM:
+            if customEnvURL != nil && !customEnvURL.isEmpty {
+                SecureStorage.shared.saveToUserDefaults(key: "otpless_custom_environment", value: customEnvURL)
+                SecureStorage.shared.saveToUserDefaults(key: "otpless_environment", value: ENV_TYPE.CUSTOM.rawValue)
+            } else {
+                SecureStorage.shared.delete(key: "otpless_environment")
+                SecureStorage.shared.delete(key: "otpless_custom_environment")
+            }
+            break
+        }
+        
     }
     
     @objc public func isOtplessDeeplink(url : URL) -> Bool {
@@ -743,4 +786,12 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
 @MainActor
 public protocol OneTapDataDelegate: NSObjectProtocol {
     func onOneTapData(_ identities: [OneTapIdentity]?)
+}
+
+
+public enum ENV_TYPE: String {
+    case PROD,
+         PREPROD,
+         CUSTOM
+         
 }

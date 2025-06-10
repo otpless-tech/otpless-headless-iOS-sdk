@@ -75,9 +75,15 @@ internal final class SecureStorage: @unchecked Sendable {
     
     func saveToUserDefaults<T>(key: String, value: T) {
         UserDefaults.standard.set(value, forKey: key)
+        UserDefaults.standard.synchronize()
     }
     
     func getFromUserDefaults<T>(key: String, defaultValue: T) -> T {
         return UserDefaults.standard.object(forKey: key) as? T ?? defaultValue
+    }
+    
+    func deleteFromUserDefaults(key: String) {
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.synchronize()
     }
 }

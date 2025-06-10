@@ -13,6 +13,7 @@ final class ApiManager: Sendable {
     private let snaTimeout: TimeInterval
     private let enableLogging: Bool
     private let baseURLUserAuth = "https://user-auth.otpless.app"
+    private let baseURLUserAuthPP = "https://user-auth-pp.otpless.app"
     private let baseURLSekura = "http://80.in.safr.sekuramobile.com"
     
     // MARK: Paths for APIs
@@ -48,7 +49,18 @@ final class ApiManager: Sendable {
             newPath = path.replacingOccurrences(of: "{state}", with: state)
         }
         
-        let url = constructURL(baseURL: baseURLUserAuth, path: newPath, queryParameters: queryParameters, method: method)
+        var env: String = baseURLUserAuth
+        switch Otpless.shared.customEnv {
+        case .PREPROD:
+            env = baseURLUserAuthPP
+        case .CUSTOM:
+            env = Otpless.shared.customEnvURL
+        case .PROD:
+            env = baseURLUserAuth
+            
+        }
+        
+        let url = constructURL(baseURL: env, path: newPath, queryParameters: queryParameters, method: method)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = userAuthTimeout

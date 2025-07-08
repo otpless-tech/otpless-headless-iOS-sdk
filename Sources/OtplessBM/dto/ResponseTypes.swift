@@ -13,5 +13,6 @@ public enum ResponseTypes: String {
          FALLBACK_TRIGGERED,
          FAILED,
          SDK_READY,
-         DELIVERY_STATUS
+         DELIVERY_STATUS,
+         AUTH_TERMINATED
 }

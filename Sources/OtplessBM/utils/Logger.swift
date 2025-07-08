@@ -45,3 +45,10 @@ public enum LogType: String, @unchecked Sendable {
 public protocol OtplessLoggerDelegate: NSObjectProtocol {
     func log(message: String, type: LogType)
 }
+
+@inline(__always)
+internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
+#if DEBUG
+    print("[\(file):\(line)] \(function) → \(message())")
+#endif
+}

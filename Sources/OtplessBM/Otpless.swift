@@ -442,6 +442,15 @@ private extension Otpless {
         
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
+            // check for error code, if error code is terminal error code
+            // then give create terminal response and exit
+            if let errorCode = otplessResponse.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
+                let terminalResponse = OtplessResponse(responseType: ResponseTypes.AUTH_TERMINATED, response: otplessResponse.response, statusCode: otplessResponse.statusCode)
+                invokeResponse(terminalResponse)
+                sendEvent(event: .SNA_INIT_TERMINAL_RESPONSE)
+                DLog("SNA auth init terminated")
+                return
+            }
         }
         
         if let tokenAsIdUIdAndTimerSettings = intentResponse.tokenAsIdUIdAndTimerSettings {
@@ -471,6 +480,13 @@ private extension Otpless {
                     invokeResponse(op)
                     if op.responseType == ResponseTypes.ONETAP {
                         // No need to proceed further, user has been authenticated
+                        return
+                    }
+                    // check for terminal error code
+                    if let errorCode = op.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
+                        // terminal response is sent, exit the flow
+                        sendEvent(event: .SNA_AUTH_TERMINAL_RESPONSE)
+                        DLog("SNA auth terminated")
                         return
                     }
                 }

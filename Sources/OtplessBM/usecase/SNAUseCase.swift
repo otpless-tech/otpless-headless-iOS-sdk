@@ -147,7 +147,7 @@ internal final class SNAUseCase: @unchecked Sendable {
     private func makeInitOrTerminateResponse(_ data: TransactionStatusResponse) -> OtplessResponse {
         if let quantumLeap = data.quantumLeap {
             return OtplessResponse.createSuccessfulInitiateResponse(
-                requestId: quantumLeap.channelAuthToken ?? "",
+                requestId: quantumLeap.channelAuthToken,
                 channel: Otpless.shared.authType,
                 authType: Otpless.shared.authType,
                 deliveryChannel: quantumLeap.communicationMode

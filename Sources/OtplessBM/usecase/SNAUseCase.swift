@@ -139,14 +139,22 @@ internal final class SNAUseCase: @unchecked Sendable {
                         "authType": SILENT_AUTH
                     ], statusCode: 400
                 ),
-                OtplessResponse.createSuccessfulInitiateResponse(
-                    requestId: data.quantumLeap?.channelAuthToken ?? "",
-                    channel: Otpless.shared.authType,
-                    authType: Otpless.shared.authType,
-                    deliveryChannel: data.quantumLeap?.communicationMode
-                )
+                makeInitOrTerminateResponse(data)
             ]
         )
+    }
+    
+    private func makeInitOrTerminateResponse(_ data: TransactionStatusResponse) -> OtplessResponse {
+        if let quantumLeap = data.quantumLeap {
+            return OtplessResponse.createSuccessfulInitiateResponse(
+                requestId: quantumLeap.channelAuthToken,
+                channel: Otpless.shared.authType,
+                authType: Otpless.shared.authType,
+                deliveryChannel: quantumLeap.communicationMode
+            )
+        } else {
+            return OtplessResponse.makeTerminalResponse(status: 400, error: String(OtplessConstant.EC.SNA_AUTH_FAILED), message: "Silent Authentication failed.")
+        }
     }
     
     private func performFallbackTransactionRequest(withErrorDict errorDict: [String: String]) async -> SNAUseCaseResponse {

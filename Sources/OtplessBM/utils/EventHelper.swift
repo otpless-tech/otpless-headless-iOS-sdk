@@ -13,7 +13,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         var params = [String: String]()
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
-        params["sdk_version"] = "1.1.6"
+        params["sdk_version"] = "1.1.7"
         params["mid"] = Otpless.shared.merchantAppId
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
@@ -114,4 +114,6 @@ enum EventConstants: String {
     case HEADLESS_MERCHANT_COMMIT = "native_headless_merchant_commit"
     
     case ERROR_API_RESPONSE = "native_api_response_error"
+    case SNA_AUTH_TERMINAL_RESPONSE = "native_sna_auth_terminal_response"
+    case SNA_INIT_TERMINAL_RESPONSE = "native_sna_init_terminal_response"
 }

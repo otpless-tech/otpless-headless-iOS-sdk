@@ -147,6 +147,10 @@ public struct OtplessResponse: @unchecked Sendable {
         return OtplessResponse(responseType: .INITIATE, response: response, statusCode: 5900)
     }
     
+    internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String, message errorMessage: String) -> OtplessResponse {
+        return OtplessResponse(responseType: .AUTH_TERMINATED, response: ["errorCode": errorCode, "errorMessage": errorMessage], statusCode: statusCode)
+    }
+    
     public func toString() -> String {
         return """
         Status Code: \(statusCode)\n

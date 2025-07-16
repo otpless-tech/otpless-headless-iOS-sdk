@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '13.0'
   
   s.subspec 'Core' do |core|
-    core.source_files = 'Sources/OtplessBM/**/*.{swift,h,m}'
+    core.source_files = 'Sources/OtplessBM/**/*'
   end
   
   s.subspec 'FacebookSupport' do |fb|

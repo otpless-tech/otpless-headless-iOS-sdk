@@ -272,8 +272,8 @@ import Network
     public func commitOtplessResponse(_ otplessResponse: OtplessResponse) {
         Utils.convertToEventParamsJson(
             otplessResponse: otplessResponse,
-            callback: { extras, requestId, musId in
-                sendEvent(event: .HEADLESS_MERCHANT_COMMIT, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+            callback: { extras, musId in
+                sendEvent(event: .HEADLESS_MERCHANT_COMMIT, extras: extras, musId: musId ?? "")
             }
         )
     }
@@ -382,32 +382,50 @@ private extension Otpless {
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
 
-            let (merchantConfig, otplessResponse) = await self.getMerchantConfigUseCase.invoke(state: state, queryParams: [:], isRetry: false)
+            let (merchantConfig, otplessResponse) = await self.getMerchantConfigUseCase.invoke(
+                state: state,
+                queryParams: [:],
+                isRetry: false
+            )
 
-            // Store the merchant config and derive channels if available
-            self.merchantConfig = merchantConfig
-            self.phoneIntentChannel = self.getIntentChannelFromConfig(channelConfig: merchantConfig?.channelConfig, isMobile: true) ?? ""
-            self.emailIntentChannel = self.getIntentChannelFromConfig(channelConfig: merchantConfig?.channelConfig, isMobile: false) ?? ""
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
 
-            if let otplessResponse = otplessResponse {
-                // Error occurred during fetch
-                self.invokeResponse(otplessResponse)
-            } else {
-                // SDK ready after successful fetch
-                self.sdkState = .READY
-                self.invokeResponse(OtplessResponse.sdkReady)
+                self.merchantConfig = merchantConfig
+                self.phoneIntentChannel = self.getIntentChannelFromConfig(
+                    channelConfig: merchantConfig?.channelConfig,
+                    isMobile: true
+                ) ?? ""
+                self.emailIntentChannel = self.getIntentChannelFromConfig(
+                    channelConfig: merchantConfig?.channelConfig,
+                    isMobile: false
+                ) ?? ""
+
+                // Send event before invoking any response
+                sendEvent(event: .INIT_HEADLESS)
+
+                if let otplessResponse = otplessResponse {
+                    // Error occurred during fetch
+                    self.invokeResponse(otplessResponse)
+                } else {
+                    // SDK ready after successful fetch
+                    self.sdkState = .READY
+                    self.invokeResponse(OtplessResponse.sdkReady)
+                }
             }
 
-            sendEvent(event: .INIT_HEADLESS)
+            if Task.isCancelled { return }
 
             if let oneTapDataDelegate = self.oneTapDataDelegate {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
                     oneTapDataDelegate.onOneTapData(merchantConfig?.userDetails?.toOneTapIdentities())
                 }
             }
 
-            if !self.pendingCode.isEmpty {
-                await self.verifyCodeAndInvokeIfReady(code: self.pendingCode)
+            let code = self.pendingCode
+            if !code.isEmpty {
+                await self.verifyCodeAndInvokeIfReady(code: code)
             }
         }
     }

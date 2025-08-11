@@ -42,12 +42,10 @@ final class ApiManager: Sendable {
         body: [String: Any]? = nil,
         queryParameters: [String: Any]? = nil
     ) async throws -> Data {
-        // Replace {state} placeholder in the path
+        let startedAt = Date()
         var newPath = path
-        if let state = state {
-            newPath = path.replacingOccurrences(of: "{state}", with: state)
-        }
-        
+        if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
+
         let url = constructURL(baseURL: baseURLUserAuth, path: newPath, queryParameters: queryParameters, method: method)
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -57,68 +55,144 @@ final class ApiManager: Sendable {
             let newBody = getBody(withExistingBody: body)
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
         }
-        
-         var xRequestId: String? = nil
-        
+
+        var xRequestId: String? = nil
+
+        // NEW: stash for catch to use
+        var pendingErrorData: Data? = nil
+        var pendingStatusCode: Int? = nil
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            
+
             if enableLogging {
-                logRequestAndResponse(request, body: body, response, data: data)
+                var sentBodyDict: [String: Any]? = nil
+                if let hb = request.httpBody,
+                   let obj = try? JSONSerialization.jsonObject(with: hb) as? [String: Any] {
+                    sentBodyDict = obj
+                }
+                logRequestAndResponse(request, body: sentBodyDict, response, data: data)
             }
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
+
+            guard let http = response as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
-            
-            if let xRequestHeader = httpResponse.allHeaderFields["x-request-id"] as? String {
-                xRequestId = xRequestHeader
+
+            if let kv = http.allHeaderFields.first(where: { String(describing: $0.key).lowercased() == "x-request-id" }) {
+                xRequestId = kv.value as? String
             }
-            
-            if !(200..<300).contains(httpResponse.statusCode) {
-                var errorBody: [String: Any] = [:]
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    errorBody = json
-                }
-                
+
+            if !(200..<300).contains(http.statusCode) {
+                // just stash and throw; don't emit here
+                pendingErrorData = data
+                pendingStatusCode = http.statusCode
+
+                let errorBody = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
                 throw ApiError(
                     message: errorBody["message"] as? String ?? "Unexpected error occurred",
-                    statusCode: httpResponse.statusCode,
+                    statusCode: http.statusCode,
                     responseJson: errorBody
                 )
             }
-            
+
+            // success tracking (if you still want it)
+             if shouldTrackSuccess(path: newPath, method: method, statusCode: http.statusCode, data: data) {
+                 sendApiEvent(event: .SUCCESS_API_RESPONSE, path: newPath, method: method, statusCode: http.statusCode,
+                              startedAt: startedAt, xRequestId: xRequestId, data: nil)
+             }
+
             return data
         } catch {
+            // normalize
             let apiError: ApiError
-            var errorExtras: [String: String] = [:]
-            if let errorAsApiError = error as? ApiError {
-                apiError = errorAsApiError
+            if let e = error as? ApiError {
+                apiError = e
             } else if let urlError = error as? URLError {
-                apiError = handleURLError(urlError)
+                apiError = handleURLError(urlError)   // make sure this does NOT emit
             } else {
                 apiError = ApiError(message: error.localizedDescription, statusCode: 500, responseJson: [
-                    "errorCode": "500",
-                    "errorMessage": "Something Went Wrong!"
+                    "errorCode": "500", "errorMessage": "Something Went Wrong!"
                 ])
             }
-            errorExtras["which_api"] = path
-            for (key, value) in apiError.getResponse() {
-                errorExtras[key] = value
-            }
-            
-            if let xRequestId = xRequestId {
-                errorExtras["x-request-id"] = xRequestId
-            } else {
-                errorExtras["x-request-id"] = "Could not fetch because HTTPURLResponse parsing failed."
-            }
-            
-            errorExtras["token"] = Otpless.shared.token
-            
-            sendEvent(event: .ERROR_API_RESPONSE, extras: errorExtras)
+
+            // single, centralized emit (uses stashed HTTP data/status if available)
+            sendApiEvent(
+                event: .ERROR_API_RESPONSE,
+                path: newPath,
+                method: method,
+                statusCode: pendingStatusCode ?? apiError.statusCode,
+                startedAt: startedAt,
+                xRequestId: xRequestId,
+                data: pendingErrorData,           // includes api_response when we had one
+                apiError: apiError
+            )
+
             throw apiError
         }
     }
+
+    
+    // Never track success for these two APIs; still track errors.
+    private func isSuppressedSuccessPath(_ fullPath: String) -> Bool {
+        let base1 = ApiManager.TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
+        let base2 = ApiManager.SNA_TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
+        return fullPath.contains(base1) || fullPath.contains(base2)
+    }
+
+    // Central place to decide success tracking; easy to extend later.
+    private func shouldTrackSuccess(path: String, method: String, statusCode: Int, data: Data) -> Bool {
+        if isSuppressedSuccessPath(path) { return false }
+        return true                                       // track all other successes
+    }
+
+    // Uses your real sendEvent signature.
+    private func sendApiEvent(
+        event: EventConstants,
+        path: String,
+        method: String,
+        statusCode: Int,
+        startedAt: Date,
+        xRequestId: String?,
+        data: Data?,
+        apiError: ApiError? = nil
+    ) {
+        var extras: [String: String] = [
+            "which_api": path,
+            "method": method,
+            "status_code": "\(statusCode)",
+            "latency": String(Int(Date().timeIntervalSince(startedAt) * 1000)),
+            "x-request-id": xRequestId ?? ""
+        ]
+        if let apiError = apiError {
+            for (k, v) in apiError.getResponse() { extras[k] = v }
+        }
+        if event == .ERROR_API_RESPONSE {
+            extras["api_response"] = stringifyApiResponse(data: data, maxLen: 8_192)
+        }
+
+        sendEvent(
+            event: event,
+            extras: extras,
+            musId: ""                  // keep empty unless you have it at callsite
+        )
+    }
+
+    private func stringifyApiResponse(data: Data?, maxLen: Int) -> String {
+        guard let data = data else { return "[no response data]" }
+        if let json = try? JSONSerialization.jsonObject(with: data),
+           let compact = try? JSONSerialization.data(withJSONObject: json),
+           var s = String(data: compact, encoding: .utf8) {
+            if s.count > maxLen { s = String(s.prefix(maxLen)) + "…[truncated]" }
+            return s
+        }
+        if var s = String(data: data, encoding: .utf8) {
+            if s.count > maxLen { s = String(s.prefix(maxLen)) + "…[truncated]" }
+            return s
+        }
+        return "[non-text response \(data.count) bytes]"
+    }
+
+
     
     private func getBody(withExistingBody body: [String: Any]?) -> [String: Any] {
         var mutableBody: [String: Any] = [:]
@@ -232,10 +306,6 @@ final class ApiManager: Sendable {
     private func handleURLError(_ urlError: URLError) -> ApiError {
         let code = urlError.errorCode
         let errorBody = urlError.errorUserInfo
-        sendEvent(event: .ERROR_API_RESPONSE, extras: [
-            "errorCode": String(code),
-            "errorMessage": urlError.localizedDescription
-        ])
         
         switch urlError.code {
         case .timedOut:

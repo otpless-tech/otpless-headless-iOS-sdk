@@ -103,12 +103,10 @@ final internal class Utils {
         otplessResponse: OtplessResponse?,
         callback: @escaping (
             [String: String],
-            _ requestId: String?,
             _ musId: String?
         ) -> Void
     ) {
         var eventParam = [String: String]()
-        var requestId: String? = nil
         var musId: String? = nil
         
         var response = [String: String]()
@@ -117,7 +115,7 @@ final internal class Utils {
             response["statusCode"] = "-1"
             response["responseType"] = "null"
             response["response"] = "{}"
-            callback(response, nil, nil)
+            callback(response, nil)
             return
         }
         
@@ -132,12 +130,8 @@ final internal class Utils {
             }
         } else {
             if let dataJson = otplessResponse?.response?["data"] as? [String: Any] {
-                requestId = dataJson["token"] as? String
                 musId = dataJson["userId"] as? String
             } else {
-                if let token = otplessResponse?.response?["requestId"] as? String {
-                    requestId = token
-                }
                 if otplessResponse?.responseType != .ONETAP {
                     response["response"] = Utils.convertDictionaryToString(otplessResponse?.response ?? [:])
                 }
@@ -150,7 +144,7 @@ final internal class Utils {
             eventParam["response"] = jsonString
         }
         
-        callback(eventParam, requestId, musId)
+        callback(eventParam, musId)
     }
     
 }

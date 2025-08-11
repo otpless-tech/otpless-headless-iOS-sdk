@@ -264,8 +264,8 @@ extension Otpless {
         } else {
             Utils.convertToEventParamsJson(
                 otplessResponse: otplessResponse,
-                callback: { extras, requestId, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "", requestId: requestId ?? "")
+                callback: { extras, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
                 }
             )
         }

@@ -32,8 +32,8 @@ struct User: Codable {
 }
 
 struct Subdivisions: Codable {
-    let code: String
-    let name: String
+    let code: String?
+    let name: String?
     
     func toDict() -> [String: Any] {
         ["code": code, "name": name]
@@ -69,7 +69,7 @@ struct AuthDetail: Codable {
 }
 
 struct City: Codable {
-    let name: String
+    let name: String?
     
     func toDict() -> [String: Any] {
         return ["name": name]
@@ -77,7 +77,7 @@ struct City: Codable {
 }
 
 struct Continent: Codable {
-    let code: String
+    let code: String?
     
     func toDict() -> [String: Any] {
         return ["code": code]
@@ -121,8 +121,8 @@ struct DeviceInfo: Codable {
 }
 
 struct Country: Codable {
-    let code: String
-    let name: String
+    let code: String?
+    let name: String?
     
     func toDict() -> [String: Any] {
         return ["code": code, "name": name]
@@ -176,22 +176,22 @@ struct Identity: Codable {
 
 struct IpLocation: Codable {
     let city: City
-    let continent: Continent
-    let country: Country
-    let latitude: Double
-    let longitude: Double
-    let postalCode: String
-    let subdivisions: Subdivisions
+    let continent: Continent?
+    let country: Country?
+    let latitude: Double?
+    let longitude: Double?
+    let postalCode: String?
+    let subdivisions: Subdivisions?
     
     func toDict() -> [String: Any] {
         return [
             "city": city.toDict(),
-            "continent": continent.toDict(),
-            "country": country.toDict(),
+            "continent": continent?.toDict(),
+            "country": country?.toDict(),
             "latitude": latitude,
             "longitude": longitude,
             "postalCode": postalCode,
-            "subdivisions": subdivisions.toDict()
+            "subdivisions": subdivisions?.toDict()
         ]
     }
 }
@@ -201,8 +201,8 @@ struct MerchantUserInfo: Codable {
     let deviceInfo: DeviceInfo?
     let idToken: String?
     let identities: [Identity]
-    let network: Network
-    let status: String
+    let network: Network?
+    let status: String?
     let timestamp: String
     let token: String
     let userId: String?
@@ -212,7 +212,7 @@ struct MerchantUserInfo: Codable {
             "deviceInfo": deviceInfo?.toDict() as Any,
             "idToken": idToken as Any,
             "identities": identities.map { $0.toDict() },
-            "network": network.toDict(),
+            "network": network?.toDict(),
             "status": status,
             "timestamp": timestamp,
             "token": token,
@@ -222,14 +222,14 @@ struct MerchantUserInfo: Codable {
 }
 
 struct Network: Codable {
-    let ip: String
-    let ipLocation: IpLocation
-    let timezone: String
+    let ip: String?
+    let ipLocation: IpLocation?
+    let timezone: String?
     
     func toDict() -> [String: Any] {
         return [
             "ip": ip,
-            "ipLocation": ipLocation.toDict(),
+            "ipLocation": ipLocation?.toDict(),
             "timezone": timezone
         ]
     }

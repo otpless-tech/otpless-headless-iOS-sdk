@@ -8,12 +8,12 @@
 import Foundation
 import Network
 
-func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = "", requestId: String = ""){
+func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = ""){
     do {
         var params = [String: String]()
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
-        params["sdk_version"] = "1.1.8"
+        params["sdk_version"] = "1.1.9"
         params["mid"] = Otpless.shared.merchantAppId
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
@@ -30,11 +30,8 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         params["inid"] = Otpless.shared.inid
         params["event_id"] = String(Otpless.shared.getEventCounterAndIncrement())
         
-        if !requestId.isEmpty {
-            params["token"] = requestId
-        } else if let mToken = extras["token"],
-                  !mToken.isEmpty {
-            params["token"] = mToken
+        if Otpless.shared.token != nil && !Otpless.shared.token.isEmpty {
+            params["token"] = Otpless.shared.token
         }
         
         if !musId.isEmpty {
@@ -50,7 +47,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         var deviceInfo = Otpless.shared.deviceInfo
         deviceInfo.removeValue(forKey: "userAgent") // Remove userAgent key because parsing is failing on backend due to this and userAgent is by default added so we don't need it
         
-        eventParams["device_info"] = Utils.convertDictionaryToString(deviceInfo)
+        params["device_info"] = Utils.convertDictionaryToString(deviceInfo)
         
         if let eventParamsData = try? JSONSerialization.data(withJSONObject: newEventParams, options: []),
            let eventParamsString = String(data: eventParamsData, encoding: .utf8) {
@@ -114,6 +111,7 @@ enum EventConstants: String {
     case HEADLESS_MERCHANT_COMMIT = "native_headless_merchant_commit"
     
     case ERROR_API_RESPONSE = "native_api_response_error"
+    case SUCCESS_API_RESPONSE = "native_api_response_success"
     case SNA_AUTH_TERMINAL_RESPONSE = "native_sna_auth_terminal_response"
     case SNA_INIT_TERMINAL_RESPONSE = "native_sna_init_terminal_response"
 }

@@ -174,7 +174,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                     tokenAsIdUIdAndTimerSettings: nil,
                     otplessResponse: [
                         OtplessResponse(
-                            responseType: .INITIATE,
+                            responseType: .VERIFY,
                             response: [
                                 "errorCode": "9106",
                                 "errorMessage": "Transaction timeout",
@@ -186,34 +186,17 @@ internal final class SNAUseCase: @unchecked Sendable {
             }
             
         case .failure(let error):
-            guard let _ = error as? ApiError else {
-                snaUseCaseResponse = SNAUseCaseResponse(
-                    tokenAsIdUIdAndTimerSettings: nil,
-                    otplessResponse: [
-                        OtplessResponse(
-                            responseType: .INITIATE,
-                            response: Utils.createErrorDictionary(
-                                errorCode: "9106",
-                                errorMessage: "Transaction timeout",
-                                authType: SILENT_AUTH
-                            ),
-                            statusCode: 9106
-                        )
-                    ]
-                )
-                return snaUseCaseResponse
-            }
-            
             snaUseCaseResponse = SNAUseCaseResponse(
                 tokenAsIdUIdAndTimerSettings: nil,
                 otplessResponse: [
                     OtplessResponse(
                         responseType: .VERIFY,
-                        response: [
-                            "errorCode": "400",
-                            "errorMessage": "Silent Authentication failed.",
-                            "authType": SILENT_AUTH
-                        ], statusCode: 400
+                        response: Utils.createErrorDictionary(
+                            errorCode: "9106",
+                            errorMessage: "Transaction timeout",
+                            authType: SILENT_AUTH
+                        ),
+                        statusCode: 9106
                     )
                 ]
             )

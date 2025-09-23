@@ -13,7 +13,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         var params = [String: String]()
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
-        params["sdk_version"] = "2.0.2"
+        params["sdk_version"] = Constants.SDK_VERSION
         params["mid"] = Otpless.shared.merchantAppId
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
@@ -55,7 +55,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         }
         
         fetchDataWithGET(
-            apiRoute: "https://d33ftqsb9ygkos.cloudfront.net",
+            apiRoute: "https://events.otpless.tech/events",
             params: params
         )
     }

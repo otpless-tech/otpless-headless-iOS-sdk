@@ -76,8 +76,8 @@ internal final class ApiRepository: @unchecked Sendable {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.SSO_VERIFY_CODE_PATH,
-                method: "GET",
-                queryParameters: queryParams
+                method: "POST",
+                body: appendTokenIds(queryParams: queryParams)
             )
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
         }
@@ -91,8 +91,8 @@ internal final class ApiRepository: @unchecked Sendable {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.OTP_VERIFICATION_PATH,
-                method: "GET",
-                queryParameters: queryParams
+                method: "POST",
+                body: appendTokenIds(queryParams: queryParams)
             )
             
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
@@ -100,6 +100,21 @@ internal final class ApiRepository: @unchecked Sendable {
         catch {
             return Result.failure(error)
         }
+    }
+    
+    func appendTokenIds(queryParams: [String: Any]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        result.merge(queryParams) {(_, new) in new}
+        if !Otpless.shared.uid.isEmpty {
+            result["uid"] = Otpless.shared.uid
+        }
+        if !Otpless.shared.asId.isEmpty {
+            result["asId"] = Otpless.shared.asId
+        }
+        if !Otpless.shared.token.isEmpty {
+            result["token"] = Otpless.shared.token
+        }
+        return result
     }
     
     func makeSNACall(url: String, onComplete: @escaping @Sendable ([String: Any]) -> Void) {

@@ -5,7 +5,7 @@ import OTPlessIntelligence
 #endif
 
 @available(iOS 15.0, *)
-internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
+internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker, @unchecked Sendable {
 
     private var isConfigured = false
     private var currentIntelligenceTask: Task<Void, Never>?
@@ -46,8 +46,8 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
             eventJson["result"] = success ? "success" : "fail"
             sendEvent(
                 event: EventConstants.INIT_FRAUD_SDK,
-                    extras: eventJson
-                )
+                extras: eventJson
+            )
             completion(success, success ? nil : "Failed to configure Intelligence SDK")
         }
         #else
@@ -61,19 +61,17 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
         #if canImport(OTPlessIntelligence)
         let className = "OTPlessIntelligence.OTPlessIntelligence"
         guard NSClassFromString(className) != nil else {
-            DispatchQueue.main.async {
-                delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence runtime not found")
-            }
+            delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence runtime not found")
             return
         }
 
         guard #available(iOS 15.0, *) else {
-            DispatchQueue.main.async {
-                delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence requires iOS 15+")
-            }
+            delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence requires iOS 15+")
             return
         }
+
         let startTime = Date().timeIntervalSince1970
+
         OTPlessIntelligence.shared.getScore { [weak self] result in
             guard let self = self else { return }
 
@@ -81,12 +79,12 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
             case .success(let res):
                 let src = res.response
                 let delta = Date().timeIntervalSince1970 - startTime
-                var eventJson: [String: String] = ["result":"success"]
+                var eventJson: [String: String] = ["result": "success"]
                 eventJson["responseTime"] = String(Int(delta))
                 sendEvent(
                     event: EventConstants.REQUEST_INTELLIGENCE_FRAUD_SDK,
-                        extras: eventJson
-                    )
+                    extras: eventJson
+                )
                 
                 let model = IntelligenceInfoData(
                     requestId: src.requestId,
@@ -110,9 +108,7 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
                     deviceMeta: Self.convert(src.deviceMeta)
                 )
                 
-                DispatchQueue.main.async {
-                    delegate?.intelligenceDataReceived(model)
-                }
+                delegate?.intelligenceDataReceived(model)
                 
                 let tweaked = Self.tweakRawJSON(res.rawJson)
                 self.pushIntelligenceDataToServerWithIntelligenceData(tweaked)
@@ -122,49 +118,48 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
                 
                 switch error {
                 case .intelligenceError(let requestId, let message):
-                    var eventJson: [String: String] = ["result":"failure"]
+                    var eventJson: [String: String] = ["result": "failure"]
                     eventJson["message"] = message
                     eventJson["requestId"] = requestId
                     sendEvent(
                         event: EventConstants.REQUEST_INTELLIGENCE_FRAUD_SDK,
-                            extras: eventJson
-                        )
-                    fetchError = IntelligenceFetchError(requestId: requestId, message: "OTPless Intelligence fetch failed.")
+                        extras: eventJson
+                    )
+                    fetchError = IntelligenceFetchError(
+                        requestId: requestId,
+                        message: "OTPless Intelligence fetch failed."
+                    )
                     
                 case .notConfigured:
-                    var eventJson: [String: String] = ["result":"failure"]
+                    var eventJson: [String: String] = ["result": "failure"]
                     eventJson["message"] = "OTPless Intelligence SDK is not configured"
                     sendEvent(
                         event: EventConstants.REQUEST_INTELLIGENCE_FRAUD_SDK,
-                            extras: eventJson
-                        )
+                        extras: eventJson
+                    )
                     fetchError = IntelligenceFetchError(
                         requestId: nil,
                         message: "OTPless Intelligence SDK is not configured"
                     )
                     
                 case .unknown:
-                    var eventJson: [String: String] = ["result":"failure"]
+                    var eventJson: [String: String] = ["result": "failure"]
                     eventJson["message"] = "Unknown intelligence error"
                     sendEvent(
                         event: EventConstants.REQUEST_INTELLIGENCE_FRAUD_SDK,
-                            extras: eventJson
-                        )
+                        extras: eventJson
+                    )
                     fetchError = IntelligenceFetchError(
                         requestId: nil,
                         message: "Unknown intelligence error"
                     )
                 }
                 
-                DispatchQueue.main.async {
-                    delegate?.intelligenceFailed(error: fetchError)
-                }
+                delegate?.intelligenceFailed(error: fetchError)
             }
         }
         #else
-        DispatchQueue.main.async {
-            delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence SDK is not added")
-        }
+        delegate?.intelligenceNotAvailable(reason: "OTPless Intelligence SDK is not added")
         #endif
     }
 
@@ -208,43 +203,47 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
         return requestData
     }
     
-    internal func updateToDFRID(token: String?){
-        var eventJson: [String: String] = ["startType":"TxnCompleted"]
+    internal func updateToDFRID(token: String?) {
+        var eventJson: [String: String] = ["startType": "TxnCompleted"]
         sendEvent(
             event: EventConstants.UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK_START,
-                extras: eventJson
-            )
+            extras: eventJson
+        )
         if !Otpless.shared.drfID.isEmpty {
-            var requestMap = Self.getRequestMap(token: token)
-            Task { [weak self] in
-                await self?.postIntelligencData(data: requestMap)
-            }
+            let requestMap = Self.getRequestMap(token: token)
+            postIntelligencData(data: requestMap)
         }
     }
     
-    internal func updateToDFRID(){
-        var eventJson: [String: String] = ["startType":"TxnCreated"]
+    internal func updateToDFRID() {
+        var eventJson: [String: String] = ["startType": "TxnCreated"]
         sendEvent(
             event: EventConstants.UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK_START,
-                extras: eventJson
-            )
+            extras: eventJson
+        )
         updateToDFRID(token: nil)
     }
 
     private func pushIntelligenceDataToServerWithIntelligenceData(_ json: [String: Any]) {
         var requestMap = Self.getRequestMap(token: nil)
         requestMap["data"] = json
-        Task { [weak self] in
-            await self?.postIntelligencData(data: requestMap)
-        }
+        postIntelligencData(data: requestMap)
+    }
+
+    // Wrapper type to make the payload Sendable for Task closure capture
+    private struct IntelligencePayload: @unchecked Sendable {
+        let data: [String: Any]
     }
     
     internal func postIntelligencData(data: [String: Any]) {
         // Cancel any in-flight request
         currentIntelligenceTask?.cancel()
-        // Start a new one
-        currentIntelligenceTask = Task { [weak self] in
-            await self?.sendIntelligenceDataWithRetry(data: data)
+        
+        let payload = IntelligencePayload(data: data)
+        
+        // Start a new task with Sendable payload + Sendable self
+        currentIntelligenceTask = Task { [weak self, payload] in
+            await self?.sendIntelligenceDataWithRetry(data: payload.data)
         }
     }
 
@@ -263,23 +262,23 @@ internal final class OTPlessIntelligenceWorkerImpl: OTPlessIntelligenceWorker {
             case .success(let resp):
                 if let dfrID = resp?.dfrId {
                     Otpless.shared.drfID = dfrID
-                    var eventJson: [String: String] = ["result":"success"]
+                    var eventJson: [String: String] = ["result": "success"]
                     eventJson["dfrId"] = dfrID
                     sendEvent(
                         event: EventConstants.UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK,
-                            extras: eventJson
-                        )
+                        extras: eventJson
+                    )
                 }
                 return
 
             case .error(let apiError):
-                var eventJson: [String: String] = ["result":"failure"]
+                var eventJson: [String: String] = ["result": "failure"]
                 eventJson["attemptCount"] = String(attempt)
                 eventJson["message"] = apiError.localizedDescription
                 sendEvent(
                     event: EventConstants.UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK,
-                        extras: eventJson
-                    )
+                    extras: eventJson
+                )
                 // If we've exhausted attempts, stop
                 if attempt == maxAttempts { return }
 

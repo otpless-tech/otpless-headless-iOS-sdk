@@ -14,6 +14,9 @@ struct TransactionStatusResponse: Codable {
     let otpVerificationDetail: OtpVerificationDetail?
     let quantumLeap: QuantumLeap?
 }
+struct IntelligenceApiResponse: Codable {
+    let dfrId : String?
+}
 
 struct User: Codable {
     let email: String?

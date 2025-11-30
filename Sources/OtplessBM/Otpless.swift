@@ -9,6 +9,7 @@ import Foundation
 import UIKit
 import Network
 
+
 @objc final public class Otpless: NSObject, @unchecked Sendable {
     @objc public static let shared: Otpless = {
         return Otpless()
@@ -26,6 +27,7 @@ import Network
     internal private(set) var emailIntentChannel: String = ""
     internal private(set) var communicationMode: String = ""
     internal private(set) var authType: String = ""
+    internal var drfID: String = ""
     
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
@@ -41,11 +43,13 @@ import Network
     
     internal private(set) weak var loggerDelegate: OtplessLoggerDelegate?
     internal private(set) weak var responseDelegate: OtplessResponseDelegate?
-    internal private(set) weak var oneTapDataDelegate: OneTapDataDelegate?
+    internal private(set) weak var otplessIntelligenceDelegate: OTPlessIntelligenceDelegate?
     
     internal private(set) weak var merchantWindowScene: UIWindowScene?
     internal private(set) var pendingCode = ""
     internal private(set) var sdkState : SdkState = SdkState.NOT_READY
+    
+    internal var intelligenceWorker: OTPlessIntelligenceWorker?
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
     
@@ -83,14 +87,8 @@ import Network
     
     private var eventCounter = 1
     
-    private var shouldShowOtplessOneTapUI: Bool = true
-    
     let cellularMonitor = NWPathMonitor(requiredInterfaceType: .cellular)
     internal private(set) var isMobileDataEnabled: Bool = true
-    
-    public func setOneTapDataDelegate(_ oneTapDataDelegate: OneTapDataDelegate?) {
-        self.oneTapDataDelegate = oneTapDataDelegate
-    }
     
     internal private(set) var otpLength: Int = -1
     
@@ -100,8 +98,7 @@ import Network
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
-        vc: UIViewController,
-        shouldShowOtplessOneTapUI: Bool = true
+        vc: UIViewController
     ) {
         self.merchantOtplessRequest = nil
         self.sdkState = .NOT_READY
@@ -109,7 +106,6 @@ import Network
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
-        self.shouldShowOtplessOneTapUI = shouldShowOtplessOneTapUI
         startMobileDataMonitoring()
         
         Task(priority: .medium) { [weak self] in
@@ -133,8 +129,29 @@ import Network
                 self?.appInfo = self?.getAppInfoFromMainActor() ?? [:]
             }
             
-            self.fetchStateAndMerchantConfig()
+            self.fetchStateAndMerchantConfig(onlyState: false)
         }
+    }
+    private func intelligenceInitialized(withAppId appId: String){
+        self.merchantAppId = appId
+        Task(priority: .medium) { [weak self] in
+            guard let self = self else { return }
+            
+            await DeviceInfoUtils.shared.initialise()
+            let inid = await self.getInidFromMainActor()
+            let tsid = await self.getTsidFromMainActor()
+            self.inid = inid
+            self.tsid = tsid
+            
+            await MainActor.run {
+                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
+            }
+            
+            await MainActor.run { [weak self] in
+                self?.appInfo = self?.getAppInfoFromMainActor() ?? [:]
+            }
+        }
+        
     }
     
     @objc public func isOtplessDeeplink(url : URL) -> Bool {
@@ -278,21 +295,10 @@ import Network
         )
     }
     
-    public func performOneTap(forIdentity oneTapIdentity: OneTapIdentity) async {
-        let oneTapRequest = OtplessRequest()
-        oneTapRequest.set(oneTapValue: oneTapIdentity.identity)
-        let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [oneTapIdentity.uiId], uid: self.uid)
-        
-        if let otplessResponse = intentResponse.otplessResponse {
-            invokeResponse(otplessResponse)
-        }
-    }
-    
     @objc public func cleanup() {
         self.merchantVC = nil
         cellularMonitor.cancel()
         self.responseDelegate = nil
-        self.oneTapDataDelegate = nil
     }
     
     @objc public func isSdkReady() -> Bool {
@@ -342,10 +348,11 @@ extension Otpless {
     public func clearAll() {
         SecureStorage.shared.clearAll()
     }
+    
 }
 
 private extension Otpless {
-    func fetchStateAndMerchantConfig() {
+    func fetchStateAndMerchantConfig(onlyState:Bool) {
         requestStateForDeviceIfNil(onFetch: { [weak self] state in
             guard let state = state else {
                 return
@@ -353,6 +360,9 @@ private extension Otpless {
             
             self?.state = state
             SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
+            if (onlyState){
+                return
+            }
             self?.fetchMerchantConfig()
         })
     }
@@ -416,13 +426,6 @@ private extension Otpless {
 
             if Task.isCancelled { return }
 
-            if let oneTapDataDelegate = self.oneTapDataDelegate {
-                await MainActor.run { [weak self] in
-                    guard let self = self else { return }
-                    oneTapDataDelegate.onOneTapData(merchantConfig?.userDetails?.toOneTapIdentities())
-                }
-            }
-
             let code = self.pendingCode
             if !code.isEmpty {
                 await self.verifyCodeAndInvokeIfReady(code: code)
@@ -435,22 +438,6 @@ private extension Otpless {
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
         if await !canRequestBeMade(request: otplessRequest) {
             return
-        }
-        
-        if !otplessRequest.hasOtp() && otplessRequest.getRequestId().isEmpty {
-            if self.shouldShowOtplessOneTapUI {
-                let oneTapIdentity = await showOneTapViewIfIdentityExists(request: otplessRequest)
-                if let identity = oneTapIdentity {
-                    let oneTapRequest = OtplessRequest()
-                    oneTapRequest.set(oneTapValue: identity.identity)
-                    let intentResponse = await postIntentUseCase.invoke(state: self.state ?? "", withOtplessRequest: oneTapRequest, uiId: [identity.uiId], uid: self.uid)
-                    
-                    if let otplessResponse = intentResponse.otplessResponse {
-                        invokeResponse(otplessResponse)
-                    }
-                    return
-                }
-            }
         }
         
         if !otplessRequest.isIntentRequest() {
@@ -470,6 +457,10 @@ private extension Otpless {
             uid: self.uid
         )
         
+        if otplessRequest.isIntelligenceRequestedInRequest() {
+            fetchIntelligence()
+        }
+        
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
             // check for error code, if error code is terminal error code
@@ -486,6 +477,12 @@ private extension Otpless {
         if let tokenAsIdUIdAndTimerSettings = intentResponse.tokenAsIdUIdAndTimerSettings {
             self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
             self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
+            if (!self.asId.isEmpty){
+                if #available(iOS 15.0, *) {
+                    (Otpless.shared.intelligenceWorker as? OTPlessIntelligenceWorkerImpl)?
+                        .updateToDFRID()
+                }
+            }
             self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
             
             if !self.uid.isEmpty {
@@ -786,7 +783,99 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
     func onResponse(_ response: OtplessResponse)
 }
 
-@MainActor
-public protocol OneTapDataDelegate: NSObjectProtocol {
-    func onOneTapData(_ identities: [OneTapIdentity]?)
+public protocol OTPlessIntelligenceDelegate: AnyObject {
+    func intelligenceNotAvailable(reason: String)
+    func intelligenceDataReceived(_ response: IntelligenceInfoData)
+    func intelligenceFailed(error: IntelligenceFetchError)
 }
+
+extension Otpless {
+
+    public func initIntelligence(
+        clientId: String,
+        clientSecret: String,
+        appId: String,
+        completion: @escaping (Bool, String?) -> Void
+    ) {
+        intelligenceInitialized(withAppId: appId)
+        guard #available(iOS 15.0, *) else {
+            completion(false, "OTPless Intelligence requires iOS 15+")
+            return
+        }
+
+        if intelligenceWorker == nil {
+            intelligenceWorker = OTPlessIntelligenceWorkerImpl()
+        }
+
+        intelligenceWorker?.configureIfNeeded(
+            clientId: clientId,
+            clientSecret: clientSecret,
+            completion: completion
+        )
+    }
+    
+    public func isIntelligenceSDKReady() -> Bool {
+        guard #available(iOS 15.0, *) else { return false }
+        return (intelligenceWorker as? OTPlessIntelligenceWorkerImpl)?.isIntelligenceSDKConfigured() ?? false
+    }
+    
+    public func fetchIntelligence(){
+        if ((self.state?.isEmpty) != nil) {
+            requestStateForDeviceIfNil(onFetch: { [weak self] state in
+                guard let state = state else {
+                    return
+                }
+                self?.state = state
+                SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
+            })
+        }
+        guard #available(iOS 15.0, *) else {
+            DispatchQueue.main.async { [weak self] in
+                self?.otplessIntelligenceDelegate?.intelligenceNotAvailable(reason: "OTPless Intelligence requires iOS 15+")
+            }
+            return
+        }
+
+        guard let worker = intelligenceWorker else {
+            DispatchQueue.main.async { [weak self] in
+                self?.otplessIntelligenceDelegate?.intelligenceNotAvailable(reason:
+                    "OTPless Intelligence not initialized"
+                )
+            }
+            return
+        }
+
+        worker.fetchScore(delegate: otplessIntelligenceDelegate)
+    }
+    
+    public func fetchIntelligence(
+        delegate: OTPlessIntelligenceDelegate
+    ) {
+        otplessIntelligenceDelegate = delegate
+        fetchIntelligence()
+    }
+    
+    public func setOTPlessIntelligenceDelegate(_ otplessIntelligenceDelegate: OTPlessIntelligenceDelegate) {
+        self.otplessIntelligenceDelegate = otplessIntelligenceDelegate
+    }
+
+}
+
+
+
+internal protocol OTPlessIntelligenceWorker {
+
+    /// Configures the Intelligence SDK once.
+    func configureIfNeeded(
+        clientId: String,
+        clientSecret: String,
+        completion: @escaping (Bool, String?) -> Void
+    )
+
+    /// Fetches the intelligence score.
+    func fetchScore(
+        delegate: OTPlessIntelligenceDelegate?
+    )
+}
+
+

@@ -23,6 +23,7 @@ final class ApiManager: Sendable {
     static let TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/status/{state}"
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
+    static let INTELLIGENCE_DATA_PUSH_PATH = "/v3/device/device-fingerprint"
     
     init(
         userAuthTimeout: TimeInterval = 20.0,
@@ -40,6 +41,7 @@ final class ApiManager: Sendable {
         path: String,
         method: String,
         body: [String: Any]? = nil,
+        shoudlAppendBasicParams: Bool = true,
         queryParameters: [String: Any]? = nil
     ) async throws -> Data {
         let startedAt = Date()
@@ -52,8 +54,9 @@ final class ApiManager: Sendable {
         request.timeoutInterval = userAuthTimeout
         
         if method.uppercased() == "POST" {
-            let newBody = getBody(withExistingBody: body)
+            let newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
         var xRequestId: String? = nil
@@ -194,7 +197,12 @@ final class ApiManager: Sendable {
 
 
     
-    private func getBody(withExistingBody body: [String: Any]?) -> [String: Any] {
+    private func getBody(withExistingBody body: [String: Any]?,shouldAppendBasicParameters: Bool) -> [String: Any] {
+        if (!shouldAppendBasicParameters) {
+            return body ?? [:]
+        }
+            
+            
         var mutableBody: [String: Any] = [:]
         
         for (key, value) in (body ?? [:]) {

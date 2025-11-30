@@ -23,6 +23,7 @@ import Foundation
     private var extras: [String: String]?
     private var oneTapValue: String?
     private var tid: String?
+    private var isIntelligenceRequested:Bool =  false
     
     @objc public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
@@ -62,7 +63,9 @@ import Foundation
     @objc public func set(otp: String) {
         self.otp = otp
     }
-    
+    @objc public func set(isIntelligenceRequested: Bool) {
+        self.isIntelligenceRequested = isIntelligenceRequested
+    }
     @objc public func set(otpExpiry: String) {
         self.expiry = otpExpiry
     }
@@ -173,6 +176,9 @@ internal extension OtplessRequest {
             requestDict[RequestKeys.tidKey] = tid
         }
         
+        requestDict[RequestKeys.isIntelligenceRequested] = isIntelligenceRequested ? "true" : "false"
+        
+        
         for (key, value) in extras ?? [:] {
             requestDict[key] = value
         }
@@ -256,6 +262,10 @@ internal extension OtplessRequest {
     
     func isIntentRequest() -> Bool {
         return otp == nil
+    }
+    
+    func isIntelligenceRequestedInRequest() -> Bool {
+        return self.isIntelligenceRequested
     }
     
     func hasOtp() -> Bool {
@@ -364,6 +374,7 @@ internal struct RequestKeys {
     static let localeKey = "locale"
     static let valueKey = "value"
     static let tidKey = "tid"
+    static let isIntelligenceRequested = "isIntelligenceRequested"
     
     // Values
     static let mobileValue = "MOBILE"

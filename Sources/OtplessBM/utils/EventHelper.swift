@@ -114,4 +114,10 @@ enum EventConstants: String {
     case SUCCESS_API_RESPONSE = "native_api_response_success"
     case SNA_AUTH_TERMINAL_RESPONSE = "native_sna_auth_terminal_response"
     case SNA_INIT_TERMINAL_RESPONSE = "native_sna_init_terminal_response"
+    
+    // Intelligence events
+    case INIT_FRAUD_SDK                         = "native_fp_init_fs"
+    case REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_request_intelligence_fs"
+    case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_update_request_intelligence_fs"
+    case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK_START         = "native_fp_update_request_intelligence_start_fs"
 }

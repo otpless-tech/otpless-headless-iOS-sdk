@@ -102,6 +102,24 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    func pushIntelligenceData(bodyParams: [String: Any]) async -> Result<IntelligenceApiResponse, Error> {
+        do {
+            let data = try await self.apiManager.performUserAuthRequest(
+                state: nil,
+                path: ApiManager.INTELLIGENCE_DATA_PUSH_PATH,
+                method: "POST",
+                body: bodyParams,
+                shoudlAppendBasicParams: false
+            )
+
+            let decoded = try JSONDecoder().decode(IntelligenceApiResponse.self, from: data)
+            return .success(decoded)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    
     func appendTokenIds(queryParams: [String: Any]) -> [String: Any] {
             var result: [String: Any] = [:]
             result.merge(queryParams) {(_, new) in new}

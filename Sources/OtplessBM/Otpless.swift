@@ -43,13 +43,10 @@ import Network
     
     internal private(set) weak var loggerDelegate: OtplessLoggerDelegate?
     internal private(set) weak var responseDelegate: OtplessResponseDelegate?
-    internal private(set) weak var otplessIntelligenceDelegate: OTPlessIntelligenceDelegate?
-    
     internal private(set) weak var merchantWindowScene: UIWindowScene?
     internal private(set) var pendingCode = ""
     internal private(set) var sdkState : SdkState = SdkState.NOT_READY
     
-    internal var intelligenceWorker: OTPlessIntelligenceWorker?
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
     
@@ -313,6 +310,10 @@ import Network
         let otplResponse = OtplessResponse(responseType: responseType, response: response, statusCode: statusCode)
         commitOtplessResponse(otplResponse)
     }
+    
+    @objc public func gettsID()->String {
+        return tsid
+    }
 }
 
 internal extension Otpless {
@@ -457,10 +458,6 @@ private extension Otpless {
             uid: self.uid
         )
         
-        if otplessRequest.isIntelligenceRequestedInRequest() {
-            fetchIntelligence()
-        }
-        
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
             // check for error code, if error code is terminal error code
@@ -477,12 +474,7 @@ private extension Otpless {
         if let tokenAsIdUIdAndTimerSettings = intentResponse.tokenAsIdUIdAndTimerSettings {
             self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
             self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
-            if (!self.asId.isEmpty){
-                if #available(iOS 15.0, *) {
-                    (Otpless.shared.intelligenceWorker as? OTPlessIntelligenceWorkerImpl)?
-                        .updateToDFRID()
-                }
-            }
+            updateAuthMap(token: token)
             self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
             
             if !self.uid.isEmpty {
@@ -524,7 +516,7 @@ private extension Otpless {
                 self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
-                
+                updateAuthMap(token: token)
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)
@@ -781,101 +773,6 @@ extension Otpless {
 @MainActor
 public protocol OtplessResponseDelegate: NSObjectProtocol {
     func onResponse(_ response: OtplessResponse)
-}
-
-public protocol OTPlessIntelligenceDelegate: AnyObject {
-    func intelligenceNotAvailable(reason: String)
-    func intelligenceDataReceived(_ response: IntelligenceInfoData)
-    func intelligenceFailed(error: IntelligenceFetchError)
-}
-
-extension Otpless {
-
-    public func initIntelligence(
-        clientId: String,
-        clientSecret: String,
-        appId: String,
-        completion: @escaping (Bool, String?) -> Void
-    ) {
-        intelligenceInitialized(withAppId: appId)
-        guard #available(iOS 15.0, *) else {
-            completion(false, "OTPless Intelligence requires iOS 15+")
-            return
-        }
-
-        if intelligenceWorker == nil {
-            intelligenceWorker = OTPlessIntelligenceWorkerImpl()
-        }
-
-        intelligenceWorker?.configureIfNeeded(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            completion: completion
-        )
-    }
-    
-    public func isIntelligenceSDKReady() -> Bool {
-        guard #available(iOS 15.0, *) else { return false }
-        return (intelligenceWorker as? OTPlessIntelligenceWorkerImpl)?.isIntelligenceSDKConfigured() ?? false
-    }
-    
-    public func fetchIntelligence(){
-        if ((self.state?.isEmpty) != nil) {
-            requestStateForDeviceIfNil(onFetch: { [weak self] state in
-                guard let state = state else {
-                    return
-                }
-                self?.state = state
-                SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
-            })
-        }
-        guard #available(iOS 15.0, *) else {
-            DispatchQueue.main.async { [weak self] in
-                self?.otplessIntelligenceDelegate?.intelligenceNotAvailable(reason: "OTPless Intelligence requires iOS 15+")
-            }
-            return
-        }
-
-        guard let worker = intelligenceWorker else {
-            DispatchQueue.main.async { [weak self] in
-                self?.otplessIntelligenceDelegate?.intelligenceNotAvailable(reason:
-                    "OTPless Intelligence not initialized"
-                )
-            }
-            return
-        }
-
-        worker.fetchScore(delegate: otplessIntelligenceDelegate)
-    }
-    
-    public func fetchIntelligence(
-        delegate: OTPlessIntelligenceDelegate
-    ) {
-        otplessIntelligenceDelegate = delegate
-        fetchIntelligence()
-    }
-    
-    public func setOTPlessIntelligenceDelegate(_ otplessIntelligenceDelegate: OTPlessIntelligenceDelegate) {
-        self.otplessIntelligenceDelegate = otplessIntelligenceDelegate
-    }
-
-}
-
-
-
-internal protocol OTPlessIntelligenceWorker {
-
-    /// Configures the Intelligence SDK once.
-    func configureIfNeeded(
-        clientId: String,
-        clientSecret: String,
-        completion: @escaping (Bool, String?) -> Void
-    )
-
-    /// Fetches the intelligence score.
-    func fetchScore(
-        delegate: OTPlessIntelligenceDelegate?
-    )
 }
 
 

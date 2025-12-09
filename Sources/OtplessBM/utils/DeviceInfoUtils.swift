@@ -131,6 +131,23 @@ class DeviceInfoUtils : @unchecked Sendable {
         }
         
         if tsid == nil {
+            if let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type {
+                let sharedSelector = NSSelectorFromString("shared")
+
+                guard cls.responds(to: sharedSelector),
+                      let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject
+                else {
+                    return
+                }
+
+                let gettsIDSelector = NSSelectorFromString("gettsID")
+
+                if sharedObj.responds(to: gettsIDSelector),
+                   let tsidValue = sharedObj.perform(gettsIDSelector)?.takeUnretainedValue() as? String {
+                    tsid = !tsidValue.isEmpty ? tsidValue : generateId(withTimeStamp: true)
+                    return
+                }
+            }
             tsid = generateId(withTimeStamp: true)
         }
     }

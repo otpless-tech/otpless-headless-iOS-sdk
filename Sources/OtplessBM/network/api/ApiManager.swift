@@ -23,7 +23,6 @@ final class ApiManager: Sendable {
     static let TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/status/{state}"
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
-    static let INTELLIGENCE_DATA_PUSH_PATH = "/v3/device/device-fingerprint"
     
     init(
         userAuthTimeout: TimeInterval = 20.0,

@@ -12,8 +12,10 @@ final class ApiManager: Sendable {
     private let userAuthTimeout: TimeInterval
     private let snaTimeout: TimeInterval
     private let enableLogging: Bool
-    private let baseURLUserAuth = "https://user-auth.otpless.app"
     private let baseURLSekura = "http://80.in.safr.sekuramobile.com"
+    private var baseURLUserAuth: String {
+        return Otpless.shared.environment.userAuthBaseURL
+    }
     
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"

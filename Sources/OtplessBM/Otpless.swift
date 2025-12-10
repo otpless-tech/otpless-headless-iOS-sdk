@@ -15,6 +15,7 @@ import Network
         return Otpless()
     }()
     
+    internal private(set) var environment: OtplessEnvironment = .PRODUCTION
     internal private(set) var isOneTapUIDismissed: Bool = false
     internal private(set) var requestCount: Int = 0
     internal private(set) var stateFetchRetriesCount: Int = 0
@@ -331,6 +332,10 @@ extension Otpless {
     public func setResponseDelegate(_ otplessResponseDelegate: OtplessResponseDelegate) {
         self.responseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
+    }
+
+    public func setEnvironment(_ environment: OtplessEnvironment) {
+        self.environment = environment
     }
     
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {

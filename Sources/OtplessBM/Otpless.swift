@@ -10,7 +10,7 @@ import UIKit
 import Network
 
 
-@objc final public class Otpless: NSObject, @unchecked Sendable {
+@objc final public class Otpless: NSObject, @unchecked Sendable, UsecaseProvider {
     @objc public static let shared: Otpless = {
         return Otpless()
     }()
@@ -65,7 +65,7 @@ import Network
         return TransactionStatusUseCase()
     }()
     internal private(set) lazy var passkeyUseCase: PasskeyUseCase = {
-        return PasskeyUseCase()
+        return PasskeyUseCase(others: self)
     }()
     internal private(set) lazy var snaUseCase: SNAUseCase = {
         return SNAUseCase()
@@ -76,6 +76,8 @@ import Network
     internal private(set) lazy var verifyCodeUseCase: VerifyCodeUseCase = {
         return VerifyCodeUseCase()
     }()
+    
+    
     internal private(set) lazy var appleSignInUseCase: AppleSignInUseCase = {
         return AppleSignInUseCase()
     }()
@@ -588,6 +590,17 @@ private extension Otpless {
             await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                 self?.invokeResponse(otplessResponse)
             })
+        }
+        
+        if let passkeyRequestStr = intentResponse.passkeyRequestStr, let passkeyRequest = Utils.convertStringToDictionary(passkeyRequestStr) {
+            let result = await passkeyUseCase.autherizePasskey(request: passkeyRequest)
+            switch result {
+                case .success(let response):
+                self.invokeResponse(response)
+            case .failure(let error):
+                //todo sync the fallback case
+                self.invokeResponse(OtplessResponse.failedToInitializeResponse)
+            }
         }
     }
     

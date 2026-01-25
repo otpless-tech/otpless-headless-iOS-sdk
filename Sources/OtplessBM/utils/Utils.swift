@@ -7,6 +7,7 @@
 
 import SystemConfiguration
 import Foundation
+import UIKit
 
 final internal class Utils {
     
@@ -147,4 +148,52 @@ final internal class Utils {
         callback(eventParam, musId)
     }
     
+}
+
+internal protocol DictionaryConvertible: Codable, Sendable {
+    func toDict() -> [String: Any]
+}
+
+extension DictionaryConvertible {
+    func toDict() -> [String: Any] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        do {
+            let jsonData = try encoder.encode(self)
+            if let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
+                return jsonObject
+            }
+        } catch {
+            print("Error converting to dictionary: \(error)")
+        }
+        return [:]
+    }
+}
+
+
+internal class ImageUtils {
+    
+    static let shared = ImageUtils()
+    
+    private init() {}
+    
+    let imageCache = NSCache<NSURL, UIImage>()
+    
+    func loadImage(to imageView: UIImageView, from url: URL?) {
+        guard let url = url else { return }
+        // check for cache if cache is there then put the image
+        if let image = imageCache.object(forKey: url as NSURL) {
+            imageView.image = image
+            return
+        }
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+            guard let self = self, error == nil, let data = data else { return }
+            guard let img = UIImage(data: data) else { return }
+            imageCache.setObject(img, forKey: url as NSURL)
+            DispatchQueue.main.async {
+                imageView.image = img
+            }
+        }
+        task.resume()
+    }
 }

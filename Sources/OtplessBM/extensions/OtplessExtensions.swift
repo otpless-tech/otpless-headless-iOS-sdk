@@ -57,6 +57,7 @@ extension Otpless {
 
 extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
+        dismissOneTapBottomSheet()
         if otplessResponse.statusCode == 9110 {
             return
         }

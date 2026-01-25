@@ -91,6 +91,8 @@ import Network
     
     internal private(set) var objcResponseDelegate: ((String) -> Void)?
     
+    private weak var onetapController: UIViewController?
+    
     //initialize method
     @objc public func initialise(
         withAppId appId: String,
@@ -110,45 +112,33 @@ import Network
             
             await DeviceInfoUtils.shared.initialise()
             
-            let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
-            let inid = await self.getInidFromMainActor()
-            let tsid = await self.getTsidFromMainActor()
+            self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
+            self.inid = DeviceInfoUtils.shared.getInstallationId()
+            self.tsid = DeviceInfoUtils.shared.getTrackingSessionId()
             
-            self.uid = uid
-            self.inid = inid
-            self.tsid = tsid
             
             await MainActor.run {
                 self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
-            
-            await MainActor.run { [weak self] in
-                self?.appInfo = self?.getAppInfoFromMainActor() ?? [:]
-            }
-            
+            self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
             self.fetchStateAndMerchantConfig(onlyState: false)
         }
     }
+    
     private func intelligenceInitialized(withAppId appId: String){
         self.merchantAppId = appId
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
             
             await DeviceInfoUtils.shared.initialise()
-            let inid = await self.getInidFromMainActor()
-            let tsid = await self.getTsidFromMainActor()
-            self.inid = inid
-            self.tsid = tsid
+            self.inid = await DeviceInfoUtils.shared.getInstallationId()
+            self.tsid = await DeviceInfoUtils.shared.getTrackingSessionId()
             
             await MainActor.run {
                 self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
-            
-            await MainActor.run { [weak self] in
-                self?.appInfo = self?.getAppInfoFromMainActor() ?? [:]
-            }
+            self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
         }
-        
     }
     
     @objc public func isOtplessDeeplink(url : URL) -> Bool {
@@ -188,6 +178,49 @@ import Network
         }
         sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         await processRequestIfRequestIsValid(otplessRequest)
+    }
+    
+    public func startAuth(parent vc: UIViewController, config authConfig: OtplessAuthCofig) async -> Bool {
+        guard #available(iOS 15.0, *) else {
+            return false
+        }
+        var onetapItemData: [OnetapItemData] = []
+        if let mobiles = self.merchantConfig?.userDetails?.mobile, !mobiles.isEmpty {
+            for each in mobiles {
+                onetapItemData.append(OnetapItemData.from(mobile: each))
+            }
+        }
+        if let emails = self.merchantConfig?.userDetails?.email, !emails.isEmpty {
+            for each in emails {
+                onetapItemData.append(OnetapItemData.from(email: each))
+            }
+        }
+        if onetapItemData.isEmpty {
+            return false
+        }
+        if authConfig.isForeground {
+            await MainActor.run {
+                presentOneTapBottomSheet(viewController: vc, items: onetapItemData, config: authConfig)
+            }
+            return true
+        } else if onetapItemData.count == 1 {
+            let request = OtplessRequest()
+            request.onetapItemData = onetapItemData[0]
+            await startOnetapAuth(config: authConfig, request: request)
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    private func startOnetapAuth(config authConfig: OtplessAuthCofig, request otplessRequest: OtplessRequest) async {
+        let intentResponse = await postIntentUseCase.invoke(
+            state: self.state ?? "",
+            withOtplessRequest: otplessRequest,
+            uiId: [otplessRequest.onetapItemData!.uiid],
+            uid: self.uid
+        )
+        await handleIntentResponse(intentResponse, otplessRequest)
     }
     
     @objc public func authorizeViaPasskey(withRequest otplessRequest: OtplessRequest, windowScene: UIWindowScene) async {
@@ -433,8 +466,6 @@ private extension Otpless {
             }
         }
     }
-
-
     
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
         if await !canRequestBeMade(request: otplessRequest) {
@@ -457,7 +488,12 @@ private extension Otpless {
             uiId: self.uiId,
             uid: self.uid
         )
-        
+        await handleIntentResponse(intentResponse, otplessRequest)
+    }
+
+
+    
+    private func handleIntentResponse(_ intentResponse: PostIntentUseCaseResponse, _ otplessRequest: OtplessRequest) async {
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
             // check for error code, if error code is terminal error code
@@ -731,22 +767,6 @@ private extension Otpless {
         }
         return queryParams
     }
-    
-    @MainActor
-    func getInidFromMainActor() -> String {
-        return DeviceInfoUtils.shared.getInstallationId() ?? ""
-    }
-    
-    @MainActor
-    func getTsidFromMainActor() -> String {
-        return DeviceInfoUtils.shared.getTrackingSessionId() ?? ""
-    }
-    
-    @MainActor
-    func getAppInfoFromMainActor() -> [String: Any] {
-        return DeviceInfoUtils.shared.getAppInfo()
-    }
-    
 }
 
 extension Otpless {
@@ -773,6 +793,40 @@ extension Otpless {
 @MainActor
 public protocol OtplessResponseDelegate: NSObjectProtocol {
     func onResponse(_ response: OtplessResponse)
+}
+
+extension Otpless {
+    
+    @available(iOS 15.0, *)
+    internal func presentOneTapBottomSheet(viewController: UIViewController, items: [OnetapItemData], config config: OtplessAuthCofig) {
+        let oneTapView = OneTapView(
+            items: items,
+            onItemSelected: { [weak self] selectedIdentity in
+                DLog("Otpless auth in progress \(selectedIdentity.identity) \(selectedIdentity.name)")
+                // start the process
+                let request = OtplessRequest()
+                request.onetapItemData = selectedIdentity
+                Task {
+                    await self?.startOnetapAuth(config: config, request: request)
+                }
+                
+            },
+            onDismiss: { [weak self] in
+                self?.dismissOneTapBottomSheet()
+            }
+        )
+        let sheetVC = OneTapBottomSheetViewController(oneTapView: oneTapView) // from earlier
+        onetapController = sheetVC
+        viewController.present(sheetVC, animated: true)
+    }
+    
+    internal func dismissOneTapBottomSheet() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let controller = self.onetapController else { return }
+            controller.dismiss(animated: true)
+            self.onetapController = nil
+        }
+    }
 }
 
 

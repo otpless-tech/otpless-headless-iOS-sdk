@@ -11,7 +11,6 @@ import Foundation
 import CommonCrypto
 import WebKit
 
-@MainActor
 class DeviceInfoUtils : @unchecked Sendable {
     static let shared: DeviceInfoUtils = {
         let instance = DeviceInfoUtils()
@@ -24,13 +23,14 @@ class DeviceInfoUtils : @unchecked Sendable {
     private var tsid: String?
     private var deviceInfo: [String: String]? = nil
     
-    func initialise () {
-        if (!isIntialised){
-            hasWhatsApp = isWhatsappInstalled()
-            appHash = getAppHash() ?? "noapphash"
-            isIntialised = true
-            generateTrackingId()
+    func initialise () async {
+        if isIntialised {
+            return
         }
+        hasWhatsApp = await isWhatsappInstalled()
+        appHash = getAppHash() ?? "noapphash"
+        generateTrackingId()
+        isIntialised = true
     }
 
     func getAppHash() -> String? {
@@ -49,59 +49,48 @@ class DeviceInfoUtils : @unchecked Sendable {
         return nil
     }
 
-    func isWhatsappInstalled() -> Bool{
-        if UIApplication.shared.canOpenURL(URL(string: "whatsapp://")! as URL) {
-            return true
-        } else {
-            return false
+    func isWhatsappInstalled() async -> Bool{
+        await MainActor.run {
+            if UIApplication.shared.canOpenURL(URL(string: "whatsapp://")! as URL) {
+                return true
+            } else {
+                return false
+            }
         }
     }
     
     
-    func getAppInfo() -> [String: String] {
-        initialise()
-        var udid : String!
-        var appVersion : String!
-        var manufacturer : String!
-        var model : String!
+    func getAppInfo() async -> [String: String] {
+        await initialise()
         var params = [String: String]()
         
         let bundleIdentifier = Bundle.main.bundleIdentifier
         if let pName = bundleIdentifier {
             Otpless.shared.setPackageName(pName)
         }
+        let ui = await MainActor.run { () -> (model: String, udid: String?) in
+            let model = UIDevice.modelName ?? "UNKNOWN"
+            let udid = UIDevice.current.identifierForVendor?.uuidString as String?
+            return (model, udid)
+        }
         
-        model = UIDevice.modelName
-        manufacturer = "Apple"
-        if let app_version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            appVersion = app_version
-        }
-        if let _udid = UIDevice.current.identifierForVendor?.uuidString as String? {
-            udid = _udid
-        }
-        let os = ProcessInfo().operatingSystemVersion
-        
-        if udid != nil{
-            params["deviceId"] = udid
-        }
-        if appVersion != nil{
+    
+        params["manufacturer"] = "Apple"
+        if let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
             params["appVersion"] = appVersion
         }
-        if manufacturer != nil{
-            params["manufacturer"] = manufacturer
+        if ui.udid != nil{
+            params["deviceId"] = ui.udid!
         }
-        if model != nil {
-            params["model"] = model
-        }
+        
+        params["model"] = ui.model
         if inid != nil {
             params["inid"] = inid
         }
-        if tsid != nil {
-            params["tsid"] = tsid
-        }
-        
+        params["tsid"] = getTrackingSessionId()
         params["sdkVersion"] = Constants.SDK_VERSION
         
+        let os = ProcessInfo().operatingSystemVersion
         params["osVersion"] = os.majorVersion.description + "." + os.minorVersion.description
         params["hasWhatsapp"] = hasWhatsApp.description
         
@@ -162,18 +151,22 @@ class DeviceInfoUtils : @unchecked Sendable {
         return uniqueString
     }
     
-    func getInstallationId() -> String? {
+    func getInstallationId() -> String {
         if inid != nil {
-            return inid
+            return inid!
         }
         let savedInid: String = SecureStorage.shared.getFromUserDefaults(key: Constants.INID_KEY, defaultValue: "")
         return savedInid
     }
     
-    func getTrackingSessionId() -> String? {
-        return tsid
+    func getTrackingSessionId() -> String {
+        if self.tsid == nil {
+            self.tsid = generateId(withTimeStamp: true)
+        }
+        return self.tsid!
     }
 
+    @MainActor
     func getDeviceInfoDict() -> [String: String] {
         if let deviceInfo = deviceInfo {
             return deviceInfo

@@ -70,6 +70,20 @@ extension Otpless {
             }
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
+            // check if session init is done and session info in response["data"]
+            if OtplessSessionManager.shared.isInit {
+                Task {
+                    if let sessionInfo = otplessResponse.response?["sessionInfo"] as? [String: Any],
+                       let sessionToken = sessionInfo["sessionToken"] as? String,
+                       let refreshToken = sessionInfo["refreshToken"] as? String,
+                       let jwtToken = sessionInfo["sessionTokenJWT"] as? String {
+                        let sessionInfo = OtplessSessionInfo(sessionToken: sessionToken, refreshToken: refreshToken, jwtToken: jwtToken)
+                        let state = Otpless.shared.state!
+                        await OtplessSessionManager.shared.saveSessionAndState(sessionInfo, state: state)
+                    }
+                    
+                }
+            }
         }
         
         if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {

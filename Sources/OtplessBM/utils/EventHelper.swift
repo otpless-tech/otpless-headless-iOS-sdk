@@ -14,7 +14,12 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
         params["sdk_version"] = Constants.SDK_VERSION
-        params["mid"] = Otpless.shared.merchantAppId
+        if !Otpless.shared.merchantAppId.isEmpty {
+            params["mid"] = Otpless.shared.merchantAppId
+        } else {
+            params["mid"] = OtplessSessionManager.shared.appId
+        }
+        
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
         var newEventParams = [String: Any]()
@@ -120,4 +125,9 @@ enum EventConstants: String {
     case REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_request_intelligence_fs"
     case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_update_request_intelligence_fs"
     case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK_START         = "native_fp_update_request_intelligence_start_fs"
+    
+    // session events
+    case getActiveSession = "native_get_active_session"
+    case logoutSession = "native_logout_session"
+    case sessionError = "native_session_error"
 }

@@ -24,6 +24,7 @@ final class ApiManager: Sendable {
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
     
+    
     init(
         userAuthTimeout: TimeInterval = 20.0,
         snaTimeout: TimeInterval = 5.0,

@@ -8,15 +8,15 @@
 import Foundation
 
 public actor OtplessSessionManager {
-
+    
     
     public static let shared = OtplessSessionManager()
     internal static let appIdAtomicBox = AtomicBox<String>("")
     internal static let isInitAtomicBox = AtomicBox<Bool>(false)
-
+    
     private let AUTHENTICATION_LOOP_TIME: UInt64 = 3 * 60 * 1_000_000_000 // 3 minutes in ns
     private let ORIGIN: String = "https://otpless.com"
-
+    
     internal nonisolated var appId: String {
         Self.appIdAtomicBox.get()
     }
@@ -30,13 +30,13 @@ public actor OtplessSessionManager {
     
     private init() {
     }
-
+    
     public func initialize(appId: String) {
         Self.appIdAtomicBox.setOn(new: appId, onCondition: { $0.isEmpty })
         // set value true if current value is false
         Self.isInitAtomicBox.setOn(new: true, onCondition: { !$0 })
     }
-
+    
     public func getActiveSession() async -> OtplessSessionState {
         sendEvent(event: EventConstants.getActiveSession)
         guard let session = getSavedSession() else {
@@ -55,7 +55,7 @@ public actor OtplessSessionManager {
         }
         return refreshStateResponse
     }
-
+    
     public func logout() async {
         guard let session = getSavedSession() else {
             DLog("no session available to logout")
@@ -83,20 +83,20 @@ public actor OtplessSessionManager {
             DLog("session logout api failed")
         }
     }
-
+    
     internal func saveSessionAndState(_ sessionInfo: OtplessSessionInfo, state: String) async {
         saveSession(sessionInfo)
         self.state = state
         SecureStorage.shared.save(key: SessionStorageKeys.state, value: state)
     }
-
+    
     internal func saveSession(_ sessionInfo: OtplessSessionInfo) {
         if let json = try? JSONEncoder().encode(sessionInfo),
            let str = String(data: json, encoding: .utf8) {
             SecureStorage.shared.save(key: SessionStorageKeys.session, value: str)
         }
     }
-
+    
     internal func getSavedSession() -> OtplessSessionInfo? {
         let jsonString = SecureStorage.shared.retrieve(key: SessionStorageKeys.session) ?? ""
         guard !jsonString.isEmpty,
@@ -106,24 +106,24 @@ public actor OtplessSessionManager {
         }
         return obj
     }
-
+    
     private func isJwtTokenActive(_ jwt: String) -> Bool {
         // Parse JWT payload and check exp > now
         // base64url parts: header.payload.signature
         let parts = jwt.split(separator: ".")
         guard parts.count == 3 else { return false }
         let payloadB64 = String(parts[1])
-
+        
         guard let payloadData = base64URLDecode(payloadB64),
               let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
             return false
         }
-
+        
         let exp = (json["exp"] as? NSNumber)?.int64Value ?? 0
         let now = Int64(Date().timeIntervalSince1970)
         return exp > now
     }
-
+    
     private func base64URLDecode(_ input: String) -> Data? {
         var s = input
             .replacingOccurrences(of: "-", with: "+")
@@ -135,7 +135,7 @@ public actor OtplessSessionManager {
         }
         return Data(base64Encoded: s)
     }
-
+    
     private func makeHeaderMap() -> [String: String] {
         var headers: [String: String] = [:]
         headers["appId"] = self.appId
@@ -145,7 +145,7 @@ public actor OtplessSessionManager {
         headers["state"] = self.state
         return headers
     }
-
+    
     private func refreshJwtToken(oldSessionInfo: OtplessSessionInfo) async -> OtplessSessionState {
         DLog("refresh session token started")
         let loginUri = "\(ORIGIN)/rc5/appid/\(appId)"
@@ -155,7 +155,7 @@ public actor OtplessSessionManager {
             "origin": ORIGIN,
             "loginUri": loginUri
         ]
-
+        
         switch await sessionService.refreshSession(headers: makeHeaderMap(), body: requestMap)
             .decode(as: OtplessSessionInfo.self) {
         case .success(let data):
@@ -177,29 +177,29 @@ public actor OtplessSessionManager {
             return .inactive
         }
     }
-
+    
     private func startAuthenticationLoopIfNotStarted() {
         if let task = authenticationTask, !task.isCancelled {
             // Already running
             DLog("authentication loop is already active")
             return
         }
-
+        
         authenticationTask = Task.detached { [weak self] in
             guard let self else { return }
             DLog("authentication loop started")
-
+            
             while !Task.isCancelled {
                 DLog("waiting to go in session authentication")
                 try? await Task.sleep(nanoseconds: self.AUTHENTICATION_LOOP_TIME)
-
+                
                 if Task.isCancelled { break }
                 DLog("session authentication started")
-
+                
                 // Note: actor hop
                 let saved = await self.getSavedSession()
                 guard let savedSessionInfo = saved else { continue }
-
+                
                 let loginUri = "\(self.ORIGIN)/rc5/appid/\(await self.appId)"
                 let request: [String: String] = [
                     "sessionToken": savedSessionInfo.sessionToken,
@@ -208,7 +208,7 @@ public actor OtplessSessionManager {
                     "origin": self.ORIGIN,
                     "loginUri": loginUri
                 ]
-
+                
                 let result = await sessionService.authenticateSession(headers: self.makeHeaderMap(), body: request)
                     .decode(as: AuthenticateSessionResponse.self)
                 switch result {
@@ -244,12 +244,12 @@ internal final class AtomicBox<T> {
     private let lock = NSLock()
     private var value: T
     public init(_ value: T) { self.value = value }
-
+    
     func get() -> T {
         lock.lock(); defer { lock.unlock() }
         return value
     }
-
+    
     func setOn(new newValue: T, onCondition onCondition: (T) -> Bool) {
         lock.lock(); defer { lock.unlock() }
         if onCondition(value) { value = newValue }

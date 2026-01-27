@@ -47,12 +47,14 @@ struct SessionInfo: Codable {
     let refreshToken: String?
     let sessionId: String?
     let sessionToken: String?
+    let sessionTokenJWT: String?
     
-    func toDict() -> [String: Any] {
+    func toDict() -> [String: String] {
          [
-            "refreshToken": refreshToken as Any,
-            "sessionId": sessionId as Any,
-            "sessionToken": sessionToken as Any
+            "refreshToken": refreshToken,
+            "sessionId": sessionId,
+            "sessionToken": sessionToken,
+            "sessionTokenJWT": sessionTokenJWT
          ].compactMapValues { $0 }
     }
 }

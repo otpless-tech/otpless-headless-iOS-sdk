@@ -5,9 +5,9 @@
 //  Created by Digvijay Singh on 18/09/25.
 //
 
-internal enum StorageKeys {
+internal enum SessionStorageKeys {
     static let session = "otpless_session_info"
-    static let state   = "otpless_state"
+    static let state   = "otpless_session_state"
 }
 
 // MARK: - Session info to be created from successful login response

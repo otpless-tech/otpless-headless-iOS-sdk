@@ -69,6 +69,7 @@ public actor OtplessSessionManager {
             "origin": ORIGIN,
             "loginUri": loginUri
         ]
+        // after loading the data delete the stored data
         deleteSession()
         authenticationTask?.cancel()
         // server-side delete (best-effort)
@@ -86,18 +87,18 @@ public actor OtplessSessionManager {
     internal func saveSessionAndState(_ sessionInfo: OtplessSessionInfo, state: String) async {
         saveSession(sessionInfo)
         self.state = state
-        SecureStorage.shared.save(key: StorageKeys.state, value: state)
+        SecureStorage.shared.save(key: SessionStorageKeys.state, value: state)
     }
 
     internal func saveSession(_ sessionInfo: OtplessSessionInfo) {
         if let json = try? JSONEncoder().encode(sessionInfo),
            let str = String(data: json, encoding: .utf8) {
-            SecureStorage.shared.save(key: StorageKeys.session, value: str)
+            SecureStorage.shared.save(key: SessionStorageKeys.session, value: str)
         }
     }
 
     internal func getSavedSession() -> OtplessSessionInfo? {
-        let jsonString = SecureStorage.shared.retrieve(key: StorageKeys.session) ?? ""
+        let jsonString = SecureStorage.shared.retrieve(key: SessionStorageKeys.session) ?? ""
         guard !jsonString.isEmpty,
               let data = jsonString.data(using: .utf8),
               let obj = try? JSONDecoder().decode(OtplessSessionInfo.self, from: data) else {
@@ -139,7 +140,7 @@ public actor OtplessSessionManager {
         var headers: [String: String] = [:]
         headers["appId"] = self.appId
         if self.state.isEmpty {
-            self.state = SecureStorage.shared.retrieve(key: StorageKeys.state) ?? ""
+            self.state = SecureStorage.shared.retrieve(key: SessionStorageKeys.state) ?? ""
         }
         headers["state"] = self.state
         return headers
@@ -232,7 +233,7 @@ public actor OtplessSessionManager {
     }
     
     private func deleteSession() {
-        for key in [StorageKeys.session, StorageKeys.state] {
+        for key in [SessionStorageKeys.session, SessionStorageKeys.state] {
             SecureStorage.shared.delete(key: key)
         }
     }

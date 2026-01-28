@@ -11,7 +11,7 @@ import LocalAuthentication
 
 /// `PasskeyUseCase` is used to manage sign in and registration via WebAuthn.
 ///
-/// We haven't annotated the class with `@available(iOS 16, *)` so that it's class level instance can be created in common classes thay may
+/// We haven't annotated the class with `@available(iOS 15, *)` so that it's class level instance can be created in common classes thay may
 /// supporting previous versions of iOS. Instead, we have annotated it's extension and other all the functions with `@available(iOS 16, *)`.
 internal class PasskeyUseCase: NSObject {
     private let usecaseProvider: UsecaseProvider
@@ -20,14 +20,12 @@ internal class PasskeyUseCase: NSObject {
         self.usecaseProvider = usecaseProvider
     }
     
-    private var responseCallback: ((PasskeyAuthorizationResult) async -> Void)?
     private var continuation: CheckedContinuation<Result<[String: Any], Error>, Never>? = nil
     
     func autherizePasskey(request: [String: Any]) async -> Result<OtplessResponse, Error> {
         guard #available(iOS 15.0, *) else {
             return .failure(NSError(domain: "this plarform is not supported", code: 5208))
         }
-        // todo figure out the handling
         guard let dataStr = request["data"] as? String, let data = Utils.convertStringToDictionary(dataStr) else {
             return .failure(NSError(domain: "otpless: failed to parse data", code: 0, userInfo: nil))
         }
@@ -136,89 +134,40 @@ internal class PasskeyUseCase: NSObject {
         return .success(platformKeyRequest)
     }
     
-    
-    /// Initiates Passkey registration.
-    ///
-    /// - parameter request: The request dictionary containing registration parameters.
-    /// - parameter onResponse: The callback to handle the registration response.
-    //    @available(iOS 16.6, *)
-    //    func initiateRegistration(
-    //        withRequest requestJson: [String: Any],
-    //        onResponse responseCallback: @escaping  (PasskeyAuthorizationResult) async -> Void
-    //    ) async {
-    //        self.responseCallback = responseCallback
-    //
-    //        await createRegistrationRequest(
-    //            from: requestJson,
-    //            onErrorCallback: responseCallback,
-    //            onRegistrationRequestCreation: { platformKeyRequest in
-    //                let authController = ASAuthorizationController(authorizationRequests: [ platformKeyRequest ])
-    //                authController.delegate = self
-    //                authController.presentationContextProvider = self
-    //                authController.performRequests()
-    //            }
-    //        )
-    //    }
-    
-    /// Initiates sign in via Passkey.
-    ///
-    /// - parameter request: The request dictionary containing registration parameters.
-    /// - parameter onResponse: The callback to handle the sign in response.
-    //    @available(iOS 16.6, *)
-    //    func initiateSignIn(
-    //        withRequest requestJson: [String: Any],
-    //        onResponse responseCallback: @escaping (PasskeyAuthorizationResult) async -> Void
-    //    ) async {
-    //        self.responseCallback = responseCallback
-    //
-    //        await createSignInRequest(
-    //            from: requestJson,
-    //            onErrorCallback: responseCallback,
-    //            onSignInRequestCreation: { platformKeyRequest in
-    //                let authController = ASAuthorizationController(authorizationRequests: [ platformKeyRequest ])
-    //                authController.delegate = self
-    //                authController.presentationContextProvider = self
-    //                authController.performRequests()
-    //            }
-    //        )
-    //    }
-    
     /// Checks whether device supports WebAuthN.
-    ///
-    /// - parameter callback: The callback to return the result of check.
-    @MainActor @available(iOS 15.0, *)
-    func isWebAuthnsupportedOnDevice(onResponse callback: (Bool) -> Void) {
+    func isWebAuthnsupportedOnDevice() -> Bool {
         if DeviceInfoUtils.shared.isDeviceSimulator() {
-            callback(false)
-            return
+            return false
         }
-        
         let context = LAContext()
         var error: NSError?
-        
         if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-            callback(true)
+            return true
         } else {
+            let msg: String
             if let laError = error as? LAError {
                 switch laError.code {
                 case .biometryNotAvailable:
-                    log(message: "Biometrics not available on device", type: .IS_PASSKEY_SUPPORTED)
+                    msg = "Biometrics not available on device"
                 case .biometryNotEnrolled:
-                    log(message: "Biometrics not available on device", type: .IS_PASSKEY_SUPPORTED)
+                    msg = "Biometrics not enrolled on device"
                 case .passcodeNotSet:
-                    log(message: "No passcode set on device", type: .IS_PASSKEY_SUPPORTED)
+                    msg = "No passcode set on device"
                 default:
-                    log(message: "Authentication error \(error?.localizedDescription ?? "")", type: .IS_PASSKEY_SUPPORTED)
+                    msg = "Authentication error \(error?.localizedDescription ?? "")"
                 }
             } else {
-                log(message: "Unknown error \(error?.localizedDescription ?? "")", type: .IS_PASSKEY_SUPPORTED)
+                msg = "Unknown error \(error?.localizedDescription ?? "")"
             }
-            callback(false)
+            DispatchQueue.main.async {
+                log(message: msg, type: .IS_PASSKEY_SUPPORTED)
+            }
+            return false
         }
     }
 }
 
-@available(iOS 16.6, *)
+@available(iOS 15.0, *)
 extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     
     /// Handles the error of an authorization request.
@@ -226,12 +175,6 @@ extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationCont
     /// - parameter controller: The authorization controller handling the authorization.
     /// - parameter error: The error that occurred during authorization.
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-//        let authorizationError = error as? ASAuthorizationError
-//        let errorJson: [String: Any] = createError(fromAuthorizationError: authorizationError)
-//        
-//        Task {
-//            await responseCallback?(.failure(errorJson))
-//        }
         continuation?.resume(returning: .failure(error))
         continuation = nil
     }
@@ -254,20 +197,13 @@ extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationCont
         if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration {
             // A new passkey was registered
             let registrationResponse = createRegistrationResponse(from: credential)
-//                await responseCallback?(.success(registrationResponse))
             self.continuation?.resume(returning: .success(registrationResponse))
             self.continuation = nil
         } else if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
-        
-            // A passkey was used to sign in
             let signInResponse = createSignInResponse(from: credential)
-//                await responseCallback?(.success(signInResponse))
             self.continuation?.resume(returning: .success(signInResponse))
             self.continuation = nil
         } else {
-            // Some other authorization type was used like passwords.
-//                let errorJson = Utils.createErrorDictionary(errorCode: "5200", errorMessage: "Unexpected credential type \(authorization.credential.description)")
-//                await responseCallback?(.failure(errorJson))
             self.continuation?.resume(returning:  .failure(NSError(domain: "Unexpected credential type \(authorization.credential.description)", code: 5200)))
             self.continuation = nil
         }
@@ -307,31 +243,18 @@ extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationCont
         
         let authenticatorAttachment: String
         
-        if credential.attachment == .crossPlatform {
-            authenticatorAttachment = "crossPlatform"
-        } else if credential.attachment == .platform {
-            authenticatorAttachment = "platform"
+        if #available(iOS 16.6, *) {
+            if credential.attachment == .crossPlatform {
+                authenticatorAttachment = "crossPlatform"
+            } else if credential.attachment == .platform {
+                authenticatorAttachment = "platform"
+            } else {
+                authenticatorAttachment = "NA"
+            }
         } else {
-            authenticatorAttachment = "NA"
+            authenticatorAttachment = "platform"
         }
         responseJson["authenticatorAttachment"] = authenticatorAttachment
         return responseJson
     }
-}
-
-
-extension PasskeyUseCase {
-//    func handleResult(forAuthorizationResult result: PasskeyAuthorizationResult) -> String {
-//        switch result {
-//        case .success(let dictionary):
-//            return Utils.convertDictionaryToString(dictionary)
-//        case .failure(let dictionary):
-//            return Utils.convertDictionaryToString(dictionary)
-//        }
-//    }
-}
-
-enum PasskeyAuthorizationResult: @unchecked Sendable {
-    case success([String: Any])
-    case failure([String: Any])
 }

@@ -59,7 +59,7 @@ import Network
         return GetMerchantConfigUseCase()
     }()
     private lazy var postIntentUseCase: PostIntentUseCase = {
-        return PostIntentUseCase()
+        return PostIntentUseCase(others: self)
     }()
     internal private(set) lazy var transactionStatusUseCase: TransactionStatusUseCase = {
         return TransactionStatusUseCase()
@@ -523,8 +523,34 @@ private extension Otpless {
         if let passkeyRequestStr = intentResponse.passkeyRequestStr,
            !passkeyRequestStr.isEmpty,
            let passkeyRequestDict = Utils.convertStringToDictionary(passkeyRequestStr) {
-            await self.startPasskeyAuthorization(passkeyRequestDict: passkeyRequestDict)
-            return
+            let result = await passkeyUseCase.autherizePasskey(request: passkeyRequestDict)
+            switch result {
+                case .success(let response):
+                self.invokeResponse(response)
+            case .failure(let error):
+                //todo sync the fallback case
+                self.invokeResponse(OtplessResponse.failedToInitializeResponse)
+                let intentResponse: PostIntentUseCaseResponse
+                if otplessRequest.onetapItemData != nil {
+                    let uuid: String = otplessRequest.onetapItemData!.uiid
+                    intentResponse = await postIntentUseCase.invoke(
+                        state: self.state ?? "",
+                        withOtplessRequest: otplessRequest,
+                        uiId: [uuid],
+                        uid: self.uid,
+                        webAuthnFallback: true
+                    )
+                } else {
+                    intentResponse = await postIntentUseCase.invoke(
+                        state: self.state ?? "",
+                        withOtplessRequest: otplessRequest,
+                        uiId: self.uiId,
+                        uid: self.uid,
+                        webAuthnFallback: true
+                    )
+                }
+                await handleIntentResponse(intentResponse, otplessRequest)
+            }
         }
         
         if intentResponse.isSNA,
@@ -590,17 +616,6 @@ private extension Otpless {
             await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                 self?.invokeResponse(otplessResponse)
             })
-        }
-        
-        if let passkeyRequestStr = intentResponse.passkeyRequestStr, let passkeyRequest = Utils.convertStringToDictionary(passkeyRequestStr) {
-            let result = await passkeyUseCase.autherizePasskey(request: passkeyRequest)
-            switch result {
-                case .success(let response):
-                self.invokeResponse(response)
-            case .failure(let error):
-                //todo sync the fallback case
-                self.invokeResponse(OtplessResponse.failedToInitializeResponse)
-            }
         }
     }
     

@@ -17,7 +17,7 @@ struct PostIntentRequestBody: DictionaryConvertible {
     let mobile: String?
     let selectedCountryCode: String?
     let silentAuthEnabled: Bool
-    let triggerWebauthn: Bool
+    var triggerWebauthn: Bool
     let type: String
     let uid: String?
     let value: String?
@@ -78,5 +78,13 @@ struct PostIntentRequestBody: DictionaryConvertible {
         self.requestId = requestId
         self.clientMetaData = clientMetaData
         self.asId = asId
+    }
+    
+    internal mutating func setWebAuthnFallback(is fallback: Bool) {
+        if fallback {
+            triggerWebauthn = false
+        } else {
+            triggerWebauthn = true
+        }
     }
 }

@@ -7,18 +7,29 @@
 
 import Foundation
 
-class PostIntentUseCase {
+internal class PostIntentUseCase {
+    
+    private let usecaseProvider: UsecaseProvider
+    
+    init(others usecaseProvider: UsecaseProvider) {
+        self.usecaseProvider = usecaseProvider
+    }
+    
     func invoke(
         state: String,
         withOtplessRequest otplessRequest: OtplessRequest,
         uiId: [String]?,
-        uid: String?
+        uid: String?,
+        webAuthnFallback: Bool = false
     ) async -> PostIntentUseCaseResponse {
         Otpless.shared.transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: false)
         Otpless.shared.snaUseCase.stopPolling()
         
         flushExistingAuthTypeAndDeliveryChannel()
-        let requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+        var requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+        if webAuthnFallback {
+            requestBody.setWebAuthnFallback(is: true)
+        }
         let response = await Otpless.shared.apiRepository
             .postIntent(state: state, body: requestBody)
         
@@ -356,12 +367,11 @@ class PostIntentUseCase {
     }
     
     private func shouldTriggerWebAuthn(_ otplessRequest: OtplessRequest) -> Bool {
-        if let requestId = otplessRequest.getRequestId(),
-           !requestId.isEmpty {
-            return true
+        if #available(iOS 15.0, *) {
+            return usecaseProvider.passkeyUseCase.isWebAuthnsupportedOnDevice()
+        } else {
+            return false
         }
-        
-        return false
     }
 }
 

@@ -14,15 +14,15 @@ internal final class CoreHTTPClient {
     }
     
     /// Execute a request and return ApiResponse<Data>
-    func execute(_ request: URLRequest) async -> ApiResponse<Data> {
+    func execute(_ request: URLRequest) async -> Result<Data, ApiError> {
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 // No HTTPURLResponse — treat as transport failure
-                return .error(error: ApiError(message: "No HTTP response"))
+                return .failure(ApiError(message: "No HTTP response"))
             }
             if (200..<300).contains(http.statusCode) {
-                return .success(data: data)
+                return .success(data)
             } else {
                 // Build ApiError with status + parsed JSON (if any)
                 let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -33,7 +33,7 @@ internal final class CoreHTTPClient {
                     "method": request.httpMethod ?? "UNKNOWN",
                     "which_api": request.url?.absoluteString ?? "UNKNOWN"
                 ])
-                return .error(error: ApiError(message: message, statusCode: http.statusCode, responseJson: json))
+                return .failure(ApiError(message: message, statusCode: http.statusCode, responseJson: json))
             }
         } catch {
             sendEvent(event: .ERROR_API_RESPONSE, extras: [
@@ -42,14 +42,14 @@ internal final class CoreHTTPClient {
                 "which_api": request.url?.absoluteString ?? "unknown"
             ])
             // Transport errors (DNS, TLS, no network, timeouts, cancellations, etc.)
-            return .error(error: ApiError(message: error.localizedDescription))
+            return .failure(ApiError(message: error.localizedDescription))
         }
     }
     
     /// Build URLRequest and handle JSON body encoding errors → ApiResponse.error
     func makeRequest(
         baseURL: URL, path: String, method: String, headers: [String: String] = [:], jsonBody: [String: String]? = nil
-    ) -> ApiResponse<URLRequest> {
+    ) -> Result<URLRequest, ApiError> {
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = method
         headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
@@ -61,24 +61,22 @@ internal final class CoreHTTPClient {
                 }
             } catch {
                 // Encoding error (kept because you asked to keep "encoding")
-                return .error(error: ApiError(message: "Encoding failed: \(error.localizedDescription)"))
+                return .failure(ApiError(message: "Encoding failed: \(error.localizedDescription)"))
             }
         }
-        return .success(data: req)
+        return .success(req)
     }
 }
 
-// MARK: - SessionService (signature mirrors your Retrofit one, returning ApiResponse<Data>)
 
-internal protocol SessionService {
-    func authenticateSession(headers: [String: String], body: [String: String]) async -> ApiResponse<Data>
-    func refreshSession(headers: [String: String], body: [String: String]) async -> ApiResponse<Data>
-    func deleteSession(sessionToken: String, headers: [String: String], body: [String: String]) async -> ApiResponse<Data>
+internal protocol SessionService: Sendable {
+    func authenticateSession(headers: [String: String], body: [String: String]) async -> Result<Data, ApiError>
+    func refreshSession(headers: [String: String], body: [String: String]) async -> Result<Data, ApiError>
+    func deleteSession(sessionToken: String, headers: [String: String], body: [String: String]) async -> Result<Data, ApiError>
 }
 
-// MARK: - Implementation
 
-internal final class SessionServiceImpl: SessionService {
+internal final class SessionServiceImpl: SessionService, @unchecked Sendable {
     private let baseURL: URL
     private let http: CoreHTTPClient
     
@@ -87,78 +85,49 @@ internal final class SessionServiceImpl: SessionService {
         self.http = http
     }
     
-    func authenticateSession(headers: [String : String], body: [String : String]) async -> ApiResponse<Data> {
+    func authenticateSession(headers: [String : String], body: [String : String]) async -> Result<Data, ApiError> {
         switch http.makeRequest(
-            baseURL: baseURL,
-            path: "v4/session/authenticate",
-            method: "POST",
-            headers: headers,
-            jsonBody: body
+            baseURL: baseURL, path: "v4/session/authenticate", method: "POST", headers: headers, jsonBody: body
         ) {
         case .success(let req):
-            return await http.execute(req!)
-        case .error(let err):
-            return .error(error: err)
+            return await http.execute(req)
+        case .failure(let err):
+            return .failure(err)
         }
     }
     
-    func refreshSession(headers: [String : String], body: [String : String]) async -> ApiResponse<Data> {
-        switch http.makeRequest(
-            baseURL: baseURL,
-            path: "v4/session/refresh",
-            method: "POST",
-            headers: headers,
-            jsonBody: body
-        ) {
+    func refreshSession(headers: [String : String], body: [String : String]) async -> Result<Data, ApiError> {
+        switch http.makeRequest(baseURL: baseURL, path: "v4/session/refresh", method: "POST", headers: headers, jsonBody: body) {
         case .success(let req):
-            return await http.execute(req!)
-        case .error(let err):
-            return .error(error: err)
+            return await http.execute(req)
+        case .failure(let err):
+            return .failure(err)
         }
     }
     
-    func deleteSession(sessionToken: String, headers: [String : String], body: [String : String]) async -> ApiResponse<Data> {
+    func deleteSession(sessionToken: String, headers: [String : String], body: [String : String]) async -> Result<Data, ApiError> {
         let safeToken = sessionToken.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionToken
         switch http.makeRequest(baseURL: baseURL,path: "v4/session/\(safeToken)", method: "DELETE",headers: headers,jsonBody: body) {
         case .success(let req):
-            return await http.execute(req!)
-        case .error(let err):
-            return .error(error: err)
+            return await http.execute(req)
+        case .failure(let err):
+            return .failure(err)
         }
     }
 }
 
-internal extension ApiResponse where T == Data {
-    func decode<U: Decodable>(as type: U.Type, using decoder: JSONDecoder = .init()) -> ApiResponse<U> {
+internal extension Result where Success == Data, Failure == ApiError {
+    func decode<U: Decodable>(as type: U.Type, using decoder: JSONDecoder = .init()) -> Result<U, Failure> {
         switch self {
         case .success(let data):
-            guard let data = data else { return .success(data: nil) }
             do {
                 let value = try decoder.decode(U.self, from: data)
-                return .success(data: value)
+                return .success(value)
             } catch {
-                // Surface as your ApiError with a synthetic "encoding" style message
-                return .error(error: ApiError(message: "Decoding failed: \(error.localizedDescription)"))
+                return .failure(ApiError(message: "Decoding failed: \(error.localizedDescription)"))
             }
-        case .error(let err):
-            return .error(error: err)
-        }
-    }
-    
-    /// Convenience to parse JSON to [String: Any] for quick maps / bridging layers
-    func toJSONObject() -> ApiResponse<[String: Any]> {
-        switch self {
-        case .success(let data):
-            guard
-                let d = data,
-                let obj = try? JSONSerialization.jsonObject(with: d),
-                let json = obj as? [String: Any]
-            else {
-                return .success(data: nil)
-            }
-            return .success(data: json)
-        case .error(let err):
-            return .error(error: err)
+        case .failure(let err):
+            return .failure(err)
         }
     }
 }

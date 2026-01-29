@@ -78,9 +78,9 @@ public actor OtplessSessionManager {
         ).decode(as: DeleteSessionResponse.self)
         switch response {
         case .success(let data):
-            DLog("session logout \(data!.success), \(data!.message)")
-        case .error:
-            DLog("session logout api failed")
+            DLog("session logout \(data.success), \(data.message)")
+        case .failure(let error):
+            DLog("session logout api failed \(error)")
         }
     }
     
@@ -159,21 +159,21 @@ public actor OtplessSessionManager {
         switch await sessionService.refreshSession(headers: makeHeaderMap(), body: requestMap)
             .decode(as: OtplessSessionInfo.self) {
         case .success(let data):
-            if isJwtTokenActive(data!.jwtToken) {
+            if isJwtTokenActive(data.jwtToken) {
                 DLog("refresh success saving new jwt token")
                 let newInfo = OtplessSessionInfo(
                     sessionToken: oldSessionInfo.sessionToken,
                     refreshToken: oldSessionInfo.refreshToken,
-                    jwtToken: data!.jwtToken
+                    jwtToken: data.jwtToken
                 )
                 saveSession(newInfo)
-                return .active(data!.jwtToken)
+                return .active(data.jwtToken)
             } else {
                 DLog("refresh success but jwt token is not active")
                 return .inactive
             }
-        case .error:
-            DLog("failed to refresh jwt token")
+        case .failure(let error):
+            DLog("failed to refresh jwt token\n\(error)")
             return .inactive
         }
     }
@@ -213,7 +213,7 @@ public actor OtplessSessionManager {
                     .decode(as: AuthenticateSessionResponse.self)
                 switch result {
                 case .success(let resp):
-                    let newJwt = resp!.sessionTokenJWT
+                    let newJwt = resp.sessionTokenJWT
                     if await self.isJwtTokenActive(newJwt) {
                         DLog("saving new jwt token")
                         let newInfo = OtplessSessionInfo(
@@ -225,8 +225,8 @@ public actor OtplessSessionManager {
                     } else {
                         DLog("new jwt token is expired")
                     }
-                case .error:
-                    DLog("failed to fetch new jwt token")
+                case .failure(let error):
+                    DLog("failed to fetch new jwt token \(error)")
                 }
             }
         }

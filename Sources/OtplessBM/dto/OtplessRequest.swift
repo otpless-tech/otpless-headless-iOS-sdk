@@ -376,7 +376,7 @@ internal struct RequestKeys {
     static let deviceValue = "DEVICE"
 }
 
-public struct OtplessAuthCofig {
+public struct OtplessAuthCofig: Sendable {
     let isForeground: Bool
     let otp: String?
     let tid: String?

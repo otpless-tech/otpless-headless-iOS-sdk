@@ -32,13 +32,7 @@ internal class PasskeyUseCase: NSObject {
         if let isRegistration = request["isRegistration"] as? Bool, isRegistration {
             switch createRegistrationRequest(from: data) {
             case .success(let platfromKeyRequest):
-                let registrationResult = await withCheckedContinuation { contin in
-                    self.continuation = contin
-                    let authController = ASAuthorizationController(authorizationRequests: [platfromKeyRequest])
-                    authController.delegate = self
-                    authController.presentationContextProvider = self
-                    authController.performRequests()
-                }
+                let registrationResult = await performAuthWithiOS(request: platfromKeyRequest)
                 switch registrationResult {
                 case .success(let data):
                     return await submitWebAuthnData(data: data)
@@ -51,13 +45,7 @@ internal class PasskeyUseCase: NSObject {
         } else {
             switch createSignInRequest(from: data) {
             case .success(let platformKeyRequest):
-                let signInResult = await withCheckedContinuation { contin in
-                    self.continuation = contin
-                    let authController = ASAuthorizationController(authorizationRequests: [platformKeyRequest])
-                    authController.delegate = self
-                    authController.presentationContextProvider = self
-                    authController.performRequests()
-                }
+                let signInResult = await performAuthWithiOS(request: platformKeyRequest)
                 switch signInResult {
                 case .success(let data):
                     return await submitWebAuthnData(data: data)
@@ -66,6 +54,19 @@ internal class PasskeyUseCase: NSObject {
                 }
             case .failure(let error):
                 return .failure(error)
+            }
+        }
+    }
+    
+    @available(iOS 15.0, *)
+    private func performAuthWithiOS(request: ASAuthorizationRequest) async -> Result<[String: Any], Error> {
+        await withCheckedContinuation { cont in
+            Task { @MainActor in
+                self.continuation = cont
+                let authController = ASAuthorizationController(authorizationRequests: [request])
+                authController.delegate = self
+                authController.presentationContextProvider = self
+                authController.performRequests()
             }
         }
     }
@@ -175,8 +176,10 @@ extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationCont
     /// - parameter controller: The authorization controller handling the authorization.
     /// - parameter error: The error that occurred during authorization.
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        continuation?.resume(returning: .failure(error))
-        continuation = nil
+        Task { @MainActor in
+            continuation?.resume(returning: .failure(error))
+            continuation = nil
+        }
     }
     
     
@@ -194,18 +197,20 @@ extension PasskeyUseCase: ASAuthorizationControllerDelegate, ASAuthorizationCont
     /// - parameter controller: The authorization controller handling the authorization.
     /// - parameter authorization: The authorization result.
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
-        if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration {
-            // A new passkey was registered
-            let registrationResponse = createRegistrationResponse(from: credential)
-            self.continuation?.resume(returning: .success(registrationResponse))
-            self.continuation = nil
-        } else if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
-            let signInResponse = createSignInResponse(from: credential)
-            self.continuation?.resume(returning: .success(signInResponse))
-            self.continuation = nil
-        } else {
-            self.continuation?.resume(returning:  .failure(NSError(domain: "Unexpected credential type \(authorization.credential.description)", code: 5200)))
-            self.continuation = nil
+        Task { @MainActor in
+            if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration {
+                // A new passkey was registered
+                let registrationResponse = createRegistrationResponse(from: credential)
+                self.continuation?.resume(returning: .success(registrationResponse))
+                self.continuation = nil
+            } else if let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
+                let signInResponse = createSignInResponse(from: credential)
+                self.continuation?.resume(returning: .success(signInResponse))
+                self.continuation = nil
+            } else {
+                self.continuation?.resume(returning:  .failure(NSError(domain: "Unexpected credential type \(authorization.credential.description)", code: 5200)))
+                self.continuation = nil
+            }
         }
     }
     

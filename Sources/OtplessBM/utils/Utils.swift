@@ -171,6 +171,7 @@ extension DictionaryConvertible {
 }
 
 
+@MainActor
 internal class ImageUtils {
     
     static let shared = ImageUtils()
@@ -186,14 +187,13 @@ internal class ImageUtils {
             imageView.image = image
             return
         }
-        let task = URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            guard let self = self, error == nil, let data = data else { return }
-            guard let img = UIImage(data: data) else { return }
-            imageCache.setObject(img, forKey: url as NSURL)
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data, let img = UIImage(data: data) else { return }
             DispatchQueue.main.async {
+                guard let self else { return }
+                self.imageCache.setObject(img, forKey: url as NSURL)
                 imageView.image = img
             }
-        }
-        task.resume()
+        }.resume()
     }
 }

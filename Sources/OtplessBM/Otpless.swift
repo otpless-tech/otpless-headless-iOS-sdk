@@ -824,6 +824,7 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
 extension Otpless {
     
     @available(iOS 15.0, *)
+    @MainActor
     internal func presentOneTapBottomSheet(viewController: UIViewController, items: [OnetapItemData], config config: OtplessAuthCofig) {
         let oneTapView = OneTapView(
             items: items,
@@ -844,10 +845,11 @@ extension Otpless {
         let sheetVC = OneTapBottomSheetViewController(oneTapView: oneTapView) // from earlier
         onetapController = sheetVC
         viewController.present(sheetVC, animated: true)
+        
     }
     
     internal func dismissOneTapBottomSheet() {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self, let controller = self.onetapController else { return }
             controller.dismiss(animated: true)
             self.onetapController = nil

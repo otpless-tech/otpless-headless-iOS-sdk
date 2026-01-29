@@ -528,8 +528,6 @@ private extension Otpless {
                 case .success(let response):
                 self.invokeResponse(response)
             case .failure(let error):
-                //todo sync the fallback case
-                self.invokeResponse(OtplessResponse.failedToInitializeResponse)
                 let intentResponse: PostIntentUseCaseResponse
                 if otplessRequest.onetapItemData != nil {
                     let uuid: String = otplessRequest.onetapItemData!.uiid

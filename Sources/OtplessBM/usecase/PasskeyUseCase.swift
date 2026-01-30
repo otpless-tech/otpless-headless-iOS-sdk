@@ -14,7 +14,7 @@ import LocalAuthentication
 /// We haven't annotated the class with `@available(iOS 15, *)` so that it's class level instance can be created in common classes thay may
 /// supporting previous versions of iOS. Instead, we have annotated it's extension and other all the functions with `@available(iOS 16, *)`.
 
-internal class PasskeyUseCase: NSObject {
+internal class  PasskeyUseCase: NSObject {
     
     private let usecaseProvider: UsecaseProvider
     
@@ -96,14 +96,50 @@ internal class PasskeyUseCase: NSObject {
         }
         let platformProvider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpId)
         // Since the challenge received from backend is in format base64Url, it must be converted into base64.
-        let backendCompatibleChallenge = Data(base64Encoded: Utils.convertBase64UrlToBase64(base64Url: challenge))
-        guard let challenge = backendCompatibleChallenge,
+        let base64EncodeChallenge = Data(base64Encoded: Utils.convertBase64UrlToBase64(base64Url: challenge))
+        guard let challenge = base64EncodeChallenge,
               let userId = (user["id"] as? String)?.data(using: .utf8),
               let name = (user["name"] as? String) else {
             return .failure(NSError(domain: "unable to parse platformKeyRequest", code: 5207))
         }
-        let platformKeyRequest = platformProvider.createCredentialRegistrationRequest(challenge: challenge, name: name, userID: userId)
-        return .success(platformKeyRequest)
+        let registrationRequest = platformProvider.createCredentialRegistrationRequest(challenge: challenge, name: name, userID: userId)
+        // setting attestation
+        if let attestation = request["attestation"] as? String {
+            switch attestation.lowercased() {
+            case "direct":
+                registrationRequest.attestationPreference = .direct
+            case "enterprise":
+                if #available(iOS 16.0, *) {
+                    registrationRequest.attestationPreference = .enterprise
+                } else {
+                    registrationRequest.attestationPreference = .direct // fallback
+                }
+            default:
+                registrationRequest.attestationPreference = .none
+            }
+        }
+        // setting authenticator selection
+        if let authenticatorSelection = request["authenticatorSelection"] as? [String: Any], let uv = authenticatorSelection["userVerification"] as? String {
+            switch uv.lowercased() {
+            case "required": registrationRequest.userVerificationPreference = .required
+            case "discouraged": registrationRequest.userVerificationPreference = .discouraged
+            default: registrationRequest.userVerificationPreference = .preferred
+            }
+        }
+        // setting excludeCredentials
+        if #available(iOS 17.4, *), let excludeCreds = request["excludeCredentials"] as? [[String: Any]] {
+            let descriptors: [ASAuthorizationPlatformPublicKeyCredentialDescriptor] =
+            excludeCreds.compactMap { item in
+                guard let idB64Url = item["id"] as? String else { return nil }
+                let idB64 = Utils.convertBase64UrlToBase64(base64Url: idB64Url)
+                guard let credId = Data(base64Encoded: idB64) else { return nil }
+                return ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: credId)
+            }
+            if !descriptors.isEmpty {
+                registrationRequest.excludedCredentials = descriptors
+            }
+        }
+        return .success(registrationRequest)
     }
     
     /// Create Sign In Request using request dictionary from backend
@@ -124,8 +160,34 @@ internal class PasskeyUseCase: NSObject {
         guard let challenge = backendCompatibleChallenge else {
             return .failure(NSError(domain: "unable to parse challenge into base64", code: 5207))
         }
-        let platformKeyRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
-        return .success(platformKeyRequest)
+        let assertionRequest = platformProvider.createCredentialAssertionRequest(challenge: challenge)
+        // allowCredentials
+        if let allowCreds = request["allowCredentials"] as? [[String: Any]] {
+            var descriptors: [ASAuthorizationPlatformPublicKeyCredentialDescriptor] = []
+            descriptors.reserveCapacity(allowCreds.count)
+            for item in allowCreds {
+                guard let idB64Url = item["id"] as? String else { continue }
+                let idB64 = Utils.convertBase64UrlToBase64(base64Url: idB64Url)
+                guard let credId = Data(base64Encoded: idB64) else { continue }
+                // iOS descriptor only needs credentialID (no "type" / "transports")
+                descriptors.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: credId))
+            }
+            if !descriptors.isEmpty {
+                assertionRequest.allowedCredentials = descriptors
+            }
+        }
+        // WebAuthn "userVerification": required / preferred / discouraged
+        if let uv = request["userVerification"] as? String {
+            switch uv.lowercased() {
+            case "required":
+                assertionRequest.userVerificationPreference = .required
+            case "discouraged":
+                assertionRequest.userVerificationPreference = .discouraged
+            default:
+                assertionRequest.userVerificationPreference = .preferred
+            }
+        }
+        return .success(assertionRequest)
     }
     
     /// Checks whether device supports WebAuthN.
@@ -191,7 +253,10 @@ internal class PasskeyASAuthorizationView: NSObject, ASAuthorizationControllerDe
     /// - parameter controller: The authorization controller requesting the presentation anchor.
     /// - returns: The presentation anchor for the authorization controller.
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        return ASPresentationAnchor(windowScene: Otpless.shared.merchantWindowScene!)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return ASPresentationAnchor(windowScene: scene)
+        }
+        return ASPresentationAnchor()
     }
     
     /// Handles the successful completion of an authorization request.

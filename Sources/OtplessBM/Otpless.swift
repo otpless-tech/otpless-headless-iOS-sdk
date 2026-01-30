@@ -845,7 +845,6 @@ extension Otpless {
         let sheetVC = OneTapBottomSheetViewController(oneTapView: oneTapView) // from earlier
         onetapController = sheetVC
         viewController.present(sheetVC, animated: true)
-        
     }
     
     internal func dismissOneTapBottomSheet() {

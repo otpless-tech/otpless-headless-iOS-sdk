@@ -14,32 +14,35 @@ internal enum OneTapTheme {
     static let sheetBackground = UIColor { tc in
         tc.userInterfaceStyle == .dark ? UIColor(red: 0.125, green: 0.125, blue: 0.125, alpha: 1.0) : UIColor.white
     }
-
+    
     static let cardBackground = UIColor { tc in
         tc.userInterfaceStyle == .dark ? UIColor(red: 0.196, green: 0.196, blue: 0.196, alpha: 1.0) : UIColor(red: 0.946, green: 0.946, blue: 0.946, alpha: 1.0)
     }
-
+    
     static let titleText = UIColor { tc in
         tc.userInterfaceStyle == .dark ? UIColor.white : UIColor.black
     }
-
+    
     static let subtitleText: UIColor = UIColor(red: 0.502, green: 0.514, blue: 0.553, alpha: 1.0)
     
     static let imageBackground = UIColor { tc in
         tc.userInterfaceStyle == .dark ? UIColor(red: 0.257, green: 0.257, blue: 0.257, alpha: 1.0) : UIColor.white
     }
     
+    static let border = UIColor { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(red: 0.427, green: 0.427, blue: 0.427, alpha: 1.0) : UIColor(red: 0.821, green: 0.821, blue: 0.821, alpha: 1.0)
+    }
+    
 }
 
 internal final class OneTapView: UIView {
-    private var items: [OnetapItemData]
+    var items: [OnetapItemData]
     private let onItemSelected: (OnetapItemData) -> Void
     private let onDismiss: () -> Void
     
     private let titleLabel = UILabel()
     private let tableView = UITableView()
     
-    private var tableHeightConstraint: NSLayoutConstraint!
     var isLoadingInProgress: Bool = false
     
     private lazy var footerLabel: UILabel = {
@@ -48,7 +51,7 @@ internal final class OneTapView: UIView {
         lbl.font = UIFont.systemFont(ofSize: 18, weight: .regular)
         lbl.textAlignment = .center
         lbl.isUserInteractionEnabled = true
-
+        
         let tap = UITapGestureRecognizer(target: self, action: #selector(didTapFooter))
         lbl.addGestureRecognizer(tap)
         return lbl
@@ -72,12 +75,6 @@ internal final class OneTapView: UIView {
     @objc private func didTapFooter() {
         if isLoadingInProgress { return }
         onDismiss()
-    }
-    
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        tableView.layoutIfNeeded()
-        tableHeightConstraint.constant = tableView.contentSize.height
     }
     
     private func applyTheme() {
@@ -109,7 +106,6 @@ internal final class OneTapView: UIView {
         
         tableView.isScrollEnabled = true
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 60
         tableView.separatorInset = UIEdgeInsets(top: 0, left: 56, bottom: 0, right: 0)
         tableView.separatorStyle = .none
         
@@ -117,30 +113,28 @@ internal final class OneTapView: UIView {
         tableView.contentInset = UIEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
         
         // ✅ Footer view container (tableFooterView needs a frame height)
-        let footerContainer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 70))
+        let footerContainer = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 50))
         footerLabel.frame = footerContainer.bounds
         footerLabel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         footerContainer.addSubview(footerLabel)
         tableView.tableFooterView = footerContainer
-
+        
         addSubview(titleLabel)
         addSubview(tableView)
     }
     
     private func setupConstraints() {
-        tableHeightConstraint = tableView.heightAnchor.constraint(equalToConstant: 0)
-        tableHeightConstraint.isActive = true
         NSLayoutConstraint.activate([
             // title padding
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 22),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 32),
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
             
             // table under title padding
-            tableView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 14),
+            tableView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
             tableView.leadingAnchor.constraint(equalTo: leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10)
+            tableView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20)
         ])
     }
 }
@@ -194,20 +188,12 @@ class OneTapCell: UITableViewCell {
         return lbl
     }()
     
-    private let nameLabel: UILabel = {
-        let lbl = UILabel()
-        lbl.translatesAutoresizingMaskIntoConstraints = false
-        lbl.font = UIFont(name: "Roboto-Regular", size: 12)
-        lbl.lineBreakMode = .byWordWrapping
-        lbl.textColor = .secondaryLabel
-        lbl.numberOfLines = 1
-        return lbl
-    }()
-    
     private let cardView: UIView = {
         let v = UIView()
         v.translatesAutoresizingMaskIntoConstraints = false
         v.layer.cornerRadius = 14
+        v.layer.borderColor = OneTapTheme.border.cgColor
+        v.layer.borderWidth = 1
         v.layer.masksToBounds = true
         return v
     }()
@@ -232,7 +218,6 @@ class OneTapCell: UITableViewCell {
     
     private func applyTheme() {
         phoneLabel.textColor = OneTapTheme.titleText
-        nameLabel.textColor = OneTapTheme.subtitleText
         cardView.backgroundColor = OneTapTheme.cardBackground
         self.backgroundColor = OneTapTheme.sheetBackground
         self.contentView.backgroundColor = OneTapTheme.sheetBackground
@@ -240,21 +225,17 @@ class OneTapCell: UITableViewCell {
     
     private func setupCell() {
         selectionStyle = .none
-        cardView.addSubview(avatarView)
         
-        let stackView = UIStackView(arrangedSubviews: [phoneLabel, nameLabel])
-        stackView.axis = .vertical
-        stackView.spacing = 4
+        let stackView = UIStackView(arrangedSubviews: [avatarView, phoneLabel])
+        stackView.axis = .horizontal
+        stackView.spacing = 16
         stackView.alignment = .fill
         stackView.distribution = .fillProportionally
         stackView.translatesAutoresizingMaskIntoConstraints = false
-        
-        
         contentView.addSubview(cardView)
         cardView.addSubview(stackView)
         
         NSLayoutConstraint.activate([
-            
             // ✅ Card margins (so it looks inset like screenshot)
             cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
@@ -266,21 +247,15 @@ class OneTapCell: UITableViewCell {
             avatarView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
             avatarView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
             
-            stackView.leadingAnchor.constraint(equalTo: avatarView.trailingAnchor, constant: 8),
+            stackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
             stackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
             stackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 10),
             stackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -10),
-            
         ])
     }
     
     func configure(with item: OnetapItemData) {
         phoneLabel.text = item.identity
-        if let name = item.name, !name.isEmpty {
-            nameLabel.text = item.name
-        } else {
-            nameLabel.text = "Unknown"
-        }
         if let logo = item.logo, let url = URL(string: logo) {
             ImageUtils.shared.loadImage(to: avatarView.imageView, from: url)
         }
@@ -311,136 +286,114 @@ import UIKit
 
 @available(iOS 15.0, *)
 final internal class OneTapBottomSheetViewController: UIViewController {
-
+    
     private let oneTapView: OneTapView
     private let maxHeightRatio: CGFloat = 0.6
-
+    
     init(oneTapView: OneTapView) {
         self.oneTapView = oneTapView
         super.init(nibName: nil, bundle: nil)
-
         modalPresentationStyle = .pageSheet // ✅ makes it a bottom sheet on iOS 15+
+        if let sheet = sheetPresentationController {
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 24
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+            if #available(iOS 16.0, *) {
+                let lowId = UISheetPresentationController.Detent.Identifier("low")
+                let calculatedHeight = 128 + (74 * oneTapView.items.count)
+                let cgHeight = CGFloat(calculatedHeight)
+                sheet.detents = [
+                    .custom(identifier: lowId) { _ in cgHeight }, // pick a height you want
+                    .medium(),
+                    .large()
+                ]
+                sheet.selectedDetentIdentifier = lowId
+            } else {
+                sheet.detents = [.medium(), .large()]
+                sheet.selectedDetentIdentifier = .medium
+            }
+        }
     }
-
+    
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        view.backgroundColor = .clear
+        
+        view.backgroundColor = OneTapTheme.sheetBackground
         view.addSubview(oneTapView)
         oneTapView.translatesAutoresizingMaskIntoConstraints = false
-
         // ✅ Attach view to bottom inside the sheet container
         NSLayoutConstraint.activate([
             oneTapView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             oneTapView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            oneTapView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            oneTapView.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor)
+            oneTapView.topAnchor.constraint(equalTo: view.topAnchor),
+            oneTapView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        configureSheet()
-    }
-
-    private func configureSheet() {
-        guard let sheet = sheetPresentationController else { return }
-
-        sheet.prefersGrabberVisible = true
-        sheet.preferredCornerRadius = 24
-        sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-
-        // compute needed height once (works on iOS 15 too)
-        oneTapView.setNeedsLayout()
-        oneTapView.layoutIfNeeded()
-
-        let targetHeight = oneTapView.systemLayoutSizeFitting(
-            CGSize(width: view.bounds.width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        ).height
-
-        let maxHeight = UIScreen.main.bounds.height * 0.6
-        let finalHeight = min(targetHeight, maxHeight)
-
-        if #available(iOS 16.0, *) {
-            let detentId = UISheetPresentationController.Detent.Identifier("oneTapDynamic")
-            sheet.detents = [
-                .custom(identifier: detentId) { _ in finalHeight }
-            ]
-            sheet.selectedDetentIdentifier = detentId
-        } else {
-            sheet.detents = [.medium()]
-            sheet.selectedDetentIdentifier = .medium
-        }
-    }
-
 }
 
 
 internal final class LogoRingView: UIView {
-
+    
     let imageView = UIImageView()
     let ringLayer = CAShapeLayer()
-
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
         setup()
     }
-
+    
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setup()
     }
-
+    
     private func setup() {
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = OneTapTheme.imageBackground
         clipsToBounds = false
-
+        
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         
         addSubview(imageView)
-
+        
         NSLayoutConstraint.activate([
             imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
             imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             imageView.widthAnchor.constraint(equalTo: widthAnchor, multiplier: 0.70),
             imageView.heightAnchor.constraint(equalTo: heightAnchor, multiplier: 0.70),
         ])
-
+        
         // ring layer
         ringLayer.fillColor = UIColor.clear.cgColor
         ringLayer.strokeColor = UIColor.systemBlue.cgColor
         ringLayer.lineWidth = 2
         ringLayer.lineCap = .round
-
+        
         // show only an ARC (not full circle) like screenshot
         ringLayer.strokeStart = 0.15
         ringLayer.strokeEnd = 0.35
         ringLayer.isHidden = true
-
+        
         layer.addSublayer(ringLayer)
     }
-
+    
     override func layoutSubviews() {
         super.layoutSubviews()
-
         // make view and image circular
         layer.cornerRadius = bounds.width / 2
         imageView.layer.cornerRadius = imageView.bounds.width / 2
-
+        
         // ring path slightly outside image
         let inset: CGFloat = 2
         let rect = bounds.insetBy(dx: inset, dy: inset)
         ringLayer.frame = bounds
         ringLayer.path = UIBezierPath(ovalIn: rect).cgPath
     }
-
+    
     func setLoading(_ loading: Bool) {
         if loading {
             ringLayer.isHidden = false
@@ -450,7 +403,7 @@ internal final class LogoRingView: UIView {
             ringLayer.isHidden = true
         }
     }
-
+    
     private func startRotating() {
         if ringLayer.animation(forKey: "rotate") != nil { return }
         let anim = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -461,7 +414,7 @@ internal final class LogoRingView: UIView {
         anim.timingFunction = CAMediaTimingFunction(name: .linear)
         ringLayer.add(anim, forKey: "rotate")
     }
-
+    
     private func stopRotating() {
         ringLayer.removeAnimation(forKey: "rotate")
     }

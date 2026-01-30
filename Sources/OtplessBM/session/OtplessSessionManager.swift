@@ -43,7 +43,7 @@ public actor OtplessSessionManager {
             DLog("no saved session is available to check, returning inactive session")
             return .inactive
         }
-        if isJwtTokenActive(session.jwtToken) {
+        if isValidJwt(session.jwtToken) {
             DLog("active session available")
             startAuthenticationLoopIfNotStarted()
             return .active(session.jwtToken)
@@ -107,7 +107,8 @@ public actor OtplessSessionManager {
         return obj
     }
     
-    private func isJwtTokenActive(_ jwt: String) -> Bool {
+    /// check the expiry and match the aud of jwt with appId
+    private func isValidJwt(_ jwt: String) -> Bool {
         // Parse JWT payload and check exp > now
         // base64url parts: header.payload.signature
         let parts = jwt.split(separator: ".")
@@ -118,7 +119,11 @@ public actor OtplessSessionManager {
               let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
             return false
         }
-        
+        // check for aud and appId
+        if let aud = json["aud"] as? String, aud.lowercased() != self.appId.lowercased() {
+            return false
+        }
+        // check for expiry
         let exp = (json["exp"] as? NSNumber)?.int64Value ?? 0
         let now = Int64(Date().timeIntervalSince1970)
         return exp > now
@@ -159,7 +164,7 @@ public actor OtplessSessionManager {
         switch await sessionService.refreshSession(headers: makeHeaderMap(), body: requestMap)
             .decode(as: OtplessSessionInfo.self) {
         case .success(let data):
-            if isJwtTokenActive(data.jwtToken) {
+            if isValidJwt(data.jwtToken) {
                 DLog("refresh success saving new jwt token")
                 let newInfo = OtplessSessionInfo(
                     sessionToken: oldSessionInfo.sessionToken,
@@ -214,7 +219,7 @@ public actor OtplessSessionManager {
                 switch result {
                 case .success(let resp):
                     let newJwt = resp.sessionTokenJWT
-                    if await self.isJwtTokenActive(newJwt) {
+                    if await self.isValidJwt(newJwt) {
                         DLog("saving new jwt token")
                         let newInfo = OtplessSessionInfo(
                             sessionToken: savedSessionInfo.sessionToken,

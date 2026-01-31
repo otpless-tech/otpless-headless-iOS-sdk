@@ -47,21 +47,6 @@ struct Sx: Codable {
 struct UserDetails: Codable {
     let email: [Email]?
     let mobile: [Mobile]?
-    
-    func toOneTapIdentities() -> [OneTapIdentity] {
-        var list: [OneTapIdentity] = []
-        email?.forEach { list.append($0.toOneTapIdentity()) }
-        mobile?.forEach { list.append($0.toOneTapIdentity()) }
-        return list
-    }
-    
-    func toMobileOneTapIdentities() -> [OneTapIdentity] {
-        return mobile?.map { $0.toOneTapIdentity() } ?? []
-    }
-    
-    func toEmailOneTapIdentities() -> [OneTapIdentity] {
-        return email?.map { $0.toOneTapIdentity() } ?? []
-    }
 }
 
 struct Widget: Codable {
@@ -131,10 +116,6 @@ struct Email: Codable {
     let uiId: String
     let value: String
     let name: String?
-    
-    func toOneTapIdentity() -> OneTapIdentity {
-        return OneTapIdentity(name: name, identity: value, uiId: uiId, logo: logo)
-    }
 }
 
 struct Mobile: Codable {
@@ -142,10 +123,6 @@ struct Mobile: Codable {
     let uiId: String
     let value: String
     let name: String?
-    
-    func toOneTapIdentity() -> OneTapIdentity {
-        return OneTapIdentity(name: name, identity: value, uiId: uiId, logo: logo)
-    }
 }
 
 struct Cta: Codable {
@@ -178,9 +155,19 @@ struct Channel: Codable {
     let type: String?
 }
 
-public struct OneTapIdentity: Sendable {
-    public let name: String?
-    public let identity: String
-    public let uiId: String
-    public let logo: String?
+struct OnetapItemData {
+    let name: String?
+    let identity: String
+    let uiid: String
+    let logo: String?
+    var action: Int
+    let isMobile: Bool
+    
+    static func from(mobile mobile: Mobile) -> OnetapItemData {
+        return OnetapItemData(name: mobile.name ?? "", identity: mobile.value, uiid: mobile.uiId, logo: mobile.logo, action: 0, isMobile: true)
+    }
+    
+    static func from(email email: Email) -> OnetapItemData {
+        return OnetapItemData(name: email.name ?? "", identity: email.value, uiid: email.uiId, logo: email.logo, action: 0, isMobile: false)
+    }
 }

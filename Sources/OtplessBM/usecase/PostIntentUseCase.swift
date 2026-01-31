@@ -7,18 +7,29 @@
 
 import Foundation
 
-class PostIntentUseCase {
+internal class PostIntentUseCase {
+    
+    private let usecaseProvider: UsecaseProvider
+    
+    init(others usecaseProvider: UsecaseProvider) {
+        self.usecaseProvider = usecaseProvider
+    }
+    
     func invoke(
         state: String,
         withOtplessRequest otplessRequest: OtplessRequest,
         uiId: [String]?,
-        uid: String?
+        uid: String?,
+        webAuthnFallback: Bool = false
     ) async -> PostIntentUseCaseResponse {
         Otpless.shared.transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: false)
         Otpless.shared.snaUseCase.stopPolling()
         
         flushExistingAuthTypeAndDeliveryChannel()
-        let requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+        var requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+        if webAuthnFallback {
+            requestBody.setWebAuthnFallback(is: true)
+        }
         let response = await Otpless.shared.apiRepository
             .postIntent(state: state, body: requestBody)
         
@@ -45,7 +56,7 @@ class PostIntentUseCase {
             mobile: requestDict[RequestKeys.mobileKey] as? String,
             selectedCountryCode: requestDict[RequestKeys.countryCodeKey] as? String,
             silentAuthEnabled: (Otpless.shared.merchantConfig?.merchant?.config?.isSilentAuthEnabled
-                                ?? false) && otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest() && Otpless.shared.isMobileDataEnabled,
+                                ?? false) && ((otplessRequest.onetapItemData?.isMobile == true) || (otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest())) && Otpless.shared.isMobileDataEnabled,
             triggerWebauthn: shouldTriggerWebAuthn(otplessRequest),
             type: (requestDict[RequestKeys.typeKey] ?? "") ?? "",
             uid: uid,
@@ -56,7 +67,7 @@ class PostIntentUseCase {
             uiIds: uiId,
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
             requestId: requestDict[RequestKeys.requestIdKey] as? String,
-            clientMetaData: getJSONClientMetaDataAsString(requestJson: requestDict.compactMapValues { $0 }),
+            clientMetaData: getJSONClientMetaDataAsString(request: otplessRequest),
             asId: Otpless.shared.asId
         )
     }
@@ -77,12 +88,17 @@ class PostIntentUseCase {
         return channel
     }
     
-    private func getJSONClientMetaDataAsString(requestJson: [String: Any]) -> String? {
+    private func getJSONClientMetaDataAsString(request: OtplessRequest) -> String? {
         do {
             var clientMetaJson: [String: Any] = [:]
             
-            if let templateId = requestJson[RequestKeys.tidKey] as? String, !templateId.isEmpty {
+            if let templateId = request.tid, !templateId.isEmpty {
                 clientMetaJson["tid"] = templateId
+            }
+            if let extras = request.extras {
+                for (key, value) in extras {
+                    clientMetaJson[key] = value
+                }
             }
             
             let jsonData = try JSONSerialization.data(withJSONObject: clientMetaJson, options: [])
@@ -351,12 +367,11 @@ class PostIntentUseCase {
     }
     
     private func shouldTriggerWebAuthn(_ otplessRequest: OtplessRequest) -> Bool {
-        if let requestId = otplessRequest.getRequestId(),
-           !requestId.isEmpty {
-            return true
+        if #available(iOS 15.0, *) {
+            return usecaseProvider.passkeyUseCase.isWebAuthnsupportedOnDevice()
+        } else {
+            return false
         }
-        
-        return false
     }
 }
 

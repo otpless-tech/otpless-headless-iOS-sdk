@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct PostIntentRequestBody: Codable, Sendable {
+struct PostIntentRequestBody: DictionaryConvertible {
     let channel: String
     let email: String?
     let hasWhatsapp: String
@@ -17,7 +17,7 @@ struct PostIntentRequestBody: Codable, Sendable {
     let mobile: String?
     let selectedCountryCode: String?
     let silentAuthEnabled: Bool
-    let triggerWebauthn: Bool
+    var triggerWebauthn: Bool
     let type: String
     let uid: String?
     let value: String?
@@ -29,6 +29,8 @@ struct PostIntentRequestBody: Codable, Sendable {
     let requestId: String?
     let clientMetaData: String? // Must a dictionary converted to String
     let asId: String?
+    let isViSnaWhitelisted = true
+    let isAirtelSnaWhitelisted = true
     
     init(
         channel: String,
@@ -78,19 +80,11 @@ struct PostIntentRequestBody: Codable, Sendable {
         self.asId = asId
     }
     
-    func toDict() -> [String: Any] {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-
-        do {
-            let jsonData = try encoder.encode(self)
-            if let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
-                return jsonObject
-            }
-        } catch {
-            print("Error converting to dictionary: \(error)")
+    internal mutating func setWebAuthnFallback(is fallback: Bool) {
+        if fallback {
+            triggerWebauthn = false
+        } else {
+            triggerWebauthn = true
         }
-        return [:]
     }
-
 }

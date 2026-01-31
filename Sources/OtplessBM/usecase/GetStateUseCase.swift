@@ -6,6 +6,7 @@
 //
 
 class GetStateUseCase {
+    
     private var retryCount = 0
     
     func invoke(
@@ -32,4 +33,9 @@ class GetStateUseCase {
             }
         }
     }
+}
+
+internal protocol UsecaseProvider {
+    var verifyCodeUseCase: VerifyCodeUseCase { get }
+    var passkeyUseCase: PasskeyUseCase { get }
 }

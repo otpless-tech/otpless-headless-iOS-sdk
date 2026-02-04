@@ -35,7 +35,7 @@ internal struct DeleteSessionResponse: Codable, Equatable {
 }
 
 // Mark: Otpless Session state to be passed to client
-public enum OtplessSessionState: Equatable {
+public enum OtplessSessionState: Equatable, Sendable {
     case active(String)   // jwtToken
     case inactive
 }

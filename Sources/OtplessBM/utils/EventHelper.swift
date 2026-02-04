@@ -8,7 +8,7 @@
 import Foundation
 import Network
 
-func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = ""){
+func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = "") {
     do {
         var params = [String: String]()
         params["event_name"] = event.rawValue
@@ -17,7 +17,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
         if !Otpless.shared.merchantAppId.isEmpty {
             params["mid"] = Otpless.shared.merchantAppId
         } else {
-            params["mid"] = OtplessSessionManager.shared.appId
+            params["mid"] = SessionManagerEventDataProvider.shared.getAppId()
         }
         
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
@@ -130,4 +130,23 @@ enum EventConstants: String {
     case getActiveSession = "native_get_active_session"
     case logoutSession = "native_logout_session"
     case sessionError = "native_session_error"
+}
+
+
+internal class SessionManagerEventDataProvider: @unchecked Sendable {
+    
+    static let shared = SessionManagerEventDataProvider()
+    let lock = NSLock()
+    
+    private var appId : String = ""
+    
+    func setAppId(id appId: String) {
+        lock.lock(); defer {lock.unlock()}
+        self.appId = appId
+    }
+    
+    func getAppId() -> String {
+        lock.lock(); defer {lock.unlock()}
+        return self.appId
+    }
 }

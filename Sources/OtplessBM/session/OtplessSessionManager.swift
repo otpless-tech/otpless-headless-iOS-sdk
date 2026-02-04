@@ -9,32 +9,24 @@ import Foundation
 
 public actor OtplessSessionManager {
     
-    
     public static let shared = OtplessSessionManager()
-    internal static let appIdAtomicBox = AtomicBox<String>("")
-    internal static let isInitAtomicBox = AtomicBox<Bool>(false)
     
+    private var appId: String = ""
+    private var isInit: Bool = false
     private let AUTHENTICATION_LOOP_TIME: UInt64 = 3 * 60 * 1_000_000_000 // 3 minutes in ns
     private let ORIGIN: String = "https://otpless.com"
-    
-    internal nonisolated var appId: String {
-        Self.appIdAtomicBox.get()
-    }
     private var state: String = ""
     private var authenticationTask: Task<Void, Never>?
     private let sessionService = SessionServiceImpl()
-    
-    internal nonisolated var isInit: Bool {
-        Self.isInitAtomicBox.get()
-    }
     
     private init() {
     }
     
     public func initialize(appId: String) {
-        Self.appIdAtomicBox.setOn(new: appId, onCondition: { $0.isEmpty })
-        // set value true if current value is false
-        Self.isInitAtomicBox.setOn(new: true, onCondition: { !$0 })
+        guard !isInit else { return }
+        self.appId = appId
+        SessionManagerEventDataProvider.shared.setAppId(id: appId)
+        isInit = true
     }
     
     public func getActiveSession() async -> OtplessSessionState {
@@ -54,6 +46,10 @@ public actor OtplessSessionManager {
             startAuthenticationLoopIfNotStarted()
         }
         return refreshStateResponse
+    }
+    
+    internal func isInitialized() -> Bool {
+        return isInit
     }
     
     public func logout() async {
@@ -241,22 +237,5 @@ public actor OtplessSessionManager {
         for key in [SessionStorageKeys.session, SessionStorageKeys.state] {
             SecureStorage.shared.delete(key: key)
         }
-    }
-}
-
-
-internal final class AtomicBox<T> {
-    private let lock = NSLock()
-    private var value: T
-    public init(_ value: T) { self.value = value }
-    
-    func get() -> T {
-        lock.lock(); defer { lock.unlock() }
-        return value
-    }
-    
-    func setOn(new newValue: T, onCondition onCondition: (T) -> Bool) {
-        lock.lock(); defer { lock.unlock() }
-        if onCondition(value) { value = newValue }
     }
 }

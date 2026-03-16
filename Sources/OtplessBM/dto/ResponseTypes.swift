@@ -14,5 +14,6 @@ public enum ResponseTypes: String {
          FAILED,
          SDK_READY,
          DELIVERY_STATUS,
-         AUTH_TERMINATED
+         AUTH_TERMINATED,
+         API_RESPONSE
 }

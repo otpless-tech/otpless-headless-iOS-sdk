@@ -19,12 +19,12 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
     func register(openURLContexts URLContexts: Set<UIOpenURLContext>) {}
     
     func startFBSignIn(withNonce nonce: String, withPermissions permissions: [String]) async -> FacebookSignInResponse {
-        os_log("OTPLESS: Facebook support not initialized. Please add OtplessSDK/FacebookSupport to your Podfile")
+        os_log("OTPLESS: Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile")
         return FacebookSignInResponse(
             success: false,
             token: nil,
             idToken: nil,
-            error: "Facebook support not initialized. Please add OtplessSDK/FacebookSupport to your Podfile"
+            error: "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
         )
     }
     

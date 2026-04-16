@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'OtplessBM'
-  s.version          = '2.0.8'
+  s.version          = '2.0.9'
   s.summary          = 'Standalone SDK for Otpless Headless functionality.'
 
   s.description      = <<-DESC
@@ -16,6 +16,18 @@ Pod::Spec.new do |s|
   
   s.subspec 'Core' do |core|
     core.source_files = 'Sources/OtplessBM/**/*'
+  end
+
+  s.subspec 'FacebookSupport' do |fb|
+    fb.dependency 'OtplessBM/Core'
+    fb.dependency 'FBSDKCoreKit', '~> 17.0.2'
+    fb.dependency 'FBSDKLoginKit', '~> 17.0.2'
+  end
+
+  s.subspec 'GoogleSupport' do |google|
+    google.dependency 'OtplessBM/Core'
+    google.dependency 'GoogleSignIn', '~> 9.0'
+    google.dependency 'GoogleSignInSwiftSupport', '~> 9.0'
   end
   
   s.resource_bundles = {

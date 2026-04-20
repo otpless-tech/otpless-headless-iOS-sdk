@@ -18,10 +18,44 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    private func sendApiResponse(apiName: String, data: Data?, statusCode: Int, error: Error? = nil) {
+        var responseDict: [String: Any] = ["apiName": apiName]
+        
+        if let data = data,
+           let jsonDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            responseDict["data"] = jsonDict
+        } else if let data = data,
+                  let rawString = String(data: data, encoding: .utf8) {
+            responseDict["raw"] = rawString
+        }
+        
+        if let error = error {
+            if let apiError = error as? ApiError {
+                responseDict["error"] = apiError.getResponse()
+            } else {
+                responseDict["error"] = [
+                    "errorCode": "\(statusCode)",
+                    "errorMessage": error.localizedDescription
+                ]
+            }
+        }
+        
+        let apiResponse = OtplessResponse(
+            responseType: .API_RESPONSE,
+            response: responseDict,
+            statusCode: statusCode
+        )
+        
+        DispatchQueue.main.async {
+            Otpless.shared.responseDelegate?.onResponse(apiResponse)
+            Otpless.shared.objcResponseDelegate?(apiResponse.toJsonString())
+        }
+    }
     
     func getState(
         queryParams: [String: String]
     ) async -> Result<StateResponse, Error> {
+        let apiName = "getState"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: nil,
@@ -29,17 +63,20 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "GET",
                 queryParameters: queryParams
             )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(StateResponse.self, from: data))
         } catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
-    
     
     func getMerchantConfig(
         state: String,
         queryParams: [String: String]
     ) async -> Result<MerchantConfigResponse, Error> {
+        let apiName = "getMerchantConfig"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
@@ -47,8 +84,11 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "GET",
                 queryParameters: queryParams
             )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(MerchantConfigResponse.self, from: data))
         } catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
@@ -57,6 +97,7 @@ internal final class ApiRepository: @unchecked Sendable {
         state: String,
         body: PostIntentRequestBody
     ) async -> Result<IntentResponse, Error> {
+        let apiName = "postIntent"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
@@ -64,14 +105,18 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "POST",
                 body: body.toDict()
             )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(IntentResponse.self, from: data))
         }
         catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
     
     func verifySSOCode(queryParams: [String: Any], state: String) async -> Result<TransactionStatusResponse, Error> {
+        let apiName = "verifySSOCode"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
@@ -79,14 +124,18 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "POST",
                 body: appendTokenIds(queryParams: queryParams)
             )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
         }
         catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
     
     func verifyOTP(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+        let apiName = "verifyOTP"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
@@ -94,10 +143,12 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "POST",
                 body: appendTokenIds(queryParams: queryParams)
             )
-            
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
         }
         catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
@@ -134,6 +185,7 @@ internal final class ApiRepository: @unchecked Sendable {
     }
     
     func getSNATransactionStatus(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+        let apiName = "getSNATransactionStatus"
         do {
             let data = try await apiManager.performUserAuthRequest(
                 state: state,
@@ -141,14 +193,25 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "GET",
                 queryParameters: queryParams
             )
+
+            if let dataString = String(data: data, encoding: .utf8) {
+                log(message: "SNA transaction status data (utf8): \(dataString)", type: .SNA_RESPONSE)
+            } else {
+                log(message: "SNA transaction status data: <binary data length=\(data.count)>", type: .SNA_RESPONSE)
+            }
+
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
         }
         catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }
     
     func getTransactionStatus(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+        let apiName = "getTransactionStatus"
         do {
             let data = try await apiManager.performUserAuthRequest(
                 state: state,
@@ -156,9 +219,12 @@ internal final class ApiRepository: @unchecked Sendable {
                 method: "GET",
                 queryParameters: queryParams
             )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
         }
         catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
             return Result.failure(error)
         }
     }

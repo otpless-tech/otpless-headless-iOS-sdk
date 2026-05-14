@@ -60,7 +60,7 @@ extension Otpless {
         if otplessResponse.statusCode == 9110 {
             return
         }
-        
+
         if otplessResponse.responseType == .ONETAP {
             if let data = otplessResponse.response?["data"] as? [String: Any],
                let token = data["token"] as? String {
@@ -68,8 +68,39 @@ extension Otpless {
             }
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
+
+            // Send event regardless of DI mode
+            Utils.convertToEventParamsJson(
+                otplessResponse: otplessResponse,
+                callback: { extras, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
+                }
+            )
+
+            let diType = merchantConfig?.metaData?.deviceIntelligence?.type
+
+            if diType == "SYNC" {
+                if diState == .inProgress {
+                    // Hold dispatch until DI finishes; onDeviceIntelligenceResult will relay it.
+                    pendingOneTapResponse = otplessResponse
+                    return
+                }
+                // SYNC but already completed — fall through to immediate dispatch.
+                rsId = ""
+                diState = .idle
+            } else {
+                // ASYNC or no DI configured — relay immediately.
+                rsId = ""
+                diState = .idle
+            }
+
+            DispatchQueue.main.async {
+                self.responseDelegate?.onResponse(otplessResponse)
+                self.objcResponseDelegate?(otplessResponse.toJsonString())
+            }
+            return
         }
-        
+
         if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
@@ -80,7 +111,7 @@ extension Otpless {
                 }
             )
         }
-        
+
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
             self.objcResponseDelegate?(otplessResponse.toJsonString())

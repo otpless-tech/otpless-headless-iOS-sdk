@@ -227,7 +227,11 @@ final class ApiManager: Sendable {
             "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),
             "deviceInfo": Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
         ])
-        
+
+        if !Otpless.shared.rsId.isEmpty {
+            mutableBody["rsId"] = Otpless.shared.rsId
+        }
+
         return mutableBody
     }
 
@@ -271,7 +275,11 @@ final class ApiManager: Sendable {
         if !Otpless.shared.token.isEmpty {
             extraQueryParams.append(URLQueryItem(name: "token", value: Otpless.shared.token))
         }
-        
+
+        if !Otpless.shared.rsId.isEmpty {
+            extraQueryParams.append(URLQueryItem(name: "rsId", value: Otpless.shared.rsId))
+        }
+
         if let queryParameters = queryParameters {
             urlComponents.queryItems = queryParameters.map { URLQueryItem(name: $0.key, value: ($0.value as? String ?? "")) }
         }

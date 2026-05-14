@@ -14,6 +14,15 @@ struct MerchantConfigResponse: Codable {
     let merchant: Merchant?
     let uiConfig: UiConfig?
     let userDetails: UserDetails?
+    let metaData: MetaData?
+}
+
+struct MetaData: Codable {
+    let deviceIntelligence: DeviceIntelligence?
+}
+
+struct DeviceIntelligence: Codable {
+    let type: String? // "SYNC" | "ASYNC"
 }
 
 struct UiConfig: Codable {

@@ -29,7 +29,12 @@ import Network
     internal private(set) var communicationMode: String = ""
     internal private(set) var authType: String = ""
     internal var drfID: String = ""
-    
+
+    // Device Intelligence
+    internal var rsId: String = ""
+    internal var diState: DeviceIntelligenceState = .idle
+    internal var pendingOneTapResponse: OtplessResponse? = nil
+
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
     internal private(set) var deviceInfo: [String: String] = [:]
@@ -456,6 +461,9 @@ private extension Otpless {
             return
         }
         
+        // Fire device intelligence in parallel with the intent API.
+        triggerDeviceIntelligenceIfNeeded(state: self.state ?? "")
+
         let intentResponse = await postIntentUseCase.invoke(
             state: self.state ?? "",
             withOtplessRequest: otplessRequest,
@@ -764,6 +772,7 @@ extension Otpless {
         hasMerchantSelectedExternalSDK = false
         userSelectedOAuthChannel = nil
         merchantOtplessRequest = nil
+        // rsId and diState are managed separately in invokeResponse / onDeviceIntelligenceResult
     }
 }
 
@@ -772,6 +781,63 @@ extension Otpless {
         let currentCounter = eventCounter
         eventCounter += 1
         return currentCounter
+    }
+}
+
+internal enum DeviceIntelligenceState {
+    case idle, inProgress, completed
+}
+
+extension Otpless {
+    func triggerDeviceIntelligenceIfNeeded(state: String) {
+        guard let diType = merchantConfig?.metaData?.deviceIntelligence?.type,
+              !diType.isEmpty,
+              diState == .idle else { return }
+
+        rsId = UUID().uuidString
+        diState = .inProgress
+
+        guard #available(iOS 15.0, *),
+              let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
+            diState = .completed
+            return
+        }
+
+        let sharedSelector = NSSelectorFromString("shared")
+        guard cls.responds(to: sharedSelector),
+              let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
+            diState = .completed
+            return
+        }
+
+        let selector = NSSelectorFromString("startDeviceIntelligenceWithParams:")
+        guard sharedObj.responds(to: selector) else {
+            diState = .completed
+            return
+        }
+
+        let params: [String: String] = [
+            "rsId": rsId,
+            "inId": inid,
+            "tsId": tsid,
+            "state": state
+        ]
+        sharedObj.perform(selector, with: params)
+    }
+
+    // Called by the DeviceIntelligence SDK when fingerprint generation is complete.
+    @objc public func onDeviceIntelligenceResult() {
+        diState = .completed
+
+        guard let pending = pendingOneTapResponse else { return }
+        pendingOneTapResponse = nil
+        rsId = ""
+        diState = .idle
+
+        DispatchQueue.main.async {
+            self.responseDelegate?.onResponse(pending)
+            self.objcResponseDelegate?(pending.toJsonString())
+        }
     }
 }
 

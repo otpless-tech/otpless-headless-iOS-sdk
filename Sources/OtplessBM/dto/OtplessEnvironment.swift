@@ -15,7 +15,7 @@ import Foundation
         case .PRODUCTION:
             return "https://user-auth.otpless.app"
         case .STAGING:
-            return "https://user-auth-pp.otpless.app"
+            return "https://user-auth.otpless.tech"
         }
     }
 }

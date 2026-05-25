@@ -16,16 +16,21 @@ class PostIntentUseCase {
     ) async -> PostIntentUseCaseResponse {
         Otpless.shared.transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: false)
         Otpless.shared.snaUseCase.stopPolling()
-        
+
         flushExistingAuthTypeAndDeliveryChannel()
         let requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+
+        log(message: "[Intent] Calling intent API — channel: \(requestBody.channel), identifierType: \(requestBody.identifierType), silentAuthEnabled: \(requestBody.silentAuthEnabled), triggerWebauthn: \(requestBody.triggerWebauthn), rsId: \(Otpless.shared.rsId.isEmpty ? "<none>" : Otpless.shared.rsId)", type: .INTENT)
+
         let response = await Otpless.shared.apiRepository
             .postIntent(state: state, body: requestBody)
-        
+
         switch response {
         case .success(let success):
+            log(message: "[Intent] Response — channel: \(success.quantumLeap.channel), pollingRequired: \(success.quantumLeap.pollingRequired), isSNA: \(success.quantumLeap.channel == "SILENT_AUTH"), hasOneTap: \(success.oneTap != nil)", type: .INTENT)
             return parseSuccessResponse(success, postIntentRequestBody: requestBody)
         case .failure(let failure):
+            log(message: "[Intent] Failed — \(failure.localizedDescription)", type: .API_RESPONSE_FAILURE)
             return parseFailureResponse(failure, request: otplessRequest)
         }
     }

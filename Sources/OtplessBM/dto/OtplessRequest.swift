@@ -7,6 +7,12 @@
 
 import Foundation
 
+@objc public enum DeviceFingerprintMode: Int {
+    case NONE = 0   // no fingerprinting (default)
+    case ASYNC = 1  // fingerprint runs in background; ONETAP is not delayed
+    case SYNC  = 2  // SDK waits for fingerprint before delivering ONETAP
+}
+
 @objc public class OtplessRequest: NSObject, @unchecked Sendable {
     private var authenticationMedium: AuthenticationMedium?
     private var phoneNumber: String?
@@ -347,7 +353,15 @@ internal extension OtplessRequest {
             return -1
         }
     }
-    
+
+    func getDeviceFingerprintMode() -> DeviceFingerprintMode {
+        switch extras?["deviceIntelligenceType"]?.uppercased() {
+        case "SYNC": return .SYNC
+        case "ASYNC": return .ASYNC
+        default: return .NONE
+        }
+    }
+
 }
 
 internal struct RequestKeys {

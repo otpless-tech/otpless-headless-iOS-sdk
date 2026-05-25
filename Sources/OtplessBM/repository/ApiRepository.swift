@@ -81,8 +81,8 @@ internal final class ApiRepository: @unchecked Sendable {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.GET_MERCHANT_CONFIG_PATH,
-                method: "POST",
-                body: queryParams.mapValues { $0 as Any }
+                method: "GET",
+                queryParameters: queryParams.mapValues { $0 as Any }
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(MerchantConfigResponse.self, from: data))

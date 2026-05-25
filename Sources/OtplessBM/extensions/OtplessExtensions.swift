@@ -58,8 +58,11 @@ extension Otpless {
 extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
         if otplessResponse.statusCode == 9110 {
+            log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
             return
         }
+
+        log(message: "[Response] Received — type: \(otplessResponse.responseType.rawValue), statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
 
         if otplessResponse.responseType == .ONETAP {
             if let data = otplessResponse.response?["data"] as? [String: Any],
@@ -69,7 +72,6 @@ extension Otpless {
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
 
-            // Send event regardless of DI mode
             Utils.convertToEventParamsJson(
                 otplessResponse: otplessResponse,
                 callback: { extras, musId in
@@ -77,31 +79,42 @@ extension Otpless {
                 }
             )
 
-            let diType = merchantConfig?.metaData?.deviceIntelligence?.type
+            let capturedMode = deviceFingerprintMode
+            log(message: "[ONETAP] Processing — mode: \(capturedMode == .SYNC ? "SYNC" : capturedMode == .ASYNC ? "ASYNC" : "NONE")", type: .ONETAP)
+            rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
 
-            if diType == "SYNC" {
-                if diState == .inProgress {
-                    // Hold dispatch until DI finishes; onDeviceIntelligenceResult will relay it.
-                    pendingOneTapResponse = otplessResponse
-                    return
+            if capturedMode == .SYNC {
+                log(message: "[ONETAP] SYNC — fetching DI before relaying ONETAP", type: .ONETAP)
+                Task {
+                    _ = await fetchIntelligenceAsync()
+                    log(message: "[ONETAP] SYNC — DI fetch complete, relaying ONETAP", type: .ONETAP)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.responseDelegate?.onResponse(otplessResponse)
+                        self?.objcResponseDelegate?(otplessResponse.toJsonString())
+                    }
                 }
-                // SYNC but already completed — fall through to immediate dispatch.
-                rsId = ""
-                diState = .idle
+            } else if capturedMode == .ASYNC {
+                log(message: "[ONETAP] ASYNC — relaying ONETAP immediately, fetching DI in background", type: .ONETAP)
+                DispatchQueue.main.async {
+                    self.responseDelegate?.onResponse(otplessResponse)
+                    self.objcResponseDelegate?(otplessResponse.toJsonString())
+                }
+                Task {
+                    _ = await fetchIntelligenceAsync()
+                    log(message: "[ONETAP] ASYNC — background DI fetch complete", type: .DEVICE_INTELLIGENCE)
+                }
             } else {
-                // ASYNC or no DI configured — relay immediately.
-                rsId = ""
-                diState = .idle
-            }
-
-            DispatchQueue.main.async {
-                self.responseDelegate?.onResponse(otplessResponse)
-                self.objcResponseDelegate?(otplessResponse.toJsonString())
+                log(message: "[ONETAP] NONE — relaying immediately", type: .ONETAP)
+                DispatchQueue.main.async {
+                    self.responseDelegate?.onResponse(otplessResponse)
+                    self.objcResponseDelegate?(otplessResponse.toJsonString())
+                }
             }
             return
         }
 
-        if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
+        if otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105 {
+            log(message: "[Response] Network timeout — statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
             Utils.convertToEventParamsJson(

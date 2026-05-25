@@ -33,31 +33,23 @@ extension Otpless {
             )
 
             let capturedMode = deviceFingerprintMode
-            log(message: "[ONETAP] Processing — mode: \(capturedMode == .SYNC ? "SYNC" : capturedMode == .ASYNC ? "ASYNC" : "NONE")", type: .ONETAP)
             rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
 
             if capturedMode == .SYNC {
-                log(message: "[ONETAP] SYNC — fetching DI before relaying ONETAP", type: .ONETAP)
                 Task {
                     _ = await fetchIntelligenceAsync()
-                    log(message: "[ONETAP] SYNC — DI fetch complete, relaying ONETAP", type: .ONETAP)
                     DispatchQueue.main.async { [weak self] in
                         self?.responseDelegate?.onResponse(otplessResponse)
                         self?.objcResponseDelegate?(otplessResponse.toJsonString())
                     }
                 }
             } else if capturedMode == .ASYNC {
-                log(message: "[ONETAP] ASYNC — relaying ONETAP immediately, fetching DI in background", type: .ONETAP)
                 DispatchQueue.main.async {
                     self.responseDelegate?.onResponse(otplessResponse)
                     self.objcResponseDelegate?(otplessResponse.toJsonString())
                 }
-                Task {
-                    _ = await fetchIntelligenceAsync()
-                    log(message: "[ONETAP] ASYNC — background DI fetch complete", type: .DEVICE_INTELLIGENCE)
-                }
+                Task { _ = await fetchIntelligenceAsync() }
             } else {
-                log(message: "[ONETAP] NONE — relaying immediately", type: .ONETAP)
                 DispatchQueue.main.async {
                     self.responseDelegate?.onResponse(otplessResponse)
                     self.objcResponseDelegate?(otplessResponse.toJsonString())

@@ -142,22 +142,6 @@ import Network
         }
     }
     
-    private func intelligenceInitialized(withAppId appId: String){
-        self.merchantAppId = appId
-        Task(priority: .medium) { [weak self] in
-            guard let self = self else { return }
-            
-            await DeviceInfoUtils.shared.initialise()
-            self.inid = await DeviceInfoUtils.shared.getInstallationId()
-            self.tsid = await DeviceInfoUtils.shared.getTrackingSessionId()
-            
-            await MainActor.run {
-                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
-            }
-            self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
-        }
-    }
-    
     @objc public func isOtplessDeeplink(url : URL) -> Bool {
         if let GoogleAuthClass = NSClassFromString("OtplessBM.GIDSignInUseCase") as? NSObject.Type {
             let googleAuthHandler = GoogleAuthClass.init()
@@ -530,7 +514,7 @@ private extension Otpless {
             deviceFingerprintMode = requestedDIMode
         }
 
-        log(message: "[Transaction] New intent request — deviceFingerprintMode: \(deviceFingerprintMode == .SYNC ? "SYNC" : deviceFingerprintMode == .ASYNC ? "ASYNC" : "NONE"), triggering DI if needed, then calling intent API", type: .TRANSACTION_START)
+        log(message: "[Transaction] New intent request — triggering DI if needed, then calling intent API", type: .TRANSACTION_START)
 
         // Configure device intelligence in parallel with the intent API.
         triggerDeviceIntelligenceIfNeeded(state: self.state ?? "")
@@ -827,23 +811,14 @@ internal enum DeviceIntelligenceState {
 
 extension Otpless {
     func triggerDeviceIntelligenceIfNeeded(state: String) {
-        guard deviceFingerprintMode != .NONE else {
-            log(message: "[DI] Skipped — deviceFingerprintMode is NONE", type: .DEVICE_INTELLIGENCE)
-            return
-        }
-
-        guard diState == .idle else {
-            log(message: "[DI] Skipped — already in state: \(diState) (will not re-trigger until after ONETAP)", type: .DEVICE_INTELLIGENCE)
-            return
-        }
+        guard deviceFingerprintMode != .NONE else { return }
+        guard diState == .idle else { return }
 
         rsId = "\(UUID().uuidString)-\(DispatchTime.now().uptimeNanoseconds)-\(state)"
         diState = .inProgress
-        log(message: "[DI] Configuring — mode: \(deviceFingerprintMode == .SYNC ? "SYNC" : "ASYNC"), rsId: \(rsId)", type: .DEVICE_INTELLIGENCE)
 
         guard #available(iOS 15.0, *),
               let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
-            log(message: "[DI] SDK class not found or iOS < 15 — marking configured and continuing", type: .DEVICE_INTELLIGENCE)
             onDeviceIntelligenceConfigured()
             return
         }
@@ -851,19 +826,15 @@ extension Otpless {
         let sharedSelector = NSSelectorFromString("shared")
         guard cls.responds(to: sharedSelector),
               let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
-            log(message: "[DI] Could not get shared instance of OTPlessIntelligence — marking configured", type: .DEVICE_INTELLIGENCE)
             onDeviceIntelligenceConfigured()
             return
         }
 
         let selector = NSSelectorFromString("configureIntelligenceWithParams:onComplete:")
         guard sharedObj.responds(to: selector) else {
-            log(message: "[DI] Method 'configureIntelligenceWithParams:onComplete:' not found — marking configured", type: .DEVICE_INTELLIGENCE)
             onDeviceIntelligenceConfigured()
             return
         }
-
-        log(message: "[DI] Calling configure — rsId: \(rsId), inId: \(inid), tsId: \(tsid), state: \(state.prefix(8))…", type: .DEVICE_INTELLIGENCE)
 
         let params: [String: String] = [
             "rsId": rsId,
@@ -882,42 +853,41 @@ extension Otpless {
     }
 
     private func onDeviceIntelligenceConfigured() {
-        log(message: "[DI] Configure complete — diState transitioning to completed", type: .DEVICE_INTELLIGENCE)
         diState = .completed
     }
 
     func fetchIntelligenceAsync() async -> [String: Any]? {
         guard #available(iOS 15.0, *),
               let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
-            log(message: "[DI] Fetch skipped — SDK class not found or iOS < 15", type: .DEVICE_INTELLIGENCE)
             return nil
         }
 
         let sharedSelector = NSSelectorFromString("shared")
         guard cls.responds(to: sharedSelector),
               let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
-            log(message: "[DI] Fetch skipped — could not get shared instance", type: .DEVICE_INTELLIGENCE)
             return nil
         }
 
         let selector = NSSelectorFromString("fetchIntelligenceWithCompletion:")
-        guard sharedObj.responds(to: selector) else {
-            log(message: "[DI] Fetch skipped — method 'fetchIntelligenceWithCompletion:' not found", type: .DEVICE_INTELLIGENCE)
-            return nil
-        }
+        guard sharedObj.responds(to: selector) else { return nil }
 
-        log(message: "[DI] Fetching intelligence…", type: .DEVICE_INTELLIGENCE)
-
-        return await withCheckedContinuation { continuation in
-            typealias FetchBlock = @convention(block) ([String: Any]?, AnyObject?) -> Void
-            let block: FetchBlock = { data, error in
-                if let error = error {
-                    log(message: "[DI] Fetch failed: \(error)", type: .DEVICE_INTELLIGENCE)
+        return await withTaskGroup(of: [String: Any]?.self) { group in
+            group.addTask {
+                await withCheckedContinuation { continuation in
+                    typealias FetchBlock = @convention(block) ([String: Any]?, AnyObject?) -> Void
+                    let block: FetchBlock = { data, _ in
+                        continuation.resume(returning: data)
+                    }
+                    let blockObj = unsafeBitCast(block, to: AnyObject.self)
+                    sharedObj.perform(selector, with: blockObj)
                 }
-                continuation.resume(returning: data)
             }
-            let blockObj = unsafeBitCast(block, to: AnyObject.self)
-            sharedObj.perform(selector, with: blockObj)
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return nil
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? nil
         }
     }
 }

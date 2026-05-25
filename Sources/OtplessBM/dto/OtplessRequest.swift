@@ -182,6 +182,7 @@ internal extension OtplessRequest {
         }
         
         for (key, value) in extras ?? [:] {
+            if key == "deviceIntelligenceType" { continue }
             requestDict[key] = value
         }
         

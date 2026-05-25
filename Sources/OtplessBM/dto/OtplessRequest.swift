@@ -29,6 +29,7 @@ import Foundation
     internal var extras: [String: String]?
     internal var onetapItemData: OnetapItemData?
     internal var tid: String?
+    private var deviceFingerprintMode: DeviceFingerprintMode = .NONE
     
     @objc public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
@@ -95,6 +96,10 @@ import Foundation
     
     @objc public func set(tid: String) {
         self.tid = tid
+    }
+
+    @objc public func set(deviceFingerprintMode: DeviceFingerprintMode) {
+        self.deviceFingerprintMode = deviceFingerprintMode
     }
     
     @objc public func getRequestId() -> String {
@@ -182,7 +187,6 @@ internal extension OtplessRequest {
         }
         
         for (key, value) in extras ?? [:] {
-            if key == "deviceIntelligenceType" { continue }
             requestDict[key] = value
         }
         
@@ -356,11 +360,7 @@ internal extension OtplessRequest {
     }
 
     func getDeviceFingerprintMode() -> DeviceFingerprintMode {
-        switch extras?["deviceIntelligenceType"]?.uppercased() {
-        case "SYNC": return .SYNC
-        case "ASYNC": return .ASYNC
-        default: return .NONE
-        }
+        return deviceFingerprintMode
     }
 
 }

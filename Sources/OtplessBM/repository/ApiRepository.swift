@@ -40,16 +40,18 @@ internal final class ApiRepository: @unchecked Sendable {
             }
         }
         
+        #if DEBUG
         let apiResponse = OtplessResponse(
             responseType: .API_RESPONSE,
             response: responseDict,
             statusCode: statusCode
         )
-        
+
         DispatchQueue.main.async {
             Otpless.shared.responseDelegate?.onResponse(apiResponse)
             Otpless.shared.objcResponseDelegate?(apiResponse.toJsonString())
         }
+        #endif
     }
     
     func getState(

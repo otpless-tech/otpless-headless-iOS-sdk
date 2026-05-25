@@ -11,10 +11,10 @@ import os
 func log(message: String, type: LogType) {
 #if DEBUG
     print("[OtplessSDK][\(type.rawValue)] \(message)")
-#endif
     DispatchQueue.main.async {
         Otpless.shared.loggerDelegate?.log(message: message, type: type)
     }
+#endif
 }
 
 func log(error: Error, type: LogType) {

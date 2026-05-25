@@ -26,9 +26,9 @@ import Foundation
     private var deliveryChannel: String?
     private var locale: String?
     private var requestId: String?
-    private var extras: [String: String]?
-    private var oneTapValue: String?
-    private var tid: String?
+    internal var extras: [String: String]?
+    internal var onetapItemData: OnetapItemData?
+    internal var tid: String?
     
     @objc public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
@@ -105,17 +105,19 @@ import Foundation
 /// All the internal functions to be placed here
 internal extension OtplessRequest {
     
-    func set(oneTapValue: String) {
-        self.oneTapValue = oneTapValue
-    }
-    
     func getDictForIntent() -> [String: String?] {
-        if let oneTapValue = oneTapValue {
-            return [
-                "value": oneTapValue,
+        if let onetapItem = onetapItemData {
+            // add the check for email and phone on channel key
+            var map: [String: String?] = [
                 RequestKeys.channelKey: "ONETAP",
-                RequestKeys.typeKey: RequestKeys.buttonValue
+                RequestKeys.typeKey: RequestKeys.buttonValue,
+                RequestKeys.valueKey: onetapItem.identity
             ]
+            if let tid = self.tid {
+                map[RequestKeys.tidKey] = tid
+            }
+            map["isIntelligenceRequested"] = "true"
+            return map
         }
         
         var requestDict: [String: String?] = [:]
@@ -178,8 +180,6 @@ internal extension OtplessRequest {
         if let tid = tid {
             requestDict[RequestKeys.tidKey] = tid
         }
-        
-        
         
         for (key, value) in extras ?? [:] {
             requestDict[key] = value
@@ -388,5 +388,17 @@ internal struct RequestKeys {
     static let inputValue = "INPUT"
     static let buttonValue = "BUTTON"
     static let deviceValue = "DEVICE"
+}
+
+public struct OtplessAuthCofig: Sendable {
+    let isForeground: Bool
+    let otp: String?
+    let tid: String?
+    
+    public init(isForeground: Bool, otp: String?, tid: String?) {
+        self.isForeground = isForeground
+        self.otp = otp
+        self.tid = tid
+    }
 }
 

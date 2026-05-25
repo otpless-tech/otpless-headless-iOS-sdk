@@ -8,13 +8,18 @@
 import Foundation
 import Network
 
-func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = ""){
+func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: String = "") {
     do {
         var params = [String: String]()
         params["event_name"] = event.rawValue
         params["platform"] = "iOS-headless"
         params["sdk_version"] = Constants.SDK_VERSION
-        params["mid"] = Otpless.shared.merchantAppId
+        if !Otpless.shared.merchantAppId.isEmpty {
+            params["mid"] = Otpless.shared.merchantAppId
+        } else {
+            params["mid"] = SessionManagerEventDataProvider.shared.getAppId()
+        }
+        
         params["event_timestamp"] = Utils.formatCurrentTimeToDateString()
         
         var newEventParams = [String: Any]()
@@ -120,4 +125,28 @@ enum EventConstants: String {
     case REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_request_intelligence_fs"
     case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK         = "native_fp_update_request_intelligence_fs"
     case UPDATE_REQUEST_INTELLIGENCE_FRAUD_SDK_START         = "native_fp_update_request_intelligence_start_fs"
+    
+    // session events
+    case getActiveSession = "native_get_active_session"
+    case logoutSession = "native_logout_session"
+    case sessionError = "native_session_error"
+}
+
+
+internal class SessionManagerEventDataProvider: @unchecked Sendable {
+    
+    static let shared = SessionManagerEventDataProvider()
+    let lock = NSLock()
+    
+    private var appId : String = ""
+    
+    func setAppId(id appId: String) {
+        lock.lock(); defer {lock.unlock()}
+        self.appId = appId
+    }
+    
+    func getAppId() -> String {
+        lock.lock(); defer {lock.unlock()}
+        return self.appId
+    }
 }

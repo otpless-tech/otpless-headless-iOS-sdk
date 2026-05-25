@@ -1,4 +1,13 @@
 
+## 2.0.9 (15th April 2026)
+
+### Features
+- Added optional `GoogleSupport` subspec — install `pod 'OtplessBM/GoogleSupport'` to enable Google Sign-In
+- Added optional `FacebookSupport` subspec — install `pod 'OtplessBM/FacebookSupport'` to enable Facebook Sign-In
+
+### Fixes
+- Fixed incorrect error message in Facebook stub that referenced legacy SDK name `OtplessSDK`
+
 ## 1.1.0 (3rd April 2025)
 
 ### Improvements

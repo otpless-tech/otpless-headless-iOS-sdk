@@ -8,55 +8,8 @@
 import UIKit
 
 extension Otpless {
-    func startPasskeyAuthorization(passkeyRequestDict: [String: Any]) async {
-        if #available(iOS 16.6, *) {
-            let data = Utils.convertStringToDictionary(
-                (passkeyRequestDict["data"] as? String) ?? ""
-            )
-            if (passkeyRequestDict["isRegistration"] as? Bool) == true {
-                await passkeyUseCase.initiateRegistration(withRequest: data ?? [:], onResponse: { [weak self] result in
-                    guard let self = self else {
-                        return
-                    }
-                    let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: webauthnData, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
-                    
-                    if let otplessResponse = response.0 {
-                        self.invokeResponse(otplessResponse)
-                    }
-                    if let uid = response.1 {
-                        SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
-                    }
-                })
-            } else {
-                await passkeyUseCase.initiateSignIn(withRequest: data ?? [:], onResponse: { [weak self] result in
-                    guard let self = self else {
-                        return
-                    }
-                    let webauthnData = self.passkeyUseCase.handleResult(forAuthorizationResult: result)
-                    let androidString = webauthnData.replacingOccurrences(of: "\n", with: "")
-                        .replacingOccurrences(of: " ", with: "")
-                    let response = await self.verifyCodeUseCase.invoke(state: self.state ?? "", queryParams: self.getVerifyCodeQueryParams(code: "", webAuthnData: androidString, requestId: merchantOtplessRequest?.getRequestId() ?? ""), getTransactionStatusUseCase: self.transactionStatusUseCase)
-                    
-                    if let otplessResponse = response.0 {
-                        self.invokeResponse(otplessResponse)
-                    }
-                    if let uid = response.1 {
-                        SecureStorage.shared.save(key: Constants.UID_KEY, value: uid)
-                    }
-                })
-            }
-            
-        } else {
-            invokeResponse(
-                OtplessResponse.createUnsupportedIOSVersionResponse(forFeature: "Passkey", supportedFrom: "16.0")
-            )
-        }
-    }
-}
-
-extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
+        dismissOneTapBottomSheet()
         if otplessResponse.statusCode == 9110 {
             log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
             return
@@ -133,6 +86,7 @@ extension Otpless {
 }
 
 extension Otpless {
+    
     func getVerifyCodeQueryParams(code: String, webAuthnData: String = "", requestId: String = "") -> [String: String] {
         var queryParams: [String: String] = [:]
         queryParams["hasWhatsapp"] = (appInfo["hasWhatsapp"] as? String)

@@ -34,6 +34,7 @@ import Network
     internal var rsId: String = ""
     internal var diState: DeviceIntelligenceState = .idle
     internal var deviceFingerprintMode: DeviceFingerprintMode = .NONE
+    internal var pendingOneTapResponse: OtplessResponse? = nil
 
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
@@ -821,20 +822,20 @@ extension Otpless {
 
         guard #available(iOS 15.0, *),
               let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
-            onDeviceIntelligenceConfigured()
+            onDeviceIntelligenceComplete()
             return
         }
 
         let sharedSelector = NSSelectorFromString("shared")
         guard cls.responds(to: sharedSelector),
               let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
-            onDeviceIntelligenceConfigured()
+            onDeviceIntelligenceComplete()
             return
         }
 
-        let selector = NSSelectorFromString("configureIntelligenceWithParams:onComplete:")
+        let selector = NSSelectorFromString("runDeviceIntelligenceWithParams:onComplete:")
         guard sharedObj.responds(to: selector) else {
-            onDeviceIntelligenceConfigured()
+            onDeviceIntelligenceComplete()
             return
         }
 
@@ -848,48 +849,22 @@ extension Otpless {
 
         typealias VoidBlock = @convention(block) () -> Void
         let completion: VoidBlock = { [weak self] in
-            self?.onDeviceIntelligenceConfigured()
+            self?.onDeviceIntelligenceComplete()
         }
         let blockObj = unsafeBitCast(completion, to: AnyObject.self)
         sharedObj.perform(selector, with: params, with: blockObj)
     }
 
-    private func onDeviceIntelligenceConfigured() {
+    private func onDeviceIntelligenceComplete() {
         diState = .completed
-    }
 
-    func fetchIntelligenceAsync() async -> [String: Any]? {
-        guard #available(iOS 15.0, *),
-              let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
-            return nil
-        }
+        guard let pending = pendingOneTapResponse else { return }
+        pendingOneTapResponse = nil
+        rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
 
-        let sharedSelector = NSSelectorFromString("shared")
-        guard cls.responds(to: sharedSelector),
-              let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
-            return nil
-        }
-
-        let selector = NSSelectorFromString("fetchIntelligenceWithCompletion:")
-        guard sharedObj.responds(to: selector) else { return nil }
-
-        return await withTaskGroup(of: [String: Any]?.self) { group in
-            group.addTask {
-                await withCheckedContinuation { continuation in
-                    typealias FetchBlock = @convention(block) ([String: Any]?, AnyObject?) -> Void
-                    let block: FetchBlock = { data, _ in
-                        continuation.resume(returning: data)
-                    }
-                    let blockObj = unsafeBitCast(block, to: AnyObject.self)
-                    sharedObj.perform(selector, with: blockObj)
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                return nil
-            }
-            defer { group.cancelAll() }
-            return await group.next() ?? nil
+        DispatchQueue.main.async {
+            self.responseDelegate?.onResponse(pending)
+            self.objcResponseDelegate?(pending.toJsonString())
         }
     }
 }

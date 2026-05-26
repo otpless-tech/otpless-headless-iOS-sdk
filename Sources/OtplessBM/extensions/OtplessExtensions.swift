@@ -33,23 +33,21 @@ extension Otpless {
             )
 
             let capturedMode = deviceFingerprintMode
-            rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
 
             if capturedMode == .SYNC {
-                Task {
-                    _ = await fetchIntelligenceAsync()
-                    DispatchQueue.main.async { [weak self] in
-                        self?.responseDelegate?.onResponse(otplessResponse)
-                        self?.objcResponseDelegate?(otplessResponse.toJsonString())
+                if diState == .completed {
+                    rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                    DispatchQueue.main.async {
+                        self.responseDelegate?.onResponse(otplessResponse)
+                        self.objcResponseDelegate?(otplessResponse.toJsonString())
                     }
+                } else {
+                    // DI still in progress — hold and dispatch once it completes
+                    pendingOneTapResponse = otplessResponse
                 }
-            } else if capturedMode == .ASYNC {
-                DispatchQueue.main.async {
-                    self.responseDelegate?.onResponse(otplessResponse)
-                    self.objcResponseDelegate?(otplessResponse.toJsonString())
-                }
-                Task { _ = await fetchIntelligenceAsync() }
             } else {
+                // ASYNC or NONE — dispatch immediately regardless of DI state
+                rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
                 DispatchQueue.main.async {
                     self.responseDelegate?.onResponse(otplessResponse)
                     self.objcResponseDelegate?(otplessResponse.toJsonString())

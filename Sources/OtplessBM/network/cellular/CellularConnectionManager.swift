@@ -307,6 +307,7 @@ final class CellularConnectionManager: @unchecked Sendable {
         pathMonitor?.pathUpdateHandler = { path in
             let interfaceTypes = path.availableInterfaces.map { $0.type }
             for interfaceType in interfaceTypes {
+                #if DEBUG
                 switch interfaceType {
                 case .wifi:
                     print("Path is Wi-Fi")
@@ -321,6 +322,7 @@ final class CellularConnectionManager: @unchecked Sendable {
                 default:
                     print("Path is unknown")
                 }
+                #endif
             }
         }
         

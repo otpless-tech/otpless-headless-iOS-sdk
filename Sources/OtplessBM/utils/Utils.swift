@@ -164,7 +164,9 @@ extension DictionaryConvertible {
                 return jsonObject
             }
         } catch {
+            #if DEBUG
             print("Error converting to dictionary: \(error)")
+            #endif
         }
         return [:]
     }

@@ -376,12 +376,6 @@ extension Otpless {
         sendEvent(event: .SET_HEADLESS_CALLBACK)
     }
 
-    #if DEBUG
-    public func setEnvironment(_ environment: OtplessEnvironment) {
-        self.environment = environment
-    }
-    #endif
-    
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
         self.objcResponseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)

@@ -6,28 +6,17 @@
 //
 
 import Foundation
-import os
 
-func log(message: String, type: LogType) {
-#if DEBUG
-    print("[OtplessSDK][\(type.rawValue)] \(message)")
-    DispatchQueue.main.async {
-        Otpless.shared.loggerDelegate?.log(message: message, type: type)
-    }
-#endif
-}
+@inline(__always)
+func log(message: String, type: LogType) {}
 
-func log(error: Error, type: LogType) {
-    if let urlError = error as? URLError {
-        log(message: "StatusCode: \(urlError.errorCode)\nError: \(urlError.errorUserInfo)", type: type)
-    } else {
-        log(message: error.localizedDescription, type: type)
-    }
-}
+@inline(__always)
+func log(error: Error, type: LogType) {}
+
+@inline(__always)
+internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {}
 
 public enum LogType: String, @unchecked Sendable {
-
-    // Existing
     case API_RESPONSE_FAILURE = "API RESPONSE FAILURE"
     case CLASS_DEALLOC_IN_CLOSURE = "CLASSES DEALLOC IN CLOSURE"
     case API_REQUEST_AND_RESPONSE = "API REQUEST AND RESPONSE"
@@ -39,24 +28,16 @@ public enum LogType: String, @unchecked Sendable {
     case SNA_RESPONSE = "SNA Response"
     case EVENT_API_ERROR = "EVENT API ERROR"
     case EVENT_CREATING_FAILED = "EVENT CREATING FAILED"
-
-    // SDK lifecycle
     case SDK_INIT = "SDK Init"
     case SDK_READY = "SDK Ready"
     case SDK_STATE_FETCH = "State Fetch"
     case MERCHANT_CONFIG = "Merchant Config"
-
-    // Transaction
     case TRANSACTION_START = "Transaction Start"
     case TRANSACTION_VALIDATION = "Transaction Validation"
     case INTENT = "Intent"
     case VERIFY = "Verify"
     case DEEPLINK = "Deeplink"
-
-    // Device Intelligence
     case DEVICE_INTELLIGENCE = "Device Intelligence"
-
-    // Response relay
     case ONETAP = "OneTap"
     case RESPONSE_RELAY = "Response Relay"
 
@@ -68,11 +49,4 @@ public enum LogType: String, @unchecked Sendable {
 @MainActor
 public protocol OtplessLoggerDelegate: NSObjectProtocol {
     func log(message: String, type: LogType)
-}
-
-@inline(__always)
-internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
-#if DEBUG
-    print("[\(file):\(line)] \(function) → \(message())")
-#endif
 }

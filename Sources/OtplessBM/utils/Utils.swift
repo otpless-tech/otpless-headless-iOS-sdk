@@ -163,11 +163,7 @@ extension DictionaryConvertible {
             if let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
                 return jsonObject
             }
-        } catch {
-            #if DEBUG
-            print("Error converting to dictionary: \(error)")
-            #endif
-        }
+        } catch {}
         return [:]
     }
 }

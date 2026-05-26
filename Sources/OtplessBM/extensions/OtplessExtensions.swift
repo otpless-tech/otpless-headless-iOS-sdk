@@ -11,9 +11,12 @@ extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
         dismissOneTapBottomSheet()
         if otplessResponse.statusCode == 9110 {
+            log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
             return
         }
-        
+
+        log(message: "[Response] Received — type: \(otplessResponse.responseType.rawValue), statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
+
         if otplessResponse.responseType == .ONETAP {
             if let data = otplessResponse.response?["data"] as? [String: Any],
                let token = data["token"] as? String {
@@ -21,23 +24,40 @@ extension Otpless {
             }
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
-            // check if session init is done and session info in response["data"]
-            if let sessionInfo = otplessResponse.response?["sessionInfo"] as? [String: Any] {
-                Task {
-                    if await OtplessSessionManager.shared.isInitialized() {
-                        if let sessionToken = sessionInfo["sessionToken"] as? String, let refreshToken = sessionInfo["refreshToken"] as? String,
-                           let jwtToken = sessionInfo["sessionTokenJWT"] as? String {
-                            let sessionInfo = OtplessSessionInfo(sessionToken: sessionToken, refreshToken: refreshToken, jwtToken: jwtToken)
-                            let state = Otpless.shared.state!
-                            await OtplessSessionManager.shared.saveSessionAndState(sessionInfo, state: state)
-                            await OtplessSessionManager.shared.startAuthenticationLoopIfNotStarted()
-                        }
+
+            Utils.convertToEventParamsJson(
+                otplessResponse: otplessResponse,
+                callback: { extras, musId in
+                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
+                }
+            )
+
+            let capturedMode = deviceFingerprintMode
+
+            if capturedMode == .SYNC {
+                if diState == .completed {
+                    rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                    DispatchQueue.main.async {
+                        self.responseDelegate?.onResponse(otplessResponse)
+                        self.objcResponseDelegate?(otplessResponse.toJsonString())
                     }
+                } else {
+                    // DI still in progress — hold and dispatch once it completes
+                    pendingOneTapResponse = otplessResponse
+                }
+            } else {
+                // ASYNC or NONE — dispatch immediately regardless of DI state
+                rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                DispatchQueue.main.async {
+                    self.responseDelegate?.onResponse(otplessResponse)
+                    self.objcResponseDelegate?(otplessResponse.toJsonString())
                 }
             }
+            return
         }
-        
-        if (otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105) {
+
+        if otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105 {
+            log(message: "[Response] Network timeout — statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
             sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
         } else {
             Utils.convertToEventParamsJson(
@@ -47,7 +67,7 @@ extension Otpless {
                 }
             )
         }
-        
+
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
             self.objcResponseDelegate?(otplessResponse.toJsonString())

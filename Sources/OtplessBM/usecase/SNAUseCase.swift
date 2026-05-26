@@ -175,11 +175,24 @@ internal final class SNAUseCase: @unchecked Sendable {
                     otplessResponse: [
                         OtplessResponse(
                             responseType: .VERIFY,
-                            response: [
-                                "errorCode": "9106",
-                                "errorMessage": "Transaction timeout",
-                                "authType": SILENT_AUTH
-                            ],
+                            response: {
+                                var dict: [String: Any] = [
+                                    "errorCode": "9106",
+                                    "errorMessage": "Transaction timeout Success",
+                                    "authType": SILENT_AUTH
+                                ]
+                                // Attempt to attach a serializable representation of `data`
+                                if let oneTapDict = data.oneTap?.toDict() {
+                                    dict["data"] = oneTapDict
+                                } else if let dataEnc = try? JSONEncoder().encode(data),
+                                          let jsonObject = try? JSONSerialization.jsonObject(with: dataEnc),
+                                          let jsonDict = jsonObject as? [String: Any] {
+                                    dict["data"] = jsonDict
+                                } else {
+                                    dict["data"] = "<unavailable>"
+                                }
+                                return dict
+                            }(),
                             statusCode: 9106)
                     ]
                 )
@@ -193,7 +206,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                         responseType: .VERIFY,
                         response: Utils.createErrorDictionary(
                             errorCode: "9106",
-                            errorMessage: "Transaction timeout",
+                            errorMessage: "Transaction timeout Failure",
                             authType: SILENT_AUTH
                         ),
                         statusCode: 9106
@@ -214,3 +227,4 @@ internal struct SNAUseCaseResponse {
     let tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings?
     let otplessResponse: [OtplessResponse]?
 }
+

@@ -12,8 +12,10 @@ final class ApiManager: Sendable {
     private let userAuthTimeout: TimeInterval
     private let snaTimeout: TimeInterval
     private let enableLogging: Bool
-    private let baseURLUserAuth = "https://user-auth.otpless.app"
     private let baseURLSekura = "http://80.in.safr.sekuramobile.com"
+    private var baseURLUserAuth: String {
+        return Otpless.shared.environment.userAuthBaseURL
+    }
     
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"
@@ -226,7 +228,11 @@ final class ApiManager: Sendable {
             "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),
             "deviceInfo": Utils.convertDictionaryToString(Otpless.shared.deviceInfo)
         ])
-        
+
+        if !Otpless.shared.rsId.isEmpty {
+            mutableBody["rsId"] = Otpless.shared.rsId
+        }
+
         return mutableBody
     }
 
@@ -270,7 +276,11 @@ final class ApiManager: Sendable {
         if !Otpless.shared.token.isEmpty {
             extraQueryParams.append(URLQueryItem(name: "token", value: Otpless.shared.token))
         }
-        
+
+        if !Otpless.shared.rsId.isEmpty {
+            extraQueryParams.append(URLQueryItem(name: "rsId", value: Otpless.shared.rsId))
+        }
+
         if let queryParameters = queryParameters {
             urlComponents.queryItems = queryParameters.map { URLQueryItem(name: $0.key, value: ($0.value as? String ?? "")) }
         }

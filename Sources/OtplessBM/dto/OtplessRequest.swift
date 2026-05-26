@@ -7,6 +7,12 @@
 
 import Foundation
 
+@objc public enum DeviceFingerprintMode: Int {
+    case NONE = 0   // no fingerprinting (default)
+    case ASYNC = 1  // fingerprint runs in background; ONETAP is not delayed
+    case SYNC  = 2  // SDK waits for fingerprint before delivering ONETAP
+}
+
 @objc public class OtplessRequest: NSObject, @unchecked Sendable {
     private var authenticationMedium: AuthenticationMedium?
     private var phoneNumber: String?
@@ -23,6 +29,7 @@ import Foundation
     internal var extras: [String: String]?
     internal var onetapItemData: OnetapItemData?
     internal var tid: String?
+    private var deviceFingerprintMode: DeviceFingerprintMode = .NONE
     
     @objc public func set(phoneNumber: String, withCountryCode countryCode: String) {
         self.phoneNumber = phoneNumber
@@ -89,6 +96,10 @@ import Foundation
     
     @objc public func set(tid: String) {
         self.tid = tid
+    }
+
+    @objc public func set(deviceFingerprintMode: DeviceFingerprintMode) {
+        self.deviceFingerprintMode = deviceFingerprintMode
     }
     
     @objc public func getRequestId() -> String {
@@ -347,7 +358,11 @@ internal extension OtplessRequest {
             return -1
         }
     }
-    
+
+    func getDeviceFingerprintMode() -> DeviceFingerprintMode {
+        return deviceFingerprintMode
+    }
+
 }
 
 internal struct RequestKeys {

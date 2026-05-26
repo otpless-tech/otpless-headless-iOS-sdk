@@ -15,6 +15,7 @@ import Network
         return Otpless()
     }()
     
+    internal private(set) var environment: OtplessEnvironment = .PRODUCTION
     internal private(set) var isOneTapUIDismissed: Bool = false
     internal private(set) var requestCount: Int = 0
     internal private(set) var stateFetchRetriesCount: Int = 0
@@ -28,7 +29,13 @@ import Network
     internal private(set) var communicationMode: String = ""
     internal private(set) var authType: String = ""
     internal var drfID: String = ""
-    
+
+    // Device Intelligence
+    internal var rsId: String = ""
+    internal var diState: DeviceIntelligenceState = .idle
+    internal var deviceFingerprintMode: DeviceFingerprintMode = .NONE
+    internal var pendingOneTapResponse: OtplessResponse? = nil
+
     internal private(set) var uid: String = ""
     internal private(set) var appInfo: [String: Any] = [:]
     internal private(set) var deviceInfo: [String: String] = [:]
@@ -108,38 +115,31 @@ import Network
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
         startMobileDataMonitoring()
-        
+
+        log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
+
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
-            
+
             await DeviceInfoUtils.shared.initialise()
-            
-            self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
-            self.inid = DeviceInfoUtils.shared.getInstallationId()
-            self.tsid = DeviceInfoUtils.shared.getTrackingSessionId()
-            
-            
+
+            let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
+            let inid = await DeviceInfoUtils.shared.getInstallationId()
+            let tsid = await DeviceInfoUtils.shared.getTrackingSessionId()
+
+            self.uid = uid
+            self.inid = inid
+            self.tsid = tsid
+
+            log(message: "[Init] Device IDs resolved — inId: \(inid), tsId: \(tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+
             await MainActor.run {
                 self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
+
             self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
+
             self.fetchStateAndMerchantConfig(onlyState: false)
-        }
-    }
-    
-    private func intelligenceInitialized(withAppId appId: String){
-        self.merchantAppId = appId
-        Task(priority: .medium) { [weak self] in
-            guard let self = self else { return }
-            
-            await DeviceInfoUtils.shared.initialise()
-            self.inid = await DeviceInfoUtils.shared.getInstallationId()
-            self.tsid = await DeviceInfoUtils.shared.getTrackingSessionId()
-            
-            await MainActor.run {
-                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
-            }
-            self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
         }
     }
     
@@ -168,16 +168,18 @@ import Network
         self.pendingCode = ""
         self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
-        
+
         if otplessRequest.getOtpLength() != -1 {
             self.otpLength = otplessRequest.getOtpLength()
         } else {
-            // If not found, then reset again to prevent sending otpLength that may have been set in an earlier request
             self.otpLength = getOtpLength(
                 fromChannelConfig: merchantConfig?.channelConfig,
                 forAuthenticationMedium: otplessRequest.getAuthenticationMedium()
             )
         }
+
+        log(message: "[Transaction] start() called — medium: \(otplessRequest.getAuthenticationMedium()?.rawValue ?? "unknown"), isIntentRequest: \(otplessRequest.isIntentRequest())", type: .TRANSACTION_START)
+
         sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         await processRequestIfRequestIsValid(otplessRequest)
     }
@@ -232,13 +234,15 @@ import Network
     }
     
     @objc public func handleDeeplink(_ url: URL) async {
+        log(message: "[Deeplink] Received — url: \(url.absoluteString)", type: .DEEPLINK)
+
         guard url.host == "otpless" else {
-            log(message: "Invalid deeplink: \(url.absoluteString)", type: .INVALID_DEEPLINK)
+            log(message: "[Deeplink] Invalid host — expected 'otpless', got '\(url.host ?? "nil")'", type: .INVALID_DEEPLINK)
             return
         }
-        
+
         var code = ""
-        
+
         if let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
             for item in queryItems {
                 if item.name.lowercased() == "code" {
@@ -246,14 +250,18 @@ import Network
                 }
             }
         }
-        
+
         if code.isEmpty {
+            log(message: "[Deeplink] No code found in URL — ignoring", type: .DEEPLINK)
             return
         }
-        
-        if (self.sdkState == .READY){
+
+        log(message: "[Deeplink] Code extracted — sdkState: \(self.sdkState)", type: .DEEPLINK)
+
+        if self.sdkState == .READY {
             await self.verifyCodeAndInvokeIfReady(code: code)
         } else {
+            log(message: "[Deeplink] SDK not ready — code queued as pendingCode", type: .DEEPLINK)
             self.pendingCode = code
         }
     }
@@ -367,7 +375,7 @@ extension Otpless {
         self.responseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
     }
-    
+
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
         self.objcResponseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
@@ -375,6 +383,10 @@ extension Otpless {
     
     public func setLoggerDelegate(_ otplessLoggerDelegate: OtplessLoggerDelegate) {
         self.loggerDelegate = otplessLoggerDelegate
+    }
+
+    @objc public func setDeviceFingerprintMode(_ mode: DeviceFingerprintMode) {
+        self.deviceFingerprintMode = mode
     }
     
     func setPackageName(_ pName: String) {
@@ -389,16 +401,17 @@ extension Otpless {
 
 private extension Otpless {
     func fetchStateAndMerchantConfig(onlyState:Bool) {
+        log(message: "[Init] Fetching device state — onlyState: \(onlyState)", type: .SDK_STATE_FETCH)
         requestStateForDeviceIfNil(onFetch: { [weak self] state in
             guard let state = state else {
+                log(message: "[Init] State fetch returned nil — aborting", type: .SDK_STATE_FETCH)
                 return
             }
-            
+
+            log(message: "[Init] State resolved — state: \(state.prefix(8))…", type: .SDK_STATE_FETCH)
             self?.state = state
             SecureStorage.shared.save(key: Constants.STATE_KEY, value: state)
-            if (onlyState){
-                return
-            }
+            if onlyState { return }
             self?.fetchMerchantConfig()
         })
     }
@@ -425,6 +438,8 @@ private extension Otpless {
     func fetchMerchantConfig() {
         guard let state = self.state else { return }
 
+        log(message: "[Init] Fetching merchant config — state: \(state.prefix(8))…", type: .MERCHANT_CONFIG)
+
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
 
@@ -447,14 +462,18 @@ private extension Otpless {
                     isMobile: false
                 ) ?? ""
 
-                // Send event before invoking any response
+                if let config = merchantConfig {
+                    let diType = config.metaData?.deviceIntelligence?.type ?? "<not set>"
+                    log(message: "[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)", type: .MERCHANT_CONFIG)
+                }
+
                 sendEvent(event: .INIT_HEADLESS)
 
                 if let otplessResponse = otplessResponse {
-                    // Error occurred during fetch
+                    log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
                     self.invokeResponse(otplessResponse)
                 } else {
-                    // SDK ready after successful fetch
+                    log(message: "[Init] SDK ready", type: .SDK_READY)
                     self.sdkState = .READY
                     self.invokeResponse(OtplessResponse.sdkReady)
                 }
@@ -464,6 +483,7 @@ private extension Otpless {
 
             let code = self.pendingCode
             if !code.isEmpty {
+                log(message: "[Deeplink] Processing pending code now that SDK is ready", type: .DEEPLINK)
                 await self.verifyCodeAndInvokeIfReady(code: code)
             }
         }
@@ -473,8 +493,9 @@ private extension Otpless {
         if await !canRequestBeMade(request: otplessRequest) {
             return
         }
-        
+
         if !otplessRequest.isIntentRequest() {
+            log(message: "[Verify] OTP/code verify request — state: \(self.state?.prefix(8) ?? "nil")…", type: .VERIFY)
             let verifyOtpResponse = await verifyOtpUseCase.invoke(
                 state: self.state ?? "",
                 queryParams: otplessRequest.getQueryParams(),
@@ -483,7 +504,18 @@ private extension Otpless {
             invokeResponse(verifyOtpResponse)
             return
         }
-        
+
+        // Read DI mode from request extras so callers don't need a separate setter.
+        let requestedDIMode = otplessRequest.getDeviceFingerprintMode()
+        if requestedDIMode != .NONE {
+            deviceFingerprintMode = requestedDIMode
+        }
+
+        log(message: "[Transaction] New intent request — triggering DI if needed, then calling intent API", type: .TRANSACTION_START)
+
+        // Configure device intelligence in parallel with the intent API.
+        triggerDeviceIntelligenceIfNeeded(state: self.state ?? "")
+
         let intentResponse = await postIntentUseCase.invoke(
             state: self.state ?? "",
             withOtplessRequest: otplessRequest,
@@ -620,82 +652,35 @@ private extension Otpless {
     func canRequestBeMade(
         request: OtplessRequest
     ) async -> Bool {
-        
+
         if let state = self.state, state.isEmpty {
-            invokeResponse(
-                OtplessResponse.failedToInitializeResponse
-            )
+            log(message: "[Validation] Request blocked — state is empty (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.failedToInitializeResponse)
             return false
         }
-        
+
         guard let merchantConfig = merchantConfig else {
-            invokeResponse(
-                OtplessResponse.failedToInitializeResponse
-            )
+            log(message: "[Validation] Request blocked — merchantConfig is nil (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.failedToInitializeResponse)
             return false
         }
-        
+
         if merchantConfig.isMFAEnabled == true {
-            invokeResponse(
-                OtplessResponse.create2FAEnabledError()
-            )
+            log(message: "[Validation] Request blocked — MFA is enabled for this merchant", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.create2FAEnabledError())
             return false
         }
-        
+
         if !request.isPhoneNumberWithCountryCodeValid() &&
             request.getSelectedChannelType() == nil &&
             (request.getRequestId()?.isEmpty ?? true) &&
             !request.isEmailValid() {
-            invokeResponse(
-                OtplessResponse.createInvalidRequestError(request: request)
-            )
+            log(message: "[Validation] Request blocked — invalid request params (no phone, email, channel, or requestId)", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.createInvalidRequestError(request: request))
             return false
         }
         
-        switch request.getAuthenticationMedium() {
-        case .PHONE:
-            if !isChannelEnabled(channelType: phoneIntentChannel, isPhoneAuth: true) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "phone")
-                )
-                return false
-            }
-            
-        case .EMAIL:
-            if !isChannelEnabled(channelType: emailIntentChannel, isPhoneAuth: false) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "email")
-                )
-                return false
-            }
-            
-        case .OAUTH:
-            // Check if the selected channel is enabled
-            if !isChannelEnabled(
-                channelType: request.getSelectedChannelType()?.rawValue ?? "",
-                isPhoneAuth: request.getSelectedChannelType() == .WHATSAPP ||
-                request.getSelectedChannelType() == .TRUE_CALLER
-            ) {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(
-                        channel: request.getSelectedChannelType()?.rawValue ?? ""
-                    )
-                )
-                return false
-            }
-            
-        case .WEB_AUTHN:
-            if merchantConfig.merchant?.config?.isWebauthnEnabled == false {
-                invokeResponse(
-                    OtplessResponse.createInactiveOAuthChannelError(channel: "WebAuthn")
-                )
-                return false
-            }
-            
-        default:
-            break
-        }
-        
+        log(message: "[Validation] Request passed all checks — proceeding", type: .TRANSACTION_VALIDATION)
         return true
     }
     
@@ -805,6 +790,7 @@ extension Otpless {
         hasMerchantSelectedExternalSDK = false
         userSelectedOAuthChannel = nil
         merchantOtplessRequest = nil
+        // rsId, diState, and deviceFingerprintMode are reset in the ONETAP handler inside invokeResponse
     }
 }
 
@@ -813,6 +799,67 @@ extension Otpless {
         let currentCounter = eventCounter
         eventCounter += 1
         return currentCounter
+    }
+}
+
+internal enum DeviceIntelligenceState {
+    case idle, inProgress, completed
+}
+
+extension Otpless {
+    func triggerDeviceIntelligenceIfNeeded(state: String) {
+        guard deviceFingerprintMode != .NONE else { return }
+        guard diState == .idle else { return }
+
+        rsId = "\(UUID().uuidString)-\(DispatchTime.now().uptimeNanoseconds)-\(state)"
+        diState = .inProgress
+
+        guard #available(iOS 15.0, *),
+              let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
+            onDeviceIntelligenceComplete()
+            return
+        }
+
+        let sharedSelector = NSSelectorFromString("shared")
+        guard cls.responds(to: sharedSelector),
+              let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
+            onDeviceIntelligenceComplete()
+            return
+        }
+
+        let selector = NSSelectorFromString("runDeviceIntelligenceWithParams:onComplete:")
+        guard sharedObj.responds(to: selector) else {
+            onDeviceIntelligenceComplete()
+            return
+        }
+
+        let params: [String: String] = [
+            "rsId": rsId,
+            "inId": inid,
+            "tsId": tsid,
+            "state": state,
+            "appId": merchantAppId
+        ]
+
+        typealias VoidBlock = @convention(block) () -> Void
+        let completion: VoidBlock = { [weak self] in
+            self?.onDeviceIntelligenceComplete()
+        }
+        let blockObj = unsafeBitCast(completion, to: AnyObject.self)
+        sharedObj.perform(selector, with: params, with: blockObj)
+    }
+
+    private func onDeviceIntelligenceComplete() {
+        diState = .completed
+
+        guard let pending = pendingOneTapResponse else { return }
+        pendingOneTapResponse = nil
+        rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+
+        DispatchQueue.main.async {
+            self.responseDelegate?.onResponse(pending)
+            self.objcResponseDelegate?(pending.toJsonString())
+        }
     }
 }
 

@@ -304,6 +304,22 @@ final class CellularConnectionManager: @unchecked Sendable {
         pathMonitor?.pathUpdateHandler = { path in
             let interfaceTypes = path.availableInterfaces.map { $0.type }
             for interfaceType in interfaceTypes {
+                #if DEBUG
+                switch interfaceType {
+                case .wifi:
+                    print("Path is Wi-Fi")
+                case .cellular:
+                    print("Path is Cellular ipv4 \(path.supportsIPv4.description) ipv6 \(path.supportsIPv6.description)")
+                case .wiredEthernet:
+                    print("Path is Wired Ethernet")
+                case .loopback:
+                    print("Path is Loopback")
+                case .other:
+                    print("Path is other")
+                default:
+                    print("Path is unknown")
+                }
+                #endif
             }
         }
         

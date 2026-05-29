@@ -18,10 +18,6 @@ extension Otpless {
         log(message: "[Response] Received — type: \(otplessResponse.responseType.rawValue), statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
 
         if otplessResponse.responseType == .ONETAP {
-            if let data = otplessResponse.response?["data"] as? [String: Any],
-               let token = data["token"] as? String {
-                updateAuthMap(token: token)
-            }
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
 
@@ -221,32 +217,4 @@ extension Otpless {
         return -1
     }
     
-    internal func updateAuthMap(token: String){
-        if #available(iOS 15.0, *) {
-            if let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type {
-                let sharedSelector = NSSelectorFromString("shared")
-                
-                guard cls.responds(to: sharedSelector),
-                      let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject
-                else {
-                    return
-                }
-                
-                var authMap: [String:String] = [:]
-                
-                if !Otpless.shared.asId.isEmpty {
-                    authMap["asId"] = Otpless.shared.asId
-                }
-                if !token.isEmpty {
-                    authMap["token"] = token
-                }
-                
-                let updateSelector = NSSelectorFromString("updateAuthSessionWithIntelligence:")
-                
-                if sharedObj.responds(to: updateSelector) {
-                    _ = sharedObj.perform(updateSelector, with: authMap)
-                }
-            }
-        }
-    }
 }

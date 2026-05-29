@@ -376,6 +376,12 @@ extension Otpless {
         sendEvent(event: .SET_HEADLESS_CALLBACK)
     }
 
+    #if DEBUG
+    public func setEnvironment(_ environment: OtplessEnvironment) {
+        self.environment = environment
+    }
+    #endif
+
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
         self.objcResponseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
@@ -544,7 +550,6 @@ private extension Otpless {
         if let tokenAsIdUIdAndTimerSettings = intentResponse.tokenAsIdUIdAndTimerSettings {
             self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
             self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
-            updateAuthMap(token: token)
             self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
             
             if !self.uid.isEmpty {
@@ -610,7 +615,6 @@ private extension Otpless {
                 self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
-                updateAuthMap(token: token)
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)
@@ -841,6 +845,10 @@ extension Otpless {
             "appId": merchantAppId
         ]
 
+        #if DEBUG
+        dispatchDIEvent(event: "request", data: params)
+        #endif
+
         typealias VoidBlock = @convention(block) () -> Void
         let completion: VoidBlock = { [weak self] in
             self?.onDeviceIntelligenceComplete()
@@ -852,6 +860,10 @@ extension Otpless {
     private func onDeviceIntelligenceComplete() {
         diState = .completed
 
+        #if DEBUG
+        dispatchDIEvent(event: "response", data: ["rsId": rsId, "status": "completed", "mode": deviceFingerprintMode == .SYNC ? "SYNC" : "ASYNC"])
+        #endif
+
         guard let pending = pendingOneTapResponse else { return }
         pendingOneTapResponse = nil
         rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
@@ -861,6 +873,20 @@ extension Otpless {
             self.objcResponseDelegate?(pending.toJsonString())
         }
     }
+
+    #if DEBUG
+    private func dispatchDIEvent(event: String, data: [String: String]) {
+        let response = OtplessResponse(
+            responseType: .DEVICE_INTELLIGENCE,
+            response: ["event": event, "data": data],
+            statusCode: 200
+        )
+        DispatchQueue.main.async {
+            self.responseDelegate?.onResponse(response)
+            self.objcResponseDelegate?(response.toJsonString())
+        }
+    }
+    #endif
 }
 
 @MainActor

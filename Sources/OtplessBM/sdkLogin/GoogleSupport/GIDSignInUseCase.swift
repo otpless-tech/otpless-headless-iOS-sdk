@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import os
 
 // Empty implementation for when Google SDK is not available
 #if !canImport(GoogleSignIn) && !canImport(GoogleSignInSwift)
@@ -17,6 +18,7 @@ internal class GIDSignInUseCase: NSObject, GoogleAuthProtocol {
         shouldAddAdditionalScopes additionalScopes: [String]?,
         withNonce nonce: String?
     ) async -> GoogleSignInResponse {
+        os_log("OTPLESS: Google support not initialized. Please add OtplessBM/GoogleSupport to your Podfile")
         return GoogleSignInResponse(
             success: false,
             idToken: nil,

@@ -7,14 +7,22 @@
 
 import Foundation
 
-@inline(__always)
-func log(message: String, type: LogType) {}
+func log(message: String, type: LogType) {
+#if DEBUG
+    print("[OtplessSDK][\(type.rawValue)] \(message)")
+    DispatchQueue.main.async {
+        Otpless.shared.loggerDelegate?.log(message: message, type: type)
+    }
+#endif
+}
 
-@inline(__always)
-func log(error: Error, type: LogType) {}
-
-@inline(__always)
-internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {}
+func log(error: Error, type: LogType) {
+    if let urlError = error as? URLError {
+        log(message: "StatusCode: \(urlError.errorCode)\nError: \(urlError.errorUserInfo)", type: type)
+    } else {
+        log(message: error.localizedDescription, type: type)
+    }
+}
 
 public enum LogType: String, @unchecked Sendable {
     case API_RESPONSE_FAILURE = "API RESPONSE FAILURE"
@@ -49,4 +57,11 @@ public enum LogType: String, @unchecked Sendable {
 @MainActor
 public protocol OtplessLoggerDelegate: NSObjectProtocol {
     func log(message: String, type: LogType)
+}
+
+@inline(__always)
+internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
+#if DEBUG
+    print("[\(file):\(line)] \(function) → \(message())")
+#endif
 }

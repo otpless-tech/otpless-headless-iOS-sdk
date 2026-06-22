@@ -16,7 +16,7 @@ public enum ResponseTypes: String {
          DELIVERY_STATUS,
          AUTH_TERMINATED,
          MFA_FACTOR_COMPLETED
-    #if DEBUG
+    #if OTPLESS_INTERNAL
     case API_RESPONSE
     case DEVICE_INTELLIGENCE
     #endif

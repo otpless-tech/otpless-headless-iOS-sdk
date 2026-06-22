@@ -40,7 +40,7 @@ internal final class ApiRepository: @unchecked Sendable {
             }
         }
 
-        #if DEBUG
+        #if OTPLESS_INTERNAL
         let apiResponse = OtplessResponse(
             responseType: .API_RESPONSE,
             response: responseDict,

@@ -10,13 +10,13 @@ import UIKit
 extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
         dismissOneTapBottomSheet()
+        log(message: "[Response] \(otplessResponse.toString())", type: .RESPONSE_RELAY)
+
         if otplessResponse.statusCode == 9110 {
             log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
             OtplessBMEvents.Response.notDelivered(otplessResponse, reason: OtplessBMEvents.Response.REASON_STATUS_CODE_SUPPRESSED)
             return
         }
-
-        log(message: "[Response] Received — type: \(otplessResponse.responseType.rawValue), statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
 
         if otplessResponse.responseType == .ONETAP {
             Otpless.shared.resetStates()

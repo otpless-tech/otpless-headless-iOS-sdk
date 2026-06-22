@@ -100,7 +100,11 @@ import OtplessEventIO
     internal private(set) var otpLength: Int = -1
 
     internal private(set) var isMfaEnabled: Bool = false
-    
+
+    private var initialisationTask: Task<Bool, Never>?
+    private var initContinuation: CheckedContinuation<Bool, Never>?
+    private let initLock = NSLock()
+
     internal private(set) var objcResponseDelegate: ((String) -> Void)?
     
     private weak var onetapController: UIViewController?
@@ -128,26 +132,52 @@ import OtplessEventIO
 
         log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
 
-        Task(priority: .medium) { [weak self] in
-            guard let self = self else { return }
+        // Resolve any prior initialisation continuation with false so callers
+        // awaiting an earlier initialise() don't hang when init is re-issued.
+        initLock.lock()
+        let priorContinuation = initContinuation
+        initContinuation = nil
+        initLock.unlock()
+        priorContinuation?.resume(returning: false)
+        initialisationTask?.cancel()
 
-            await DeviceInfoUtils.shared.initialise()
+        self.initialisationTask = Task<Bool, Never>(priority: .medium) { [weak self] in
+            guard let self = self else { return false }
+            return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                self.initLock.lock()
+                self.initContinuation = continuation
+                self.initLock.unlock()
 
-            let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
-            self.uid = uid
+                Task(priority: .medium) { [weak self] in
+                    guard let self = self else { return }
 
-            log(message: "[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+                    await DeviceInfoUtils.shared.initialise()
 
-            await MainActor.run {
-                self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
+                    let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
+                    self.uid = uid
+
+                    log(message: "[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+
+                    await MainActor.run {
+                        self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
+                    }
+
+                    self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
+
+                    OtplessBMEvents.Device.pushDeviceEvent()
+
+                    self.fetchStateAndMerchantConfig(onlyState: false)
+                }
             }
-
-            self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
-
-            OtplessBMEvents.Device.pushDeviceEvent()
-
-            self.fetchStateAndMerchantConfig(onlyState: false)
         }
+    }
+
+    private func resolveInit(success: Bool) {
+        initLock.lock()
+        let c = initContinuation
+        initContinuation = nil
+        initLock.unlock()
+        c?.resume(returning: success)
     }
     
     @objc public func isOtplessDeeplink(url : URL) -> Bool {
@@ -172,6 +202,16 @@ import OtplessEventIO
     }
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
+        if let initTask = self.initialisationTask {
+            let initSuccess = await initTask.value
+            if !initSuccess {
+                log(message: "[Start] Initialisation failed — relaying failedToInitializeResponse", type: .SDK_INIT)
+                OtplessBMEvents.Init.stateFailed()
+                invokeResponse(OtplessResponse.failedToInitializeResponse)
+                return
+            }
+        }
+
         self.pendingCode = ""
         self.merchantOtplessRequest = otplessRequest
         self.userSelectedOAuthChannel = otplessRequest.getSelectedChannelType()
@@ -440,6 +480,7 @@ private extension Otpless {
         requestStateForDeviceIfNil(onFetch: { [weak self] state in
             guard let state = state else {
                 log(message: "[Init] State fetch returned nil — aborting", type: .SDK_STATE_FETCH)
+                self?.resolveInit(success: false)
                 return
             }
 
@@ -509,11 +550,13 @@ private extension Otpless {
                     log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
                     OtplessBMEvents.Init.stateFailed()
                     self.invokeResponse(otplessResponse)
+                    self.resolveInit(success: false)
                 } else {
                     log(message: "[Init] SDK ready", type: .SDK_READY)
                     self.sdkState = .READY
                     OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
+                    self.resolveInit(success: true)
                 }
             }
 
@@ -530,12 +573,14 @@ private extension Otpless {
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
         if let state = self.state, state.isEmpty {
             log(message: "[Validation] Request blocked — state is empty (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            OtplessBMEvents.Init.stateFailed()
             invokeResponse(OtplessResponse.failedToInitializeResponse)
             return
         }
 
         guard merchantConfig != nil else {
             log(message: "[Validation] Request blocked — merchantConfig is nil (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            OtplessBMEvents.Init.stateFailed()
             invokeResponse(OtplessResponse.failedToInitializeResponse)
             return
         }
@@ -852,7 +897,7 @@ extension Otpless {
             "appId": merchantAppId
         ]
 
-        #if DEBUG
+        #if OTPLESS_INTERNAL
         dispatchDIEvent(event: "request", data: params)
         #endif
 
@@ -867,7 +912,7 @@ extension Otpless {
     private func onDeviceIntelligenceComplete() {
         diState = .completed
 
-        #if DEBUG
+        #if OTPLESS_INTERNAL
         dispatchDIEvent(event: "response", data: ["rsId": rsId, "status": "completed", "mode": deviceFingerprintMode == .SYNC ? "SYNC" : "ASYNC"])
         #endif
 
@@ -881,7 +926,7 @@ extension Otpless {
         }
     }
 
-    #if DEBUG
+    #if OTPLESS_INTERNAL
     private func dispatchDIEvent(event: String, data: [String: String]) {
         let response = OtplessResponse(
             responseType: .DEVICE_INTELLIGENCE,

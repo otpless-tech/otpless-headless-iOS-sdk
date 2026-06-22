@@ -99,7 +99,7 @@ import OtplessEventIO
     
     internal private(set) var otpLength: Int = -1
 
-    internal private(set) var isMfaEnabled: Bool = false
+    internal var isMfaEnabled: Bool = false
 
     private var initialisationTask: Task<Bool, Never>?
     private var initContinuation: CheckedContinuation<Bool, Never>?

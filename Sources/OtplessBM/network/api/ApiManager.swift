@@ -167,7 +167,9 @@ final class ApiManager: Sendable {
         mutableBody["packageName"] = Otpless.shared.packageName
         mutableBody["package"] = Otpless.shared.packageName
         mutableBody["platform"] = "HEADLESS"
-        mutableBody["uid"] = Otpless.shared.uid
+        if !Otpless.shared.isMfaEnabled {
+            mutableBody["uid"] = Otpless.shared.uid
+        }
         
         mutableBody["metadata"] = Utils.convertDictionaryToString([
             "appInfo": Utils.convertDictionaryToString(Otpless.shared.appInfo),

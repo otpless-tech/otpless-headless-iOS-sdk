@@ -1,3 +1,14 @@
 # macOS
 .DS_Store
 .build
+
+# Claude Code / agent session artifacts
+CLAUDE.md
+docs/
+
+# IDE / editor state
+.idea/
+
+# Xcode per-user data
+xcuserdata/
+*.xcuserstate

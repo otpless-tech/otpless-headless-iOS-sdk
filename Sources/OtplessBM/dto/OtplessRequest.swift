@@ -66,6 +66,11 @@ import Foundation
         self.authenticationMedium = .WEB_AUTHN
     }
     
+    @objc public func set(fromBackend requestId: String) {
+        self.requestId = requestId
+        self.authenticationMedium = .PHONE
+    }
+    
     @objc public func set(otp: String) {
         self.otp = otp
     }
@@ -135,6 +140,9 @@ internal extension OtplessRequest {
             requestDict[RequestKeys.identifierTypeKey] = RequestKeys.mobileValue
             requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
             requestDict[RequestKeys.channelKey] = Otpless.shared.phoneIntentChannel
+            if let rq = self.requestId {
+                requestDict[RequestKeys.requestIdKey] = rq
+            }
             break
         case .EMAIL:
             requestDict[RequestKeys.emailKey] = self.email
@@ -281,6 +289,10 @@ internal extension OtplessRequest {
     
     func getPhone() -> String? {
         return self.phoneNumber
+    }
+    
+    internal func isBackendGeneratedRequest() -> Bool {
+        return authenticationMedium == .PHONE && !(requestId?.isEmpty ?? true)
     }
     
     func getCountryCode() -> String? {

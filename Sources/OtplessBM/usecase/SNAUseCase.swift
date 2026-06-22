@@ -1,22 +1,17 @@
 //
-//  used.swift
+//  SNAUseCase.swift
 //  OtplessSDK
 //
-//  Created by Sparsh on 26/01/25.
-//
-
 
 import Foundation
 
-/**
- Helper class used to call the Sekura API to perform SNA and then poll the SNATransactionStatus API to fetch user details.
- - Parameter apiRepository: An instance of `ApiRepository` used to call the SNA APIs.
- */
+/// Helper class used to call the Sekura API to perform SNA and then poll the
+/// SNA transaction status API to fetch user details.
 internal final class SNAUseCase: @unchecked Sendable {
     private var isPolling = true
     private var snaStatusPollingLapse: Bool = false
     private var snaUrlHitError: [String: String]?
-    
+
     private let SILENT_AUTH = "SILENT_AUTH"
 
     func invoke(
@@ -25,9 +20,11 @@ internal final class SNAUseCase: @unchecked Sendable {
     ) async -> SNAUseCaseResponse {
         isPolling = true
         snaStatusPollingLapse = false
-        
+
+        OtplessBMEvents.Sna.statusCheckStarted(isMfaEnabled: Otpless.shared.isMfaEnabled)
+        OtplessBMEvents.Sna.started(url: url)
+
         let receivedSNAConnectionTimeout = timerSettings.timeout
-        
         let snaConnectionTimeout: Double
         if let receivedSNAConnectionTimeout = receivedSNAConnectionTimeout {
             snaConnectionTimeout = Double(receivedSNAConnectionTimeout / 1000)
@@ -35,11 +32,11 @@ internal final class SNAUseCase: @unchecked Sendable {
             snaConnectionTimeout = 7.0
         }
         Otpless.shared.apiRepository.updateSNAConnectionTimeout(connectionTimeout: snaConnectionTimeout)
-        
+
         async let snaApiCall: Void = Otpless.shared.apiRepository
             .makeSNACall(url: url) { [weak self] snaResponse in
                 let status = snaResponse["status"] as? String
-                
+
                 if status == nil || status?.lowercased() != "ok" {
                     let snaError = [
                         "cause": snaResponse["error"] as? String ?? "Unable to find cause",
@@ -48,176 +45,113 @@ internal final class SNAUseCase: @unchecked Sendable {
                     self?.snaUrlHitError = ["lapseMeta": Utils.convertDictionaryToString(snaError)]
                     self?.stopPolling()
                 }
-                
+
                 log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
-                sendEvent(event: .SNA_CALLBACK_RESULT)
+                OtplessBMEvents.Sna.callbackResult(status: status ?? "nil")
             }
-        
+
         async let snaTransactionApiCall = pollSNATransaction(timerSettings: timerSettings)
-        
+
         let (_, transactionResponse) = await (snaApiCall, snaTransactionApiCall)
         return transactionResponse
     }
-    
+
     private func pollSNATransaction(timerSettings: TimerSettings) async -> SNAUseCaseResponse {
         var startTime: TimeInterval = 0
         let endTime = TimeInterval(timerSettings.timeout ?? 7_000)
         let pollingInterval = TimeInterval(timerSettings.interval ?? 200)
-        
+
         while startTime <= endTime && isPolling {
-            let response = await Otpless.shared.apiRepository
-                .getSNATransactionStatus(queryParams: [:], state: Otpless.shared.state ?? "")
-            
+            let response: Result<TransactionStatusResponse, Error>
+            if Otpless.shared.isMfaEnabled {
+                response = await Otpless.shared.apiRepository
+                    .mfaSnaStatus(queryParams: [:], state: Otpless.shared.state ?? "")
+            } else {
+                response = await Otpless.shared.apiRepository
+                    .getSNATransactionStatus(queryParams: [:], state: Otpless.shared.state ?? "")
+            }
+
             switch response {
             case .failure(let error):
                 log(message: "SNA polling error: \(error)", type: .API_RESPONSE_FAILURE)
-                
+
             case .success(let data):
-                
                 switch data.authDetail.status {
                 case Constants.SUCCESS:
                     isPolling = false
-                    return SNAUseCaseResponse(
-                        tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings(
-                            token: data.quantumLeap?.channelAuthToken ?? "",
-                            asId: data.quantumLeap?.asId ?? "",
-                            uid: data.quantumLeap?.uid ?? "",
-                            timerSettings: nil // Stop polling if ONETAP data is received
-                        ),
-                        otplessResponse: [
-                            OtplessResponse(
-                                responseType: .ONETAP,
-                                response: data.oneTap?.toDict(),
-                                statusCode: 200
-                            )
-                        ]
-                    )
-                    
+                    if let quantumLeap = data.quantumLeap {
+                        Otpless.shared.onAuthTypeChange(newAuthType: quantumLeap.channel)
+                        Otpless.shared.onCommunicationModeChange(quantumLeap.communicationMode ?? "")
+                    }
+                    return makeSnaUseCaseResponse(data)
+
                 case Constants.FAILED:
-                    return handleStatusFailed(data)
-                    
+                    isPolling = false
+                    Otpless.shared.onAuthTypeChange(newAuthType: data.quantumLeap?.channel ?? "")
+                    Otpless.shared.onCommunicationModeChange(data.quantumLeap?.communicationMode ?? "")
+                    return makeSnaUseCaseResponse(data)
+
                 case Constants.PENDING:
-                    // Continue polling
                     break
-                    
+
                 default:
                     break
                 }
             }
-            
+
             try? await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000))
             startTime += pollingInterval
         }
-        
+
         return await performFallbackTransactionRequest(
             withErrorDict: snaUrlHitError ?? [
                 "lapseMeta": Utils.convertDictionaryToString([
-                    "error": "sdk_polling_timeout",
-                    "error_description": "Transaction could not be polled anymore."
+                    "cause": "sdk_polling_timeout",
+                    "brief": "Transaction could not be polled anymore."
                 ])
             ]
         )
     }
-    
-    private func handleStatusFailed(_ data: TransactionStatusResponse) -> SNAUseCaseResponse {
-        isPolling = false
-        Otpless.shared.onAuthTypeChange(newAuthType: data.quantumLeap?.channel ?? "")
-        Otpless.shared.onCommunicationModeChange(data.quantumLeap?.communicationMode ?? "NA")
-        
-        return SNAUseCaseResponse(
-            tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings(
-                token: data.quantumLeap?.channelAuthToken ?? "",
-                asId: data.quantumLeap?.asId ?? "",
-                uid: data.quantumLeap?.uid ?? "",
-                timerSettings: data.quantumLeap?.pollingRequired == true ? data.quantumLeap?.timerSettings : TimerSettings(interval: 3, timeout: 60)
-            ),
-            otplessResponse: [
-                OtplessResponse(
-                    responseType: .VERIFY, response: [
-                        "errorCode": "400",
-                        "errorMessage": "Silent Authentication failed.",
-                        "authType": SILENT_AUTH
-                    ], statusCode: 400
-                ),
-                makeInitOrTerminateResponse(data)
-            ]
-        )
-    }
-    
-    private func makeInitOrTerminateResponse(_ data: TransactionStatusResponse) -> OtplessResponse {
-        if let quantumLeap = data.quantumLeap {
-            return OtplessResponse.createSuccessfulInitiateResponse(
-                requestId: quantumLeap.channelAuthToken,
-                channel: Otpless.shared.authType,
-                authType: Otpless.shared.authType,
-                deliveryChannel: quantumLeap.communicationMode
-            )
-        } else {
-            return OtplessResponse.makeTerminalResponse(status: 400, error: String(OtplessConstant.EC.SNA_AUTH_FAILED), message: "Silent Authentication failed.")
-        }
-    }
-    
+
     private func performFallbackTransactionRequest(withErrorDict errorDict: [String: String]) async -> SNAUseCaseResponse {
         stopPolling()
         self.snaStatusPollingLapse = true
-        let response = await Otpless.shared.apiRepository
-            .getSNATransactionStatus(queryParams: errorDict, state: Otpless.shared.state ?? "")
-        
-        let snaUseCaseResponse: SNAUseCaseResponse
-        
+
+        let response: Result<TransactionStatusResponse, Error>
+        if Otpless.shared.isMfaEnabled {
+            response = await Otpless.shared.apiRepository
+                .mfaSnaStatus(queryParams: errorDict, state: Otpless.shared.state ?? "")
+        } else {
+            response = await Otpless.shared.apiRepository
+                .getSNATransactionStatus(queryParams: errorDict, state: Otpless.shared.state ?? "")
+        }
+
         switch response {
+        case .failure:
+            return SNAUseCaseResponse(
+                tokenAsIdUIdAndTimerSettings: nil,
+                otplessResponse: [OtplessResponse.snaTransactionFinalTimeout]
+            )
+
         case .success(let data):
-            if data.authDetail.status == Constants.FAILED {
-                return handleStatusFailed(data)
-            } else {
-                snaUseCaseResponse = SNAUseCaseResponse(
+            switch data.authDetail.status {
+            case Constants.SUCCESS:
+                return makeSnaUseCaseResponse(data)
+
+            case Constants.FAILED:
+                Otpless.shared.onAuthTypeChange(newAuthType: data.quantumLeap?.channel ?? "")
+                Otpless.shared.onCommunicationModeChange(data.quantumLeap?.communicationMode ?? "")
+                return makeSnaUseCaseResponse(data)
+
+            default:
+                return SNAUseCaseResponse(
                     tokenAsIdUIdAndTimerSettings: nil,
-                    otplessResponse: [
-                        OtplessResponse(
-                            responseType: .VERIFY,
-                            response: {
-                                var dict: [String: Any] = [
-                                    "errorCode": "9106",
-                                    "errorMessage": "Transaction timeout Success",
-                                    "authType": SILENT_AUTH
-                                ]
-                                // Attempt to attach a serializable representation of `data`
-                                if let oneTapDict = data.oneTap?.toDict() {
-                                    dict["data"] = oneTapDict
-                                } else if let dataEnc = try? JSONEncoder().encode(data),
-                                          let jsonObject = try? JSONSerialization.jsonObject(with: dataEnc),
-                                          let jsonDict = jsonObject as? [String: Any] {
-                                    dict["data"] = jsonDict
-                                } else {
-                                    dict["data"] = "<unavailable>"
-                                }
-                                return dict
-                            }(),
-                            statusCode: 9106)
-                    ]
+                    otplessResponse: [OtplessResponse.snaTransactionFinalTimeout]
                 )
             }
-            
-        case .failure(let error):
-            snaUseCaseResponse = SNAUseCaseResponse(
-                tokenAsIdUIdAndTimerSettings: nil,
-                otplessResponse: [
-                    OtplessResponse(
-                        responseType: .VERIFY,
-                        response: Utils.createErrorDictionary(
-                            errorCode: "9106",
-                            errorMessage: "Transaction timeout Failure",
-                            authType: SILENT_AUTH
-                        ),
-                        statusCode: 9106
-                    )
-                ]
-            )
         }
-        
-        return snaUseCaseResponse
     }
-    
+
     func stopPolling() {
         self.isPolling = false
     }
@@ -227,4 +161,3 @@ internal struct SNAUseCaseResponse {
     let tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings?
     let otplessResponse: [OtplessResponse]?
 }
-

@@ -25,12 +25,11 @@ public actor OtplessSessionManager {
     public func initialize(appId: String) {
         guard !isInit else { return }
         self.appId = appId
-        SessionManagerEventDataProvider.shared.setAppId(id: appId)
         isInit = true
     }
     
     public func getActiveSession() async -> OtplessSessionState {
-        sendEvent(event: EventConstants.getActiveSession)
+        OtplessBMEvents.Session.getActive()
         guard let session = getSavedSession() else {
             DLog("no saved session is available to check, returning inactive session")
             return .inactive
@@ -57,7 +56,7 @@ public actor OtplessSessionManager {
             DLog("no session available to logout")
             return
         }
-        sendEvent(event: EventConstants.logoutSession)
+        OtplessBMEvents.Session.logout()
         DLog("session logout is in progress")
         let loginUri = "\(ORIGIN)/rc5/appid/\(appId)"
         let requestMap: [String: String] = [

@@ -10,29 +10,24 @@ import UIKit
 extension Otpless {
     func invokeResponse(_ otplessResponse: OtplessResponse) {
         dismissOneTapBottomSheet()
+        log(message: "[Response] \(otplessResponse.toString())", type: .RESPONSE_RELAY)
+
         if otplessResponse.statusCode == 9110 {
             log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
+            OtplessBMEvents.Response.notDelivered(otplessResponse, reason: OtplessBMEvents.Response.REASON_STATUS_CODE_SUPPRESSED)
             return
         }
-
-        log(message: "[Response] Received — type: \(otplessResponse.responseType.rawValue), statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
 
         if otplessResponse.responseType == .ONETAP {
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
-
-            Utils.convertToEventParamsJson(
-                otplessResponse: otplessResponse,
-                callback: { extras, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
-                }
-            )
 
             let capturedMode = deviceFingerprintMode
 
             if capturedMode == .SYNC {
                 if diState == .completed {
                     rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                    OtplessBMEvents.Response.delivered(otplessResponse)
                     DispatchQueue.main.async {
                         self.responseDelegate?.onResponse(otplessResponse)
                         self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -44,6 +39,7 @@ extension Otpless {
             } else {
                 // ASYNC or NONE — dispatch immediately regardless of DI state
                 rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                OtplessBMEvents.Response.delivered(otplessResponse)
                 DispatchQueue.main.async {
                     self.responseDelegate?.onResponse(otplessResponse)
                     self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -54,16 +50,10 @@ extension Otpless {
 
         if otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105 {
             log(message: "[Response] Network timeout — statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
-            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
-        } else {
-            Utils.convertToEventParamsJson(
-                otplessResponse: otplessResponse,
-                callback: { extras, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
-                }
-            )
+            OtplessBMEvents.Response.notDelivered(otplessResponse, reason: OtplessBMEvents.Response.REASON_TIMEOUT)
         }
 
+        OtplessBMEvents.Response.delivered(otplessResponse)
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
             self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -72,7 +62,7 @@ extension Otpless {
 }
 
 extension Otpless {
-    
+
     func getVerifyCodeQueryParams(code: String, webAuthnData: String = "", requestId: String = "") -> [String: String] {
         var queryParams: [String: String] = [:]
         queryParams["hasWhatsapp"] = (appInfo["hasWhatsapp"] as? String)
@@ -90,15 +80,15 @@ extension Otpless {
     func prepareForSdkAuth(withAuthParams sdkAuthParams: SdkAuthParams) async {
         switch sdkAuthParams.channelType {
         case .GOOGLE_SDK, .GMAIL:
-            sendEvent(event: .GOOGLE_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .GOOGLE)
             await manageGIDSignIn(with: sdkAuthParams)
             
         case .FACEBOOK_SDK, .FACEBOOK:
-            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .FACEBOOK)
             await manageFBSignIn(with: sdkAuthParams)
 
         case .APPLE_SDK, .APPLE:
-            sendEvent(event: .APPLE_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .APPLE)
             let appleSignInResponse = await appleSignInUseCase.performSignIn(withNonce: sdkAuthParams.nonce)
             await verifySdkAuthResponse(queryParams: appleSignInResponse.toDict())
 

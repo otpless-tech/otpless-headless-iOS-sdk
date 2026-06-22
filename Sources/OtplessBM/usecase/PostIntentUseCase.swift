@@ -50,6 +50,10 @@ internal class PostIntentUseCase {
     
     func getPostIntentRequestBody(_ otplessRequest: OtplessRequest, uiId: [String]?, uid: String?) -> PostIntentRequestBody {
         let requestDict = otplessRequest.getDictForIntent()
+        var controlledUid = uid
+        if Otpless.shared.isMfaEnabled {
+            controlledUid = nil
+        }
         return PostIntentRequestBody(
             channel: alterChannelIfRequired(channel: ((requestDict[RequestKeys.channelKey] ?? "") ?? "")),
             email: requestDict[RequestKeys.emailKey] as? String,
@@ -58,10 +62,10 @@ internal class PostIntentUseCase {
             mobile: requestDict[RequestKeys.mobileKey] as? String,
             selectedCountryCode: requestDict[RequestKeys.countryCodeKey] as? String,
             silentAuthEnabled: (Otpless.shared.merchantConfig?.merchant?.config?.isSilentAuthEnabled
-                                ?? false) && ((otplessRequest.onetapItemData?.isMobile == true) || (otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest())) && Otpless.shared.isMobileDataEnabled,
+                                ?? false) && ((otplessRequest.onetapItemData?.isMobile == true) || (otplessRequest.getPhone() != nil && !otplessRequest.isCustomRequest()) || (otplessRequest.isBackendGeneratedRequest())) && Otpless.shared.isMobileDataEnabled,
             triggerWebauthn: shouldTriggerWebAuthn(otplessRequest),
             type: (requestDict[RequestKeys.typeKey] ?? "") ?? "",
-            uid: uid,
+            uid: controlledUid,
             value: requestDict[RequestKeys.valueKey] as? String,
             expiry: requestDict[RequestKeys.expiryKey] as? String,
             deliveryMethod: requestDict[RequestKeys.deliveryChannelKey] as? String,

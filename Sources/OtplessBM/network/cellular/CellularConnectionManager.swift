@@ -386,28 +386,41 @@ final class CellularConnectionManager: @unchecked Sendable {
             if let d = data, !d.isEmpty, let response = self.decodeResponse(data: d) {
                 let status = self.parseHttpStatusCode(response: response)
                 
+                let snaBodyDict: [String: Any]? = {
+                    guard let d = self.getResponseBody(response: response),
+                          let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else {
+                        return nil
+                    }
+                    return obj
+                }()
+
                 switch status {
                 case 200...202:
+                    OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
                         completion(.dataOK(ConnectionResponse(status: status, body: r)))
                     } else {
                         completion(.dataOK(ConnectionResponse(status: status, body: nil)))
                     }
                 case 204:
+                    OtplessBMEvents.Sna.response(statusCode: status, body: nil)
                     completion(.dataOK(ConnectionResponse(status: status, body: nil)))
                 case 301...303, 307...308:
                     guard let ru = self.parseRedirect(requestUrl: requestUrl, response: response) else {
                         completion(.err(NetworkError.invalidRedirectURL("Invalid URL - unable to parseRecirect")))
                         return
                     }
+                    OtplessBMEvents.Sna.redirected(location: ru.url?.absoluteString ?? "", statusCode: status)
                     completion(.follow(ru))
                 case 400...451:
+                    OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
                         completion(.dataErr(ConnectionResponse(status: status, body:r)))
                     } else {
                         completion(.err(NetworkError.other("Unexpected HTTP Status \(status)")))
                     }
                 case 500...511:
+                    OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
                         completion(.dataErr(ConnectionResponse(status: status, body:r)))
                     } else {

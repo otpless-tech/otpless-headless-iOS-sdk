@@ -100,54 +100,6 @@ final internal class Utils {
         return nil
     }
     
-    static func convertToEventParamsJson(
-        otplessResponse: OtplessResponse?,
-        callback: @escaping (
-            [String: String],
-            _ musId: String?
-        ) -> Void
-    ) {
-        var eventParam = [String: String]()
-        var musId: String? = nil
-        
-        var response = [String: String]()
-        
-        if otplessResponse == nil {
-            response["statusCode"] = "-1"
-            response["responseType"] = "null"
-            response["response"] = "{}"
-            callback(response, nil)
-            return
-        }
-        
-        response["statusCode"] = "\(otplessResponse?.statusCode ?? -1)"
-        response["responseType"] = otplessResponse?.responseType.rawValue ?? "null"
-        
-        if otplessResponse?.statusCode != 200 {
-            if let responseBody = otplessResponse?.response {
-                response["response"] = "\(responseBody)"
-            } else {
-                response["response"] = "{}"
-            }
-        } else {
-            if let dataJson = otplessResponse?.response?["data"] as? [String: Any] {
-                musId = dataJson["userId"] as? String
-            } else {
-                if otplessResponse?.responseType != .ONETAP {
-                    response["response"] = Utils.convertDictionaryToString(otplessResponse?.response ?? [:])
-                }
-            }
-        }
-        
-        // Convert response dictionary to JSON string
-        if let jsonData = try? JSONSerialization.data(withJSONObject: response, options: []),
-           let jsonString = String(data: jsonData, encoding: .utf8) {
-            eventParam["response"] = jsonString
-        }
-        
-        callback(eventParam, musId)
-    }
-    
 }
 
 internal protocol DictionaryConvertible: Codable, Sendable {

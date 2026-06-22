@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'OtplessBM'
-  s.version          = '2.1.1'
+  s.version          = '2.2.0'
   s.summary          = 'Standalone SDK for Otpless Headless functionality.'
 
   s.description      = <<-DESC
@@ -16,6 +16,7 @@ Pod::Spec.new do |s|
   
   s.subspec 'Core' do |core|
     core.source_files = 'Sources/OtplessBM/**/*'
+    core.dependency 'OtplessEventIO', '~> 1.0'
   end
 
   s.subspec 'FacebookSupport' do |fb|

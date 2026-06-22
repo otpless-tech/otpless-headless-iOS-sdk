@@ -40,7 +40,7 @@ internal final class ApiRepository: @unchecked Sendable {
             }
         }
 
-        #if DEBUG
+        #if OTPLESS_INTERNAL
         let apiResponse = OtplessResponse(
             responseType: .API_RESPONSE,
             response: responseDict,
@@ -219,6 +219,25 @@ internal final class ApiRepository: @unchecked Sendable {
                 path: ApiManager.TRANSACTION_STATUS_PATH,
                 method: "GET",
                 queryParameters: queryParams
+            )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
+            return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))
+        }
+        catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
+            return Result.failure(error)
+        }
+    }
+
+    func mfaSnaStatus(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+        let apiName = "mfaSnaStatus"
+        do {
+            let data = try await apiManager.performUserAuthRequest(
+                state: state,
+                path: ApiManager.MFA_SNA_STATUS_PATH,
+                method: "POST",
+                body: appendTokenIds(queryParams: queryParams)
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))

@@ -1,4 +1,10 @@
 
+## 2.2.0 (22nd June 2026)
+
+### Features
+- Added MFA support via `Otpless.shared.setMfaEnabled(_:)`.
+- `start()` now queues until `initialise()` completes — no more `failedToInitializeResponse` when start is called early.
+
 ## 2.0.9 (15th April 2026)
 
 ### Features

@@ -10,6 +10,7 @@ internal enum OtplessConstant {
     enum EC {
         static let SNA_AUTH_INIT_FAILED = 7160
         static let SNA_AUTH_FAILED = 7161
+        static let ALL_CHANNEL_AUTH_FAILED = 9106
     }
     
     static let terminalErrorCodes: [String] = [

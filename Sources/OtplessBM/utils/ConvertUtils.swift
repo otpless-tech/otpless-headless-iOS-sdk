@@ -38,7 +38,10 @@ internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> S
             // Unexpected SUCCESS state: neither quantumLeap nor oneTap was returned,
             // so no alternative initiation can be surfaced. Surface a 9106 timeout-shaped
             // response so the host treats it the same as a final-status fallback.
-            // TODO: emit a telemetry event for this unexpected branch.
+            OtplessBMEvents.Exception.captured(
+                where: "makeSnaUseCaseResponse",
+                message: "SNA status=SUCCESS without quantumLeap or oneTap — emitting 9106 fallback"
+            )
             otplessResponses = [
                 OtplessResponse.createVerifyFailed(
                     statusCode: 9106,

@@ -2,18 +2,8 @@
 ## 2.2.0 (22nd June 2026)
 
 ### Features
-- Integrated `OtplessEventIO` for structured, persisted event tracking.
-- Added MFA-aware SNA via `Otpless.shared.setMfaEnabled(_:)`; new `MFA_FACTOR_COMPLETED` responseType.
-- Added `Otpless.shared.userAuthEvent(...)` passthrough with `AuthEvent` and `ProviderType` enums.
-
-### Improvements
-- `start()` now waits for any in-flight `initialise()` before processing.
-- `TransactionStatusUseCase` emits `AUTH_TERMINATED` (errorCode `9106`) on backend FAILED instead of stopping silently.
-- Tracking IDs (`inid`, `tsid`) sourced from `OtplessEventIO.trackingIds`.
-
-### Removed
-- `canRequestBeMade` validation gate; MFA-enabled merchants now flow through the new MFA SNA path.
-- Legacy `events.otpless.tech` GET event pipeline. All SDK events now flow through the structured `OtplessEventIO` pipeline (`OtplessBMEvents` facade). Event names changed from `native_*` to `sdk_*` / `api_*` / `sna_*`.
+- Added MFA support via `Otpless.shared.setMfaEnabled(_:)`.
+- `start()` now queues until `initialise()` completes — no more `failedToInitializeResponse` when start is called early.
 
 ## 2.0.9 (15th April 2026)
 

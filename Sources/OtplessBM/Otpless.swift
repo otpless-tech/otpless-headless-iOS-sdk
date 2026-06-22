@@ -8,6 +8,7 @@
 import Foundation
 import UIKit
 import Network
+import OtplessEventIO
 
 
 @objc final public class Otpless: NSObject, @unchecked Sendable, UsecaseProvider {
@@ -97,6 +98,8 @@ import Network
     internal private(set) var isMobileDataEnabled: Bool = true
     
     internal private(set) var otpLength: Int = -1
+
+    internal private(set) var isMfaEnabled: Bool = false
     
     internal private(set) var objcResponseDelegate: ((String) -> Void)?
     
@@ -116,6 +119,13 @@ import Network
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
         startMobileDataMonitoring()
 
+        OtplessEventIO.initialize(appId: appId)
+        let trackingIds = OtplessEventIO.trackingIds
+        self.inid = trackingIds.installationId
+        self.tsid = trackingIds.sessionId
+        OtplessBMEvents.Init.initCalled(hasApiBaseUrlOverride: false)
+        OtplessEventIO.retryFailedEvents()
+
         log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
 
         Task(priority: .medium) { [weak self] in
@@ -124,20 +134,17 @@ import Network
             await DeviceInfoUtils.shared.initialise()
 
             let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
-            let inid = await DeviceInfoUtils.shared.getInstallationId()
-            let tsid = await DeviceInfoUtils.shared.getTrackingSessionId()
-
             self.uid = uid
-            self.inid = inid
-            self.tsid = tsid
 
-            log(message: "[Init] Device IDs resolved — inId: \(inid), tsId: \(tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+            log(message: "[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
 
             await MainActor.run {
                 self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
             }
 
             self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
+
+            OtplessBMEvents.Device.pushDeviceEvent()
 
             self.fetchStateAndMerchantConfig(onlyState: false)
         }
@@ -181,6 +188,7 @@ import Network
         log(message: "[Transaction] start() called — medium: \(otplessRequest.getAuthenticationMedium()?.rawValue ?? "unknown"), isIntentRequest: \(otplessRequest.isIntentRequest())", type: .TRANSACTION_START)
 
         sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
+        OtplessBMEvents.Auth.startCalled(request: otplessRequest)
         await processRequestIfRequestIsValid(otplessRequest)
     }
     
@@ -333,6 +341,7 @@ import Network
                 sendEvent(event: .HEADLESS_MERCHANT_COMMIT, extras: extras, musId: musId ?? "")
             }
         )
+        OtplessBMEvents.Commit.merchantCommit(otplessResponse)
     }
     
     @objc public func cleanup() {
@@ -374,6 +383,25 @@ extension Otpless {
     public func setResponseDelegate(_ otplessResponseDelegate: OtplessResponseDelegate) {
         self.responseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
+        OtplessBMEvents.Auth.callbackSet()
+    }
+
+    @objc public func setMfaEnabled(_ enabled: Bool) {
+        self.isMfaEnabled = enabled
+    }
+
+    public func userAuthEvent(
+        event: AuthEvent,
+        fallback: Bool,
+        providerType: ProviderType,
+        providerInfo: [String: String]
+    ) {
+        OtplessBMEvents.UserAuth.authEvent(
+            event: event,
+            fallback: fallback,
+            providerType: providerType,
+            providerInfo: providerInfo
+        )
     }
 
     #if DEBUG
@@ -385,6 +413,7 @@ extension Otpless {
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
         self.objcResponseDelegate = otplessResponseDelegate
         sendEvent(event: .SET_HEADLESS_CALLBACK)
+        OtplessBMEvents.Auth.callbackSet()
     }
     
     public func setLoggerDelegate(_ otplessLoggerDelegate: OtplessLoggerDelegate) {
@@ -425,6 +454,7 @@ private extension Otpless {
     func requestStateForDeviceIfNil(onFetch: @escaping @Sendable (String?) -> Void) {
         if let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY),
            !savedState.isEmpty {
+            OtplessBMEvents.Init.stateFromCache()
             onFetch(savedState)
         } else {
             Task(priority: .medium) { [weak self] in
@@ -477,10 +507,12 @@ private extension Otpless {
 
                 if let otplessResponse = otplessResponse {
                     log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
+                    OtplessBMEvents.Init.stateFailed()
                     self.invokeResponse(otplessResponse)
                 } else {
                     log(message: "[Init] SDK ready", type: .SDK_READY)
                     self.sdkState = .READY
+                    OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
                 }
             }
@@ -496,7 +528,15 @@ private extension Otpless {
     }
     
     func processRequestIfRequestIsValid(_ otplessRequest: OtplessRequest) async {
-        if await !canRequestBeMade(request: otplessRequest) {
+        if let state = self.state, state.isEmpty {
+            log(message: "[Validation] Request blocked — state is empty (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.failedToInitializeResponse)
+            return
+        }
+
+        guard merchantConfig != nil else {
+            log(message: "[Validation] Request blocked — merchantConfig is nil (SDK not initialised)", type: .TRANSACTION_VALIDATION)
+            invokeResponse(OtplessResponse.failedToInitializeResponse)
             return
         }
 
@@ -542,6 +582,7 @@ private extension Otpless {
                 let terminalResponse = OtplessResponse(responseType: ResponseTypes.AUTH_TERMINATED, response: otplessResponse.response, statusCode: otplessResponse.statusCode)
                 invokeResponse(terminalResponse)
                 sendEvent(event: .SNA_INIT_TERMINAL_RESPONSE)
+                OtplessBMEvents.Sna.initTerminal()
                 DLog("SNA auth init terminated")
                 return
             }
@@ -604,6 +645,7 @@ private extension Otpless {
                     if let errorCode = op.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
                         // terminal response is sent, exit the flow
                         sendEvent(event: .SNA_AUTH_TERMINAL_RESPONSE)
+                        OtplessBMEvents.Sna.authTerminal()
                         DLog("SNA auth terminated")
                         return
                     }
@@ -651,41 +693,6 @@ private extension Otpless {
                 self?.invokeResponse(otplessResponse)
             })
         }
-    }
-    
-    func canRequestBeMade(
-        request: OtplessRequest
-    ) async -> Bool {
-
-        if let state = self.state, state.isEmpty {
-            log(message: "[Validation] Request blocked — state is empty (SDK not initialised)", type: .TRANSACTION_VALIDATION)
-            invokeResponse(OtplessResponse.failedToInitializeResponse)
-            return false
-        }
-
-        guard let merchantConfig = merchantConfig else {
-            log(message: "[Validation] Request blocked — merchantConfig is nil (SDK not initialised)", type: .TRANSACTION_VALIDATION)
-            invokeResponse(OtplessResponse.failedToInitializeResponse)
-            return false
-        }
-
-        if merchantConfig.isMFAEnabled == true {
-            log(message: "[Validation] Request blocked — MFA is enabled for this merchant", type: .TRANSACTION_VALIDATION)
-            invokeResponse(OtplessResponse.create2FAEnabledError())
-            return false
-        }
-
-        if !request.isPhoneNumberWithCountryCodeValid() &&
-            request.getSelectedChannelType() == nil &&
-            (request.getRequestId()?.isEmpty ?? true) &&
-            !request.isEmailValid() {
-            log(message: "[Validation] Request blocked — invalid request params (no phone, email, channel, or requestId)", type: .TRANSACTION_VALIDATION)
-            invokeResponse(OtplessResponse.createInvalidRequestError(request: request))
-            return false
-        }
-        
-        log(message: "[Validation] Request passed all checks — proceeding", type: .TRANSACTION_VALIDATION)
-        return true
     }
     
     func isChannelEnabled(channelType: String, isPhoneAuth: Bool?) -> Bool {

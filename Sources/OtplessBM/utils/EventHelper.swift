@@ -66,6 +66,7 @@ func sendEvent(event: EventConstants, extras: [String: String] = [:], musId: Str
     }
     catch {
         log(message: "sendEvent failed: \(error)", type: .EVENT_CREATING_FAILED)
+        OtplessBMEvents.Exception.captured(where: "EventHelper.sendEvent", message: "\(error)")
     }
 }
 

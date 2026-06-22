@@ -48,6 +48,8 @@ class TransactionStatusUseCase {
 
         log(message: "[Polling] Started — interval: \(mInterval)s, timeout: \(mTimeout)s, maxAttempts: \(maxAttempts)", type: .POLLING_STARTED)
 
+        OtplessBMEvents.Api.transactionStatusCheckStarted()
+
         for _ in attempt...maxAttempts {
             guard isPolling else {
                 log(message: "[Polling] Stopped before next attempt", type: .POLLING_STOPPED)
@@ -81,7 +83,13 @@ class TransactionStatusUseCase {
                     return
 
                 case Constants.FAILED:
-                    log(message: "[Polling] Auth failed — stopping poll silently", type: .POLLING_STOPPED)
+                    log(message: "[Polling] Auth failed — emitting AUTH_TERMINATED and stopping poll", type: .POLLING_STOPPED)
+                    let terminal = OtplessResponse.makeTerminalResponse(
+                        status: 400,
+                        error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
+                        message: "Authentication on all channels failed."
+                    )
+                    responseCallback?(terminal)
                     stopPolling(dueToSuccessfulVerification: false)
                     return
 

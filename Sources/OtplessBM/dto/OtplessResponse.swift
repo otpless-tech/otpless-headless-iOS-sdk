@@ -150,7 +150,50 @@ public struct OtplessResponse: @unchecked Sendable {
     internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String, message errorMessage: String) -> OtplessResponse {
         return OtplessResponse(responseType: .AUTH_TERMINATED, response: ["errorCode": errorCode, "errorMessage": errorMessage], statusCode: statusCode)
     }
-    
+
+    internal static var snaTransactionFinalTimeout: OtplessResponse {
+        return OtplessResponse(
+            responseType: .VERIFY,
+            response: [
+                "errorCode": "9106",
+                "errorMessage": "Transaction timeout"
+            ],
+            statusCode: 9106
+        )
+    }
+
+    internal static func createVerifyFailed(
+        statusCode: Int,
+        response: [String: Any],
+        authType: String
+    ) -> OtplessResponse {
+        var mutable = response
+        mutable["authType"] = authType
+        return OtplessResponse(
+            responseType: .VERIFY,
+            response: mutable,
+            statusCode: statusCode
+        )
+    }
+
+    internal static func mfaFactorCompleted(
+        authType: String?,
+        communicationChannel: String?
+    ) -> OtplessResponse {
+        var json: [String: Any] = [:]
+        if let authType = authType {
+            json["authType"] = authType
+        }
+        if let communicationChannel = communicationChannel {
+            json["communicationChannel"] = communicationChannel
+        }
+        return OtplessResponse(
+            responseType: .MFA_FACTOR_COMPLETED,
+            response: json,
+            statusCode: 200
+        )
+    }
+
     public func toString() -> String {
         return """
         Status Code: \(statusCode)\n

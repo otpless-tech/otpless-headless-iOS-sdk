@@ -12,6 +12,7 @@ extension Otpless {
         dismissOneTapBottomSheet()
         if otplessResponse.statusCode == 9110 {
             log(message: "[Response] Suppressed — statusCode 9110 (request cancelled)", type: .RESPONSE_RELAY)
+            OtplessBMEvents.Response.notDelivered(otplessResponse, reason: OtplessBMEvents.Response.REASON_STATUS_CODE_SUPPRESSED)
             return
         }
 
@@ -33,6 +34,7 @@ extension Otpless {
             if capturedMode == .SYNC {
                 if diState == .completed {
                     rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                    OtplessBMEvents.Response.delivered(otplessResponse)
                     DispatchQueue.main.async {
                         self.responseDelegate?.onResponse(otplessResponse)
                         self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -44,6 +46,7 @@ extension Otpless {
             } else {
                 // ASYNC or NONE — dispatch immediately regardless of DI state
                 rsId = ""; diState = .idle; deviceFingerprintMode = .NONE
+                OtplessBMEvents.Response.delivered(otplessResponse)
                 DispatchQueue.main.async {
                     self.responseDelegate?.onResponse(otplessResponse)
                     self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -64,6 +67,7 @@ extension Otpless {
             )
         }
 
+        OtplessBMEvents.Response.delivered(otplessResponse)
         DispatchQueue.main.async {
             self.responseDelegate?.onResponse(otplessResponse)
             self.objcResponseDelegate?(otplessResponse.toJsonString())
@@ -72,7 +76,7 @@ extension Otpless {
 }
 
 extension Otpless {
-    
+
     func getVerifyCodeQueryParams(code: String, webAuthnData: String = "", requestId: String = "") -> [String: String] {
         var queryParams: [String: String] = [:]
         queryParams["hasWhatsapp"] = (appInfo["hasWhatsapp"] as? String)

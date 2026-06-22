@@ -16,6 +16,7 @@ Pod::Spec.new do |s|
   
   s.subspec 'Core' do |core|
     core.source_files = 'Sources/OtplessBM/**/*'
+    core.dependency 'OtplessEventIO', '~> 1.0'
   end
 
   s.subspec 'FacebookSupport' do |fb|

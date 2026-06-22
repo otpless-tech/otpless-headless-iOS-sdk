@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "otpless-event-io-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/otpless-tech/otpless-event-io-ios.git",
+      "state" : {
+        "revision" : "73a40cfc05550da4e85373c0ecbe93a2529954a7",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 2
+}

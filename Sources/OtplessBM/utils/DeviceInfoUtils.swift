@@ -10,6 +10,7 @@ import UIKit
 import Foundation
 import CommonCrypto
 import WebKit
+import OtplessEventIO
 
 class DeviceInfoUtils : @unchecked Sendable {
     static let shared: DeviceInfoUtils = {
@@ -19,17 +20,14 @@ class DeviceInfoUtils : @unchecked Sendable {
     public var isIntialised = false
     public var hasWhatsApp : Bool = false
     public var appHash = ""
-    private var inid: String?
-    private var tsid: String?
     private var deviceInfo: [String: String]? = nil
-    
+
     func initialise () async {
         if isIntialised {
             return
         }
         hasWhatsApp = await isWhatsappInstalled()
         appHash = getAppHash() ?? "noapphash"
-        generateTrackingId()
         isIntialised = true
     }
 
@@ -84,8 +82,9 @@ class DeviceInfoUtils : @unchecked Sendable {
         }
         
         params["model"] = ui.model
-        if inid != nil {
-            params["inid"] = inid
+        let inidValue = getInstallationId()
+        if !inidValue.isEmpty {
+            params["inid"] = inidValue
         }
         params["tsid"] = getTrackingSessionId()
         params["sdkVersion"] = Constants.SDK_VERSION
@@ -111,59 +110,12 @@ class DeviceInfoUtils : @unchecked Sendable {
         return params
     }
     
-    func generateTrackingId() {
-        if let savedInid: String = SecureStorage.shared.getFromUserDefaults(key: Constants.INID_KEY, defaultValue: "") {
-            self.inid = savedInid
-        } else {
-            inid = generateId(withTimeStamp: true)
-            SecureStorage.shared.saveToUserDefaults(key: Constants.INID_KEY, value: inid!)
-        }
-        
-        if tsid == nil {
-            if let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type {
-                let sharedSelector = NSSelectorFromString("shared")
-
-                guard cls.responds(to: sharedSelector),
-                      let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject
-                else {
-                    return
-                }
-
-                let gettsIDSelector = NSSelectorFromString("gettsID")
-
-                if sharedObj.responds(to: gettsIDSelector),
-                   let tsidValue = sharedObj.perform(gettsIDSelector)?.takeUnretainedValue() as? String {
-                    tsid = !tsidValue.isEmpty ? tsidValue : generateId(withTimeStamp: true)
-                    return
-                }
-            }
-            tsid = generateId(withTimeStamp: true)
-        }
-    }
-    
-    private func generateId(withTimeStamp: Bool) -> String {
-        let uuid = UUID().uuidString
-        if !withTimeStamp {
-            return uuid
-        }
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let uniqueString = "\(uuid)-\(timestamp)"
-        return uniqueString
-    }
-    
     func getInstallationId() -> String {
-        if inid != nil {
-            return inid!
-        }
-        let savedInid: String = SecureStorage.shared.getFromUserDefaults(key: Constants.INID_KEY, defaultValue: "")
-        return savedInid
+        return OtplessEventIO.trackingIds.installationId
     }
-    
+
     func getTrackingSessionId() -> String {
-        if self.tsid == nil {
-            self.tsid = generateId(withTimeStamp: true)
-        }
-        return self.tsid!
+        return OtplessEventIO.trackingIds.sessionId
     }
 
     @MainActor

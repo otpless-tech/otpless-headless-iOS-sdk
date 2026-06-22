@@ -25,8 +25,9 @@ final class ApiManager: Sendable {
     static let TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/status/{state}"
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
-    
-    
+    static let MFA_SNA_STATUS_PATH = "/v3/lp/user/transaction/mfa-sna-status/{state}"
+
+
     init(
         userAuthTimeout: TimeInterval = 20.0,
         snaTimeout: TimeInterval = 5.0,
@@ -67,6 +68,8 @@ final class ApiManager: Sendable {
         var pendingErrorData: Data? = nil
         var pendingStatusCode: Int? = nil
 
+            OtplessBMEvents.Api.request(path: newPath, data: nil)
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -105,6 +108,7 @@ final class ApiManager: Sendable {
                  sendApiEvent(event: .SUCCESS_API_RESPONSE, path: newPath, method: method, statusCode: http.statusCode,
                               startedAt: startedAt, xRequestId: xRequestId, data: nil)
              }
+             OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
 
             return data
         } catch {
@@ -132,6 +136,13 @@ final class ApiManager: Sendable {
                 apiError: apiError
             )
 
+            OtplessBMEvents.Api.errorResponse(
+                path: newPath,
+                method: method,
+                statusCode: pendingStatusCode ?? apiError.statusCode,
+                xRequestId: xRequestId
+            )
+
             throw apiError
         }
     }
@@ -141,7 +152,8 @@ final class ApiManager: Sendable {
     private func isSuppressedSuccessPath(_ fullPath: String) -> Bool {
         let base1 = ApiManager.TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
         let base2 = ApiManager.SNA_TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
-        return fullPath.contains(base1) || fullPath.contains(base2)
+        let base3 = ApiManager.MFA_SNA_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
+        return fullPath.contains(base1) || fullPath.contains(base2) || fullPath.contains(base3)
     }
 
     // Central place to decide success tracking; easy to extend later.

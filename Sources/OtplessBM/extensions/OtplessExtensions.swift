@@ -22,13 +22,6 @@ extension Otpless {
             Otpless.shared.resetStates()
             transactionStatusUseCase.stopPolling(dueToSuccessfulVerification: true)
 
-            Utils.convertToEventParamsJson(
-                otplessResponse: otplessResponse,
-                callback: { extras, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
-                }
-            )
-
             let capturedMode = deviceFingerprintMode
 
             if capturedMode == .SYNC {
@@ -57,14 +50,7 @@ extension Otpless {
 
         if otplessResponse.statusCode >= 9100 && otplessResponse.statusCode <= 9105 {
             log(message: "[Response] Network timeout — statusCode: \(otplessResponse.statusCode)", type: .RESPONSE_RELAY)
-            sendEvent(event: .HEADLESS_TIMEOUT, extras: merchantOtplessRequest?.getEventDict() ?? [:])
-        } else {
-            Utils.convertToEventParamsJson(
-                otplessResponse: otplessResponse,
-                callback: { extras, musId in
-                    sendEvent(event: .HEADLESS_RESPONSE_SDK, extras: extras, musId: musId ?? "")
-                }
-            )
+            OtplessBMEvents.Response.notDelivered(otplessResponse, reason: OtplessBMEvents.Response.REASON_TIMEOUT)
         }
 
         OtplessBMEvents.Response.delivered(otplessResponse)
@@ -94,15 +80,15 @@ extension Otpless {
     func prepareForSdkAuth(withAuthParams sdkAuthParams: SdkAuthParams) async {
         switch sdkAuthParams.channelType {
         case .GOOGLE_SDK, .GMAIL:
-            sendEvent(event: .GOOGLE_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .GOOGLE)
             await manageGIDSignIn(with: sdkAuthParams)
             
         case .FACEBOOK_SDK, .FACEBOOK:
-            sendEvent(event: .FACEBOOK_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .FACEBOOK)
             await manageFBSignIn(with: sdkAuthParams)
 
         case .APPLE_SDK, .APPLE:
-            sendEvent(event: .APPLE_SDK_IOS_SDK)
+            OtplessBMEvents.SdkAuth.started(provider: .APPLE)
             let appleSignInResponse = await appleSignInUseCase.performSignIn(withNonce: sdkAuthParams.nonce)
             await verifySdkAuthResponse(queryParams: appleSignInResponse.toDict())
 

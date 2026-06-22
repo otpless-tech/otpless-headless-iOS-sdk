@@ -28,19 +28,21 @@ internal final class CoreHTTPClient {
                 let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let message = json?["description"] as? String ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
                 // sending api error
-                sendEvent(event: .ERROR_API_RESPONSE, extras: [
-                    "api_exception": message,
-                    "method": request.httpMethod ?? "UNKNOWN",
-                    "which_api": request.url?.absoluteString ?? "UNKNOWN"
-                ])
+                OtplessBMEvents.Api.errorResponse(
+                    path: request.url?.path ?? "",
+                    method: request.httpMethod ?? "UNKNOWN",
+                    statusCode: http.statusCode,
+                    xRequestId: nil
+                )
                 return .failure(ApiError(message: message, statusCode: http.statusCode, responseJson: json))
             }
         } catch {
-            sendEvent(event: .ERROR_API_RESPONSE, extras: [
-                "api_exception": error.localizedDescription,
-                "method": request.httpMethod ?? "UNKNOWN",
-                "which_api": request.url?.absoluteString ?? "unknown"
-            ])
+            OtplessBMEvents.Api.errorResponse(
+                path: request.url?.path ?? "",
+                method: request.httpMethod ?? "UNKNOWN",
+                statusCode: nil,
+                xRequestId: nil
+            )
             // Transport errors (DNS, TLS, no network, timeouts, cancellations, etc.)
             return .failure(ApiError(message: error.localizedDescription))
         }

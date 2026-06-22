@@ -165,7 +165,6 @@ import OtplessEventIO
                     self.appInfo = await DeviceInfoUtils.shared.getAppInfo()
 
                     OtplessBMEvents.Device.pushDeviceEvent()
-
                     self.fetchStateAndMerchantConfig(onlyState: false)
                 }
             }
@@ -203,9 +202,11 @@ import OtplessEventIO
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
         if let initTask = self.initialisationTask {
+            let waitStartNs = DispatchTime.now().uptimeNanoseconds
             let initSuccess = await initTask.value
+            let waitMs = (DispatchTime.now().uptimeNanoseconds - waitStartNs) / 1_000_000
+            OtplessBMEvents.Init.waitCompleted(durationMs: waitMs, initSuccess: initSuccess)
             if !initSuccess {
-                log(message: "[Start] Initialisation failed — relaying failedToInitializeResponse", type: .SDK_INIT)
                 OtplessBMEvents.Init.stateFailed()
                 invokeResponse(OtplessResponse.failedToInitializeResponse)
                 return
@@ -227,7 +228,6 @@ import OtplessEventIO
 
         log(message: "[Transaction] start() called — medium: \(otplessRequest.getAuthenticationMedium()?.rawValue ?? "unknown"), isIntentRequest: \(otplessRequest.isIntentRequest())", type: .TRANSACTION_START)
 
-        sendEvent(event: .START_HEADLESS, extras: otplessRequest.getEventDict())
         OtplessBMEvents.Auth.startCalled(request: otplessRequest)
         await processRequestIfRequestIsValid(otplessRequest)
     }
@@ -375,12 +375,6 @@ import OtplessEventIO
     }
     
     public func commitOtplessResponse(_ otplessResponse: OtplessResponse) {
-        Utils.convertToEventParamsJson(
-            otplessResponse: otplessResponse,
-            callback: { extras, musId in
-                sendEvent(event: .HEADLESS_MERCHANT_COMMIT, extras: extras, musId: musId ?? "")
-            }
-        )
         OtplessBMEvents.Commit.merchantCommit(otplessResponse)
     }
     
@@ -422,7 +416,6 @@ internal extension Otpless {
 extension Otpless {
     public func setResponseDelegate(_ otplessResponseDelegate: OtplessResponseDelegate) {
         self.responseDelegate = otplessResponseDelegate
-        sendEvent(event: .SET_HEADLESS_CALLBACK)
         OtplessBMEvents.Auth.callbackSet()
     }
 
@@ -452,7 +445,6 @@ extension Otpless {
 
     @objc public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (String) -> Void) {
         self.objcResponseDelegate = otplessResponseDelegate
-        sendEvent(event: .SET_HEADLESS_CALLBACK)
         OtplessBMEvents.Auth.callbackSet()
     }
     
@@ -544,8 +536,6 @@ private extension Otpless {
                     log(message: "[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)", type: .MERCHANT_CONFIG)
                 }
 
-                sendEvent(event: .INIT_HEADLESS)
-
                 if let otplessResponse = otplessResponse {
                     log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
                     OtplessBMEvents.Init.stateFailed()
@@ -626,7 +616,6 @@ private extension Otpless {
             if let errorCode = otplessResponse.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
                 let terminalResponse = OtplessResponse(responseType: ResponseTypes.AUTH_TERMINATED, response: otplessResponse.response, statusCode: otplessResponse.statusCode)
                 invokeResponse(terminalResponse)
-                sendEvent(event: .SNA_INIT_TERMINAL_RESPONSE)
                 OtplessBMEvents.Sna.initTerminal()
                 DLog("SNA auth init terminated")
                 return
@@ -689,7 +678,6 @@ private extension Otpless {
                     // check for terminal error code
                     if let errorCode = op.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
                         // terminal response is sent, exit the flow
-                        sendEvent(event: .SNA_AUTH_TERMINAL_RESPONSE)
                         OtplessBMEvents.Sna.authTerminal()
                         DLog("SNA auth terminated")
                         return
@@ -719,15 +707,13 @@ private extension Otpless {
         if let intent = intentResponse.intent {
             let urlWithOutDecoding = intent.removingPercentEncoding
             if let link = URL(string: (urlWithOutDecoding!.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed))!) {
-                var params: [String: String] = [:]
-                var channel = ""
+                let channel: String
                 if #available(iOS 16.0, *) {
                     channel = (link.scheme ?? "") + "://" + (link.host() ?? "")
                 } else {
                     channel = (link.scheme ?? "") + "://" + (link.host ?? "")
                 }
-                params["channel"] = channel
-                sendEvent(event: .DEEPLINK_SDK, extras: params)
+                OtplessBMEvents.Deeplink.opened(channel: channel)
                 await UIApplication.shared.open(link, options: [:], completionHandler: nil)
             }
         }

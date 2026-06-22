@@ -47,7 +47,7 @@ internal final class SNAUseCase: @unchecked Sendable {
                 }
 
                 log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
-                sendEvent(event: .SNA_CALLBACK_RESULT)
+                OtplessBMEvents.Sna.callbackResult(status: status ?? "nil")
             }
 
         async let snaTransactionApiCall = pollSNATransaction(timerSettings: timerSettings)

@@ -13,6 +13,7 @@
 
 ### Removed
 - `canRequestBeMade` validation gate; MFA-enabled merchants now flow through the new MFA SNA path.
+- Legacy `events.otpless.tech` GET event pipeline. All SDK events now flow through the structured `OtplessEventIO` pipeline (`OtplessBMEvents` facade). Event names changed from `native_*` to `sdk_*` / `api_*` / `sna_*`.
 
 ## 2.0.9 (15th April 2026)
 

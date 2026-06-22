@@ -45,6 +45,7 @@ internal enum OtplessBMEvents {
         private static let STATE_FROM_CACHE = "sdk_init_state_from_cache"
         private static let STATE_READY = "sdk_init_state_ready"
         private static let STATE_FAILED = "sdk_init_state_failed"
+        private static let WAIT_COMPLETED = "sdk_init_wait_completed"
 
         static func initCalled(hasApiBaseUrlOverride: Bool) {
             trackEvent(
@@ -78,6 +79,19 @@ internal enum OtplessBMEvents {
                 errorCode: "5003"
             )
         }
+
+        static func waitCompleted(durationMs: UInt64, initSuccess: Bool) {
+            trackEvent(
+                name: WAIT_COMPLETED,
+                type: .SDK,
+                action: .RESPONSE,
+                statusCode: initSuccess ? 200 : nil,
+                data: [
+                    "duration_ms": durationMs,
+                    "init_success": initSuccess
+                ]
+            )
+        }
     }
 
     // MARK: - Auth
@@ -107,6 +121,7 @@ internal enum OtplessBMEvents {
         private static let RESPONSE = "sna_response"
         private static let INIT_TERMINAL = "sna_init_terminal_response"
         private static let AUTH_TERMINAL = "sna_auth_terminal_response"
+        private static let CALLBACK_RESULT = "sna_callback_result"
 
         static func statusCheckStarted(isMfaEnabled: Bool) {
             trackEvent(
@@ -148,6 +163,51 @@ internal enum OtplessBMEvents {
         static func authTerminal() {
             trackEvent(name: AUTH_TERMINAL, type: .SDK, action: .RESPONSE)
         }
+
+        static func callbackResult(status: String) {
+            trackEvent(
+                name: CALLBACK_RESULT,
+                type: .SDK,
+                action: .RESPONSE,
+                data: ["status": status]
+            )
+        }
+    }
+
+    // MARK: - Deeplink
+
+    enum Deeplink {
+        private static let OPENED = "sdk_deeplink_opened"
+
+        static func opened(channel: String) {
+            trackEvent(
+                name: OPENED,
+                type: .SDK,
+                action: .REQUEST,
+                data: ["channel": channel]
+            )
+        }
+    }
+
+    // MARK: - SdkAuth (native iOS social-sign-in SDKs)
+
+    enum SdkAuth {
+        internal enum SdkAuthProvider: String {
+            case GOOGLE, FACEBOOK, APPLE
+
+            var nativeName: String { rawValue }
+        }
+
+        private static let STARTED = "sdk_auth_started"
+
+        static func started(provider: SdkAuthProvider) {
+            trackEvent(
+                name: STARTED,
+                type: .SDK,
+                action: .REQUEST,
+                data: ["provider": provider.nativeName]
+            )
+        }
     }
 
     // MARK: - Api
@@ -155,6 +215,8 @@ internal enum OtplessBMEvents {
     enum Api {
         private static let STATE = "api_state"
         private static let INTENT = "api_intent"
+        private static let MERCHANT_CONFIG = "api_merchant_config"
+        private static let VERIFY_CODE = "api_verify_code"
         private static let TRANSACTION_STATUS = "api_transaction_status"
         private static let SNA_STATUS = "api_sna_status"
         private static let MFA_SNA_STATUS = "api_mfa_sna_status"
@@ -166,10 +228,12 @@ internal enum OtplessBMEvents {
         private static func nameFromPath(_ path: String) -> String {
             let p = path
             if p.contains(ApiManager.GET_STATE_PATH.replacingOccurrences(of: "{state}", with: "")) { return STATE }
+            if p.contains(ApiManager.GET_MERCHANT_CONFIG_PATH.replacingOccurrences(of: "{state}", with: "")) { return MERCHANT_CONFIG }
             if p.contains(ApiManager.SNA_TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")) { return SNA_STATUS }
             if p.contains(ApiManager.MFA_SNA_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")) { return MFA_SNA_STATUS }
             if p.contains(ApiManager.TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")) { return TRANSACTION_STATUS }
             if p.contains(ApiManager.POST_INTENT_PATH.replacingOccurrences(of: "{state}", with: "")) { return INTENT }
+            if p.contains(ApiManager.SSO_VERIFY_CODE_PATH.replacingOccurrences(of: "{state}", with: "")) { return VERIFY_CODE }
             if p.contains(ApiManager.OTP_VERIFICATION_PATH.replacingOccurrences(of: "{state}", with: "")) { return VERIFY_OTP }
             return UNKNOWN
         }
@@ -232,6 +296,7 @@ internal enum OtplessBMEvents {
         static let REASON_CALLBACK_NOT_SET = "callback_not_initialized"
         static let REASON_LEGACY_SILENT_AUTH = "legacy_mode_silent_auth"
         static let REASON_STATUS_CODE_SUPPRESSED = "status_code_suppressed"
+        static let REASON_TIMEOUT = "timeout"
 
         static func delivered(_ response: OtplessResponse) {
             let name = "sdk_response_\(response.responseType.rawValue.lowercased())"
@@ -382,6 +447,31 @@ internal enum OtplessBMEvents {
                 type: .CLIENT,
                 action: .REQUEST,
                 data: data
+            )
+        }
+    }
+
+    // MARK: - Session
+
+    enum Session {
+        private static let GET_ACTIVE = "sdk_session_get_active"
+        private static let LOGOUT = "sdk_session_logout"
+        private static let ERROR = "sdk_session_error"
+
+        static func getActive() {
+            trackEvent(name: GET_ACTIVE, type: .CLIENT_TO_SDK, action: .REQUEST)
+        }
+
+        static func logout() {
+            trackEvent(name: LOGOUT, type: .CLIENT_TO_SDK, action: .REQUEST)
+        }
+
+        static func error(message: String) {
+            trackEvent(
+                name: ERROR,
+                type: .SDK,
+                action: .RESPONSE,
+                data: ["message": message]
             )
         }
     }

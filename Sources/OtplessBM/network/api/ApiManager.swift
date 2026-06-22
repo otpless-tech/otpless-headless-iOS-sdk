@@ -47,7 +47,6 @@ final class ApiManager: Sendable {
         shoudlAppendBasicParams: Bool = true,
         queryParameters: [String: Any]? = nil
     ) async throws -> Data {
-        let startedAt = Date()
         var newPath = path
         if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
 
@@ -103,11 +102,6 @@ final class ApiManager: Sendable {
                 )
             }
 
-            // success tracking (if you still want it)
-             if shouldTrackSuccess(path: newPath, method: method, statusCode: http.statusCode, data: data) {
-                 sendApiEvent(event: .SUCCESS_API_RESPONSE, path: newPath, method: method, statusCode: http.statusCode,
-                              startedAt: startedAt, xRequestId: xRequestId, data: nil)
-             }
              OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
 
             return data
@@ -123,18 +117,6 @@ final class ApiManager: Sendable {
                     "errorCode": "500", "errorMessage": "Something Went Wrong!"
                 ])
             }
-
-            // single, centralized emit (uses stashed HTTP data/status if available)
-            sendApiEvent(
-                event: .ERROR_API_RESPONSE,
-                path: newPath,
-                method: method,
-                statusCode: pendingStatusCode ?? apiError.statusCode,
-                startedAt: startedAt,
-                xRequestId: xRequestId,
-                data: pendingErrorData,           // includes api_response when we had one
-                apiError: apiError
-            )
 
             OtplessBMEvents.Api.errorResponse(
                 path: newPath,
@@ -162,55 +144,6 @@ final class ApiManager: Sendable {
         return true                                       // track all other successes
     }
 
-    // Uses your real sendEvent signature.
-    private func sendApiEvent(
-        event: EventConstants,
-        path: String,
-        method: String,
-        statusCode: Int,
-        startedAt: Date,
-        xRequestId: String?,
-        data: Data?,
-        apiError: ApiError? = nil
-    ) {
-        var extras: [String: String] = [
-            "which_api": path,
-            "method": method,
-            "status_code": "\(statusCode)",
-            "latency": String(Int(Date().timeIntervalSince(startedAt) * 1000)),
-            "x-request-id": xRequestId ?? ""
-        ]
-        if let apiError = apiError {
-            for (k, v) in apiError.getResponse() { extras[k] = v }
-        }
-        if event == .ERROR_API_RESPONSE {
-            extras["api_response"] = stringifyApiResponse(data: data, maxLen: 8_192)
-        }
-
-        sendEvent(
-            event: event,
-            extras: extras,
-            musId: ""                  // keep empty unless you have it at callsite
-        )
-    }
-
-    private func stringifyApiResponse(data: Data?, maxLen: Int) -> String {
-        guard let data = data else { return "[no response data]" }
-        if let json = try? JSONSerialization.jsonObject(with: data),
-           let compact = try? JSONSerialization.data(withJSONObject: json),
-           var s = String(data: compact, encoding: .utf8) {
-            if s.count > maxLen { s = String(s.prefix(maxLen)) + "…[truncated]" }
-            return s
-        }
-        if var s = String(data: data, encoding: .utf8) {
-            if s.count > maxLen { s = String(s.prefix(maxLen)) + "…[truncated]" }
-            return s
-        }
-        return "[non-text response \(data.count) bytes]"
-    }
-
-
-    
     private func getBody(withExistingBody body: [String: Any]?,shouldAppendBasicParameters: Bool) -> [String: Any] {
         if (!shouldAppendBasicParameters) {
             return body ?? [:]

@@ -157,6 +157,7 @@ struct Identity: Codable {
     let providerMetadata: [String: CodableValue]?
     let picture: String?
     let isCompanyEmail: Bool?
+    let isSimBound: Bool?
     
     func toDict() -> [String: Any] {
         var dict = [
@@ -170,6 +171,9 @@ struct Identity: Codable {
             "picture": picture as Any,
             "isCompanyEmail": isCompanyEmail as Any
         ]
+        if let isSimBound = self.isSimBound {
+            dict["isSimBound"] = isSimBound
+        }
         
         if let additionalData = providerMetadata {
             dict["providerMetadata"] = additionalData.mapValues { $0.value }

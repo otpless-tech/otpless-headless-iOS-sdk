@@ -1,4 +1,9 @@
 
+## 2.3.1 (2nd July 2026)
+
+### Features
+- Added `isSimBound` to the `Identity` payload surfaced on `ONETAP` / transaction-status responses.
+
 ## 2.3.0 (2nd July 2026)
 
 ### Fixes

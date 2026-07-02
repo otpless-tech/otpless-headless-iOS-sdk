@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'OtplessBM'
-  s.version          = '2.2.0'
+  s.version          = '2.3.0'
   s.summary          = 'Standalone SDK for Otpless Headless functionality.'
 
   s.description      = <<-DESC

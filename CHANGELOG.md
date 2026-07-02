@@ -1,4 +1,15 @@
 
+## 2.3.0 (2nd July 2026)
+
+### Fixes
+- Fixed device intelligence integration: the previous `runDeviceIntelligenceWithParams:onComplete:` selector did not exist on `OTPlessIntelligence`; device intelligence never ran in 2.x releases. Now routed through a new `IntelligenceUseCase` that dispatches to the SDK's `@objc(fetchIntelligenceWithParams:updateInfo:completion:)` selector via runtime `NSClassFromString` lookup — no OtplessBM manifest change required.
+
+### Notes
+- To enable device intelligence in your app:
+  1. Install `OTPlessIntelligence` yourself — pod: `pod 'OTPlessIntelligence', '~> 1.3'`; SPM: add `https://github.com/otpless-tech/otpless-ios-intelligence-sdk` to your app's Package.swift.
+  2. Import it in your AppDelegate / App struct and call `OTPlessIntelligence.shared.initialize(appId: "<your-app-id>") { _ in }` before any OtplessBM request that has `setDeviceFingerprintMode(.SYNC)` or `.ASYNC` enabled.
+  3. OtplessBM detects the SDK at runtime; no OtplessBM configuration flag needed.
+
 ## 2.2.0 (22nd June 2026)
 
 ### Features

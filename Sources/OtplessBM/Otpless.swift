@@ -89,7 +89,11 @@ import OtplessEventIO
     internal private(set) lazy var appleSignInUseCase: AppleSignInUseCase = {
         return AppleSignInUseCase()
     }()
-    
+
+    private lazy var intelligenceUseCase: IntelligenceUseCase = {
+        return IntelligenceUseCase()
+    }()
+
     internal private(set) weak var merchantVC: UIViewController?
     
     private var eventCounter = 1
@@ -595,7 +599,7 @@ private extension Otpless {
         log(message: "[Transaction] New intent request — triggering DI if needed, then calling intent API", type: .TRANSACTION_START)
 
         // Configure device intelligence in parallel with the intent API.
-        triggerDeviceIntelligenceIfNeeded(state: self.state ?? "")
+        triggerDeviceIntelligenceIfNeeded(state: self.state ?? "", src: otplessRequest)
 
         let intentResponse = await postIntentUseCase.invoke(
             state: self.state ?? "",
@@ -849,50 +853,39 @@ internal enum DeviceIntelligenceState {
 }
 
 extension Otpless {
-    func triggerDeviceIntelligenceIfNeeded(state: String) {
+    func triggerDeviceIntelligenceIfNeeded(state: String, src request: OtplessRequest) {
         guard deviceFingerprintMode != .NONE else { return }
         guard diState == .idle else { return }
 
         rsId = "\(UUID().uuidString)-\(DispatchTime.now().uptimeNanoseconds)-\(state)"
         diState = .inProgress
 
-        guard #available(iOS 15.0, *),
-              let cls = NSClassFromString("OTPlessIntelligence.OTPlessIntelligence") as? NSObject.Type else {
-            onDeviceIntelligenceComplete()
-            return
-        }
-
-        let sharedSelector = NSSelectorFromString("shared")
-        guard cls.responds(to: sharedSelector),
-              let sharedObj = cls.perform(sharedSelector)?.takeUnretainedValue() as? NSObject else {
-            onDeviceIntelligenceComplete()
-            return
-        }
-
-        let selector = NSSelectorFromString("runDeviceIntelligenceWithParams:onComplete:")
-        guard sharedObj.responds(to: selector) else {
+        guard #available(iOS 15.0, *) else {
             onDeviceIntelligenceComplete()
             return
         }
 
         let params: [String: String] = [
             "rsId": rsId,
-            "inId": inid,
-            "tsId": tsid,
             "state": state,
-            "appId": merchantAppId
+        ]
+        let updateInfo: [String: Any] = [
+            "merchantId": Otpless.shared.merchantAppId,
+            "phoneNumber": request.getPhone(),
+            "phoneInputType": "MANUAL",
+            "userEventType": "LOGIN"
         ]
 
         #if OTPLESS_INTERNAL
         dispatchDIEvent(event: "request", data: params)
         #endif
 
-        typealias VoidBlock = @convention(block) () -> Void
-        let completion: VoidBlock = { [weak self] in
+        intelligenceUseCase.fetchIntelligence(params: params, updateInfo: updateInfo) { [weak self] dfrId in
+            if let dfrId = dfrId {
+                self?.drfID = dfrId
+            }
             self?.onDeviceIntelligenceComplete()
         }
-        let blockObj = unsafeBitCast(completion, to: AnyObject.self)
-        sharedObj.perform(selector, with: params, with: blockObj)
     }
 
     private func onDeviceIntelligenceComplete() {

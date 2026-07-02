@@ -396,6 +396,8 @@ internal enum OtplessBMEvents {
         private static let RESULT = "intel_auth_result"
         private static let ERROR = "intel_auth_error"
         private static let JOB_AWAITING = "intel_auth_job_awaiting"
+        private static let FETCH_SUCCESS = "device_intelligence_fetch_success"
+        private static let FETCH_FAILURE = "device_intelligence_fetch_failure"
 
         static func started(status: String, action description: String) {
             trackEvent(name: START, type: .SDK, action: .RESPONSE,
@@ -410,6 +412,16 @@ internal enum OtplessBMEvents {
         static func error(status: String, action description: String) {
             trackEvent(name: ERROR, type: .SDK, action: .RESPONSE,
                        data: ["status": status, "action": description])
+        }
+
+        static func fetchIntelligenceSuccess(dfrId: String) {
+            trackEvent(name: FETCH_SUCCESS, type: .SDK, action: .RESPONSE,
+                       data: ["dfrId": dfrId])
+        }
+
+        static func fetchIntelligenceFailure(message: String) {
+            trackEvent(name: FETCH_FAILURE, type: .SDK, action: .RESPONSE,
+                       data: ["message": message])
         }
 
         static func jobAwaiting(isSyncType: Bool, isCompleted: Bool, isIntelligenceInit: Bool) {

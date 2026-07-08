@@ -87,7 +87,8 @@ class TransactionStatusUseCase {
                     let terminal = OtplessResponse.makeTerminalResponse(
                         status: 400,
                         error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
-                        message: "Authentication on all channels failed."
+                        message: "Authentication on all channels failed.",
+                        snaError: success.authDetail.snaError
                     )
                     responseCallback?(terminal)
                     stopPolling(dueToSuccessfulVerification: false)

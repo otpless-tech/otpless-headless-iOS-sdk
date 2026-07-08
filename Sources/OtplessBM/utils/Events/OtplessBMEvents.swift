@@ -156,12 +156,12 @@ internal enum OtplessBMEvents {
             )
         }
 
-        static func initTerminal() {
-            trackEvent(name: INIT_TERMINAL, type: .SDK, action: .RESPONSE)
+        static func initTerminal(errorCode: String?) {
+            trackEvent(name: INIT_TERMINAL, type: .SDK, action: .RESPONSE, errorCode: errorCode)
         }
 
-        static func authTerminal() {
-            trackEvent(name: AUTH_TERMINAL, type: .SDK, action: .RESPONSE)
+        static func authTerminal(errorCode: String?) {
+            trackEvent(name: AUTH_TERMINAL, type: .SDK, action: .RESPONSE, errorCode: errorCode)
         }
 
         static func callbackResult(status: String) {

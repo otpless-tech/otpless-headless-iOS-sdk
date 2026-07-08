@@ -28,12 +28,13 @@ internal final class ApiError: Error, @unchecked Sendable {
         return "message: \(message)\nstatusCode: \(statusCode)\(responseJson != nil ? "\n\(responseJson!)" : "")"
     }
     
-    func getResponse() -> [String: String] {
+    func getResponse() -> [String: Any] {
         let errorCode = responseJson?["errorCode"] as? String ?? String(statusCode)
-        
-        return [
+        var finalResponse: [String: Any] = [
             "errorCode": errorCode,
             "errorMessage": responseJson?["description"] as? String ?? message
         ]
+        finalResponse["snaError"] = responseJson?["snaError"] as? [String: Any]
+        return finalResponse
     }
 }

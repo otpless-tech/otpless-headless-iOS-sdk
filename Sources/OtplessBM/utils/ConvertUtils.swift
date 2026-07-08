@@ -54,12 +54,15 @@ internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> S
             ]
         }
     } else {
+        var verifyFailedResponse: [String: Any] = [
+            "errorCode": "400",
+            "errorMessage": "Silent Authentication failed."
+        ]
+        // adding sna error block if available
+        verifyFailedResponse[OtplessConstant.SnaErrorKey] = response.authDetail.snaError?.toDict()
         let failed = OtplessResponse.createVerifyFailed(
             statusCode: 400,
-            response: [
-                "errorCode": "400",
-                "errorMessage": "Silent Authentication failed."
-            ],
+            response: verifyFailedResponse,
             authType: SILENT_AUTH
         )
         let second: OtplessResponse
@@ -74,7 +77,8 @@ internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> S
             second = OtplessResponse.makeTerminalResponse(
                 status: 400,
                 error: String(OtplessConstant.EC.SNA_AUTH_FAILED),
-                message: "Silent Authentication failed."
+                message: "Silent Authentication failed.",
+                snaError: response.authDetail.snaError
             )
         }
         otplessResponses = [failed, second]

@@ -15,6 +15,9 @@ internal enum OtplessConstant {
     
     static let terminalErrorCodes: [String] = [
         String(EC.SNA_AUTH_INIT_FAILED),
-        String(EC.SNA_AUTH_FAILED)
+        String(EC.SNA_AUTH_FAILED),
+        String(EC.ALL_CHANNEL_AUTH_FAILED)
     ]
+    
+    static let SnaErrorKey: String = "snaError"
 }

@@ -147,8 +147,11 @@ public struct OtplessResponse: @unchecked Sendable {
         return OtplessResponse(responseType: .INITIATE, response: response, statusCode: 5900)
     }
     
-    internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String, message errorMessage: String) -> OtplessResponse {
-        return OtplessResponse(responseType: .AUTH_TERMINATED, response: ["errorCode": errorCode, "errorMessage": errorMessage], statusCode: statusCode)
+    internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String,
+                                              message errorMessage: String, snaError: SNAError?) -> OtplessResponse {
+        var response: [String: Any] = ["errorCode": errorCode, "errorMessage": errorMessage]
+        response[OtplessConstant.SnaErrorKey] = snaError?.toDict()
+        return OtplessResponse(responseType: .AUTH_TERMINATED, response: response, statusCode: statusCode)
     }
 
     internal static var snaTransactionFinalTimeout: OtplessResponse {

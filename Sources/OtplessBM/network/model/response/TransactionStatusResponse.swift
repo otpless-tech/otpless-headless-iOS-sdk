@@ -71,6 +71,7 @@ struct AuthDetail: Codable {
     let webauthnRegistered: Bool?
     let communicationMode: String?
     let errorDetails: String?
+    let snaError: SNAError?
 }
 
 struct City: Codable {
@@ -329,5 +330,19 @@ enum CodableValue: Codable {
         case .array(let value):
             try container.encode(value)
         }
+    }
+}
+
+internal struct SNAError: Codable {
+    let errorCode: String
+    let message: String?
+    let description: String?
+    
+    func toDict() -> [String: Any] {
+        var dict = ["errorCode": errorCode]
+        // no need for if let check, dictionery is smart enought to remove the key if assigned nil
+        dict["message"] = message
+        dict["description"] = description
+        return dict
     }
 }

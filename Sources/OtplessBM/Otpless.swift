@@ -620,7 +620,7 @@ private extension Otpless {
             if let errorCode = otplessResponse.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
                 let terminalResponse = OtplessResponse(responseType: ResponseTypes.AUTH_TERMINATED, response: otplessResponse.response, statusCode: otplessResponse.statusCode)
                 invokeResponse(terminalResponse)
-                OtplessBMEvents.Sna.initTerminal()
+                OtplessBMEvents.Sna.initTerminal(errorCode: errorCode)
                 DLog("SNA auth init terminated")
                 return
             }
@@ -682,7 +682,7 @@ private extension Otpless {
                     // check for terminal error code
                     if let errorCode = op.response?["errorCode"] as? String, OtplessConstant.terminalErrorCodes.contains(errorCode) {
                         // terminal response is sent, exit the flow
-                        OtplessBMEvents.Sna.authTerminal()
+                        OtplessBMEvents.Sna.authTerminal(errorCode: errorCode)
                         DLog("SNA auth terminated")
                         return
                     }

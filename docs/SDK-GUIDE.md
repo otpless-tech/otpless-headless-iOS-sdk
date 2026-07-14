@@ -40,7 +40,7 @@
 
 This is the **OTPLESS headless iOS SDK**, product name **`OtplessBM`**. "Headless" means the merchant app builds its own login UI and drives authentication through the `Otpless` singleton, receiving results through a delegate/callback — with one notable exception: the SDK optionally presents a small **native "OneTap" bottom sheet** for picking among previously-used identities (§14), so this SDK is not as strictly headless as the Android lite SDK it otherwise parallels.
 
-Unlike the Android **lite** SDK (phone-number-auth only), this iOS SDK supports a broad set of authentication channels in one artifact: phone number (OTP/OTP-link/magic-link style, SNA), email, native social sign-in (Google, Facebook, Apple via optional CocoaPods subspecs), generic OAuth/backend-redirect channels (WhatsApp, Twitter, GitHub, LinkedIn, …), WebAuthn/Passkey (`DEVICE` channel), an SSO deep-link code-verify flow, and MFA (multi-factor) chaining. It is closer in scope to `otpless-headless-android-sdk` ("full") than to `otpless-headless-android-lite`.
+Unlike the Android **lite** SDK (phone-number-auth only), this iOS SDK supports a broad set of authentication channels in one artifact: phone number (OTP/OTP-link/magic-link style, SNA), email, native social sign-in (Google and Facebook via optional CocoaPods subspecs, Apple via the system AuthenticationServices framework), generic OAuth/backend-redirect channels (WhatsApp, Twitter, GitHub, LinkedIn, …), WebAuthn/Passkey (`DEVICE` channel), an SSO deep-link code-verify flow, and MFA (multi-factor) chaining. It is closer in scope to `otpless-headless-android-sdk` ("full") than to `otpless-headless-android-lite`.
 
 - **Distribution:** Swift Package Manager (`Package.swift`, product `OtplessBM`) and CocoaPods (`OtplessBM.podspec`, pod `OtplessBM`, subspecs `Core`, `FacebookSupport`, `GoogleSupport`).
 - **Product/module name:** `OtplessBM`. Top-level Swift type: `Otpless` (singleton `Otpless.shared`).
@@ -73,7 +73,7 @@ await Otpless.shared.start(withRequest: verify)
 
 ## 2. Repository & Source Layout
 
-```
+```text
 ios-headless/                              (GitHub: otpless-headless-iOS-sdk)
 ├── Package.swift                # SPM manifest: product "OtplessBM", iOS 13+, depends on otpless-event-io-ios
 ├── Package.resolved             # pinned otpless-event-io-ios revision (1.0.0)
@@ -175,6 +175,7 @@ ios-headless/                              (GitHub: otpless-headless-iOS-sdk)
 **No `CHANGELOG.md` artifact-size table exists** (unlike the Android lite SDK) — binary/library size is not currently tracked as a release-gated metric in this repo.
 
 **Typical commands** (no CI workflow files exist in this repo yet — these are the manual equivalents):
+
 ```bash
 swift build                          # build the package
 swift test                           # run tests (§22 — currently no test target/target sources exist)
@@ -213,7 +214,7 @@ pod lib lint OtplessBM.podspec       # validate the podspec
 
 No DI framework; construction is manual, mostly top-down from the `Otpless` singleton, with lazily-constructed use cases:
 
-```
+```text
 Merchant App
     │  (public API, OtplessResponseDelegate / objcResponseDelegate)
     ▼
@@ -647,7 +648,7 @@ Timeouts: `Otpless.apiRepository` is constructed with `userAuthApiTimeout: 30`, 
 
 All in `network/model/`, `Codable`, package-`internal` unless noted, decoded via `JSONDecoder`/encoded via `JSONEncoder` (no Gson-style annotation layer — Swift's `Codable` + `CodingKeys` is the only serialization mechanism used).
 
-```
+```text
 StateResponse           { state: String? }
 
 MerchantConfigResponse  { authType?, channelConfig: [ChannelConfig]?, isMFAEnabled?, merchant?, uiConfig?, userDetails?, metaData? }
@@ -714,7 +715,7 @@ Thin wrapper: validates the URL, delegates to `CellularConnectionManager.open(ur
 
 ### 12.3 `SNAUseCase` — the race
 
-```
+```text
 async snaApiCall  = ApiRepository.makeSNACall(url) { ... }        # over forced cellular
 async pollJob     = pollSNATransaction(timerSettings)              # default: every 200 ms, up to 7 s (or server-provided)
 

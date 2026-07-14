@@ -1,0 +1,72 @@
+name: Build & Test
+
+# Deterministic CI guardrail for OtplessBM: the headless SPM build, the
+# (currently no-op) test suite, the public-API-breakage check, and the full
+# CocoaPods lint across all three subspecs — see the verify skill for what
+# each step actually checks and why. Runs on every PR into main (no paths
+# filter, so it is safe to require as a branch-protection status check) and
+# on every push to main.
+#
+# macos runners are expensive — this workflow deliberately runs a single job
+# on a single destination (no matrix). It does NOT pin an explicit Xcode
+# version (see CLAUDE.md's "Known findings" for why — verifying available
+# runner/Xcode combinations was out of scope for the PR that added this
+# workflow); it uses whichever Xcode the runner image defaults to.
+#
+# This workflow never pushes commits.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+          command -v pod && pod --version || echo "CocoaPods not preinstalled on this runner image"
+
+      - name: Ensure CocoaPods is available
+        run: command -v pod || gem install cocoapods --no-document
+
+      - name: Build (SwiftPM cross-compiled for the iOS Simulator)
+        run: bash scripts/build.sh
+
+      - name: Tests
+        run: bash scripts/run-tests.sh
+
+      - name: Public-API breakage check
+        run: bash scripts/check-api-baseline.sh
+
+      - name: CocoaPods lint (Core + FacebookSupport + GoogleSupport)
+        run: pod lib lint OtplessBM.podspec --allow-warnings
+
+      - name: Mechanical docs/gate fact-check
+        run: bash scripts/docs-verify.sh
+
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Run actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color

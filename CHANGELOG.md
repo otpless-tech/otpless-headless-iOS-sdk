@@ -1,4 +1,12 @@
 
+## Unreleased
+
+<!-- Add new entries here as PRs merge. Rename this heading to "## <version> (<date>)"
+     on release (see the release skill) — never rewrite an already-released heading below. -->
+
+### Notes
+- `OtplessBM.podspec` was bumped to `2.3.2` (tag `2.3.2` exists) in the same commit as "SNA failure error code and description added. (#40)", but no `## 2.3.2` entry was ever added here — a pre-existing gap from before this repo had agentic-readiness scaffolding. Not backfilled by this PR (out of scope for scaffolding; the parallel `docs/SDK-GUIDE.md` PR or a follow-up should reconcile it against source).
+
 ## 2.3.1 (2nd July 2026)
 
 ### Features

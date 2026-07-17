@@ -36,7 +36,9 @@ public struct OtplessResponse: @unchecked Sendable {
         "errorMessage": "Failed to initialize the SDK"
     ], statusCode: 5003)
     
-    internal static let sdkReady = OtplessResponse(responseType: .SDK_READY, response: ["success" : true], statusCode: 200)
+    internal static var sdkReady: OtplessResponse {
+        OtplessResponse(responseType: .SDK_READY, response: ["success": true, "tsId": Otpless.shared.tsid], statusCode: 200)
+    }
     
     internal static func createUnauthorizedResponse(
         errorCode: String = "401",

@@ -1,0 +1,248 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 6.3.2 effective-5.10 (swiftlang-6.3.2.1.108 clang-2100.1.1.101)
+// swift-module-flags: -target x86_64-apple-ios13.0-simulator -enable-objc-interop -enable-library-evolution -swift-version 5 -Onone -enable-experimental-feature DebugDescriptionMacro -module-name OtplessBM -package-name otpless_headless_ios_sdk
+// swift-module-flags-ignorable:  -formal-cxx-interoperability-mode=off -interface-compiler-version 6.3.2
+import AuthenticationServices
+import CommonCrypto
+import Foundation
+import LocalAuthentication
+import Network
+import Security
+import Swift
+import SystemConfiguration
+import UIKit
+import WebKit
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+import os
+@_inheritsConvenienceInitializers @objc final public class Otpless : ObjectiveC.NSObject, @unchecked Swift.Sendable {
+  @objc public static let shared: OtplessBM.Otpless
+  @objc final public func initialise(withAppId appId: Swift.String, loginUri: Swift.String? = nil, vc: UIKit.UIViewController)
+  @objc final public func isOtplessDeeplink(url: Foundation.URL) -> Swift.Bool
+  @objc final public func start(withRequest otplessRequest: OtplessBM.OtplessRequest) async
+  final public func startAuth(parent vc: UIKit.UIViewController, config authConfig: OtplessBM.OtplessAuthCofig) async -> Swift.Bool
+  @objc final public func authorizeViaPasskey(withRequest otplessRequest: OtplessBM.OtplessRequest, windowScene: UIKit.UIWindowScene) async
+  @objc final public func handleDeeplink(_ url: Foundation.URL) async
+  @_Concurrency.MainActor @objc final public func registerFBApp(_ application: UIKit.UIApplication, didFinishLaunchingWithOptions launchOptions: [UIKit.UIApplication.LaunchOptionsKey : Any]?)
+  @_Concurrency.MainActor @objc final public func registerFBApp(_ app: UIKit.UIApplication, open url: Foundation.URL, options: [UIKit.UIApplication.OpenURLOptionsKey : Any] = [:])
+  @available(iOS 13.0, *)
+  @_Concurrency.MainActor @objc final public func registerFBApp(openURLContexts URLContexts: Swift.Set<UIKit.UIOpenURLContext>) async
+  final public func commitOtplessResponse(_ otplessResponse: OtplessBM.OtplessResponse)
+  @objc final public func cleanup()
+  @objc final public func objcCommit(_ otplessResponse: Swift.String?)
+  @objc final public func gettsID() -> Swift.String
+  @objc override dynamic public init()
+  @objc deinit
+}
+extension OtplessBM.Otpless {
+  final public func setResponseDelegate(_ otplessResponseDelegate: any OtplessBM.OtplessResponseDelegate)
+  final public func setEnvironment(_ environment: OtplessBM.OtplessEnvironment)
+  @objc final public func setOtplessObjcResponseDelegate(_ otplessResponseDelegate: @escaping (Swift.String) -> Swift.Void)
+  final public func setLoggerDelegate(_ otplessLoggerDelegate: any OtplessBM.OtplessLoggerDelegate)
+  @objc final public func setDeviceFingerprintMode(_ mode: OtplessBM.DeviceFingerprintMode)
+  final public func clearAll()
+}
+@_Concurrency.MainActor public protocol OtplessResponseDelegate : ObjectiveC.NSObjectProtocol {
+  @_Concurrency.MainActor func onResponse(_ response: OtplessBM.OtplessResponse)
+}
+public enum OtplessChannelType : Swift.String, Swift.CaseIterable {
+  case WHATSAPP
+  case GOOGLE_SDK
+  case FACEBOOK_SDK
+  case APPLE_SDK
+  case APPLE
+  case GMAIL
+  case TWITTER
+  case DISCORD
+  case SLACK
+  case FACEBOOK
+  case LINKEDIN
+  case MICROSOFT
+  case LINE
+  case LINEAR
+  case NOTION
+  case TWITCH
+  case GITHUB
+  case BITBUCKET
+  case ATLASSIAN
+  case GITLAB
+  case TRUE_CALLER
+  public static func fromString(_ value: Swift.String) -> OtplessBM.OtplessChannelType
+  public init?(rawValue: Swift.String)
+  public typealias AllCases = [OtplessBM.OtplessChannelType]
+  public typealias RawValue = Swift.String
+  nonisolated public static var allCases: [OtplessBM.OtplessChannelType] {
+    get
+  }
+  public var rawValue: Swift.String {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc public class OtplessChannelTypeObjC : ObjectiveC.NSObject {
+  @objc public static let WHATSAPP: Swift.String
+  @objc public static let GOOGLE_SDK: Swift.String
+  @objc public static let FACEBOOK_SDK: Swift.String
+  @objc public static let APPLE_SDK: Swift.String
+  @objc public static let APPLE: Swift.String
+  @objc public static let GMAIL: Swift.String
+  @objc public static let TWITTER: Swift.String
+  @objc public static let DISCORD: Swift.String
+  @objc public static let SLACK: Swift.String
+  @objc public static let FACEBOOK: Swift.String
+  @objc public static let LINKEDIN: Swift.String
+  @objc public static let MICROSOFT: Swift.String
+  @objc public static let LINE: Swift.String
+  @objc public static let LINEAR: Swift.String
+  @objc public static let NOTION: Swift.String
+  @objc public static let TWITCH: Swift.String
+  @objc public static let GITHUB: Swift.String
+  @objc public static let BITBUCKET: Swift.String
+  @objc public static let ATLASSIAN: Swift.String
+  @objc public static let GITLAB: Swift.String
+  @objc public static let TRUE_CALLER: Swift.String
+  @objc override dynamic public init()
+  @objc deinit
+}
+@objc public enum OtplessEnvironment : Swift.Int {
+  case PRODUCTION = 0
+  case STAGING = 1
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+@objc public enum DeviceFingerprintMode : Swift.Int {
+  case NONE = 0
+  case ASYNC = 1
+  case SYNC = 2
+  public init?(rawValue: Swift.Int)
+  public typealias RawValue = Swift.Int
+  public var rawValue: Swift.Int {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc public class OtplessRequest : ObjectiveC.NSObject, @unchecked Swift.Sendable {
+  @objc public func set(phoneNumber: Swift.String, withCountryCode countryCode: Swift.String)
+  @objc public func set(email: Swift.String)
+  public func set(channelType: OtplessBM.OtplessChannelType)
+  @objc public func set(objcChannelType: Swift.String)
+  @objc public func set(requestIdForWebAuthn requestId: Swift.String)
+  @objc public func set(otp: Swift.String)
+  @objc public func set(otpExpiry: Swift.String)
+  @objc public func set(otpLength: Swift.String)
+  @objc public func set(deliveryChannelForTransaction deliveryChannel: Swift.String)
+  @objc public func set(locale: Swift.String)
+  @objc public func set(code: Swift.String)
+  @objc public func set(extras: [Swift.String : Swift.String])
+  @objc public func set(tid: Swift.String)
+  @objc public func set(deviceFingerprintMode: OtplessBM.DeviceFingerprintMode)
+  @objc public func getRequestId() -> Swift.String
+  @objc override dynamic public init()
+  @objc deinit
+}
+public struct OtplessAuthCofig : Swift.Sendable {
+  public init(isForeground: Swift.Bool, otp: Swift.String?, tid: Swift.String?)
+}
+public struct OtplessResponse : @unchecked Swift.Sendable {
+  public let responseType: OtplessBM.ResponseTypes
+  public let response: [Swift.String : Any]?
+  public let statusCode: Swift.Int
+  public init(responseType: OtplessBM.ResponseTypes, response: [Swift.String : Any]?, statusCode: Swift.Int)
+  public func toString() -> Swift.String
+}
+public enum ResponseTypes : Swift.String {
+  case INITIATE, VERIFY, ONETAP, FALLBACK_TRIGGERED, FAILED, SDK_READY, DELIVERY_STATUS, AUTH_TERMINATED
+  case API_RESPONSE
+  case DEVICE_INTELLIGENCE
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public enum SdkState : Swift.String {
+  case READY, NOT_READY
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+public struct RedirectResult {
+  public var url: Foundation.URL?
+  public let cookies: [Foundation.HTTPCookie]?
+}
+public struct ConnectionResponse {
+  public var status: Swift.Int
+  public let body: Foundation.Data?
+}
+@_hasMissingDesignatedInitializers public actor OtplessSessionManager {
+  public static let shared: OtplessBM.OtplessSessionManager
+  public func initialize(appId: Swift.String)
+  public func getActiveSession() async -> OtplessBM.OtplessSessionState
+  public func logout() async
+  @objc deinit
+  @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
+  @_semantics("defaultActor") nonisolated final public var unownedExecutor: _Concurrency.UnownedSerialExecutor {
+    get
+  }
+}
+public enum OtplessSessionState : Swift.Equatable, Swift.Sendable {
+  case active(Swift.String)
+  case inactive
+  public static func == (a: OtplessBM.OtplessSessionState, b: OtplessBM.OtplessSessionState) -> Swift.Bool
+}
+public enum LogType : Swift.String, @unchecked Swift.Sendable {
+  case API_RESPONSE_FAILURE
+  case CLASS_DEALLOC_IN_CLOSURE
+  case API_REQUEST_AND_RESPONSE
+  case IS_PASSKEY_SUPPORTED
+  case POLLING_STOPPED
+  case POLLING_STARTED
+  case POLLING_RESPONSE
+  case INVALID_DEEPLINK
+  case SNA_RESPONSE
+  case EVENT_API_ERROR
+  case EVENT_CREATING_FAILED
+  case SDK_INIT
+  case SDK_READY
+  case SDK_STATE_FETCH
+  case MERCHANT_CONFIG
+  case TRANSACTION_START
+  case TRANSACTION_VALIDATION
+  case INTENT
+  case VERIFY
+  case DEEPLINK
+  case DEVICE_INTELLIGENCE
+  case ONETAP
+  case RESPONSE_RELAY
+  public static func < (lhs: OtplessBM.LogType, rhs: OtplessBM.LogType) -> Swift.Bool
+  public init?(rawValue: Swift.String)
+  public typealias RawValue = Swift.String
+  public var rawValue: Swift.String {
+    get
+  }
+}
+@_Concurrency.MainActor public protocol OtplessLoggerDelegate : ObjectiveC.NSObjectProtocol {
+  @_Concurrency.MainActor func log(message: Swift.String, type: OtplessBM.LogType)
+}
+extension OtplessBM.OtplessChannelType : Swift.Equatable {}
+extension OtplessBM.OtplessChannelType : Swift.Hashable {}
+extension OtplessBM.OtplessChannelType : Swift.RawRepresentable {}
+extension OtplessBM.OtplessEnvironment : Swift.Equatable {}
+extension OtplessBM.OtplessEnvironment : Swift.Hashable {}
+extension OtplessBM.OtplessEnvironment : Swift.RawRepresentable {}
+extension OtplessBM.DeviceFingerprintMode : Swift.Equatable {}
+extension OtplessBM.DeviceFingerprintMode : Swift.Hashable {}
+extension OtplessBM.DeviceFingerprintMode : Swift.RawRepresentable {}
+extension OtplessBM.ResponseTypes : Swift.Equatable {}
+extension OtplessBM.ResponseTypes : Swift.Hashable {}
+extension OtplessBM.ResponseTypes : Swift.RawRepresentable {}
+extension OtplessBM.SdkState : Swift.Equatable {}
+extension OtplessBM.SdkState : Swift.Hashable {}
+extension OtplessBM.SdkState : Swift.RawRepresentable {}
+extension OtplessBM.LogType : Swift.Equatable {}
+extension OtplessBM.LogType : Swift.Hashable {}
+extension OtplessBM.LogType : Swift.RawRepresentable {}

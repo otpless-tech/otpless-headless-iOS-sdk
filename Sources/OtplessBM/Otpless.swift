@@ -341,10 +341,6 @@ import Network
         self.responseDelegate = nil
     }
     
-    @objc public func isSdkReady() -> Bool {
-           return sdkState == .READY
-       }
-    
     @objc public func objcCommit(_ otplessResponse: String?) {
         let responseDict = Utils.convertStringToDictionary(otplessResponse ?? "") ?? [:]
         let responseType = ResponseTypes(rawValue: responseDict["responseType"] as? String ?? "") ?? .FAILED

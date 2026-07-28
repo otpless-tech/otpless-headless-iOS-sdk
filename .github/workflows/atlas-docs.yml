@@ -1,0 +1,55 @@
+name: Atlas docs
+
+# This repo carries NO docs/ directory. Platform documentation for
+# otpless-headless-iOS-sdk lives only in otpless-tech/atlas, under
+# repos/otpless-headless-iOS-sdk/. This workflow is the whole coupling between
+# the two, and it is deliberately thin: two calls into Atlas's own reusable
+# workflows, so the generation logic (scripts/atlas_sync.py) is versioned and
+# reviewed in one place instead of copy-pasted into every source repo.
+#
+#   verify (pull_request) — fails this PR if an Atlas page this repo owns is
+#     stale with respect to the PR head. `make gate` cannot do this: it has no
+#     Atlas checkout, and a repo-local check would only ever verify a copy.
+#   sync (push to main)   — regenerates the Atlas pages this repo owns from the
+#     merged source.
+#
+# BOTH jobs need the ATLAS_PAT secret, including verify: Atlas is a private
+# repo, and in a reusable workflow the caller's github.token is scoped to the
+# CALLER, so it cannot check Atlas out. Each reusable workflow preflights the
+# secret and fails with an actionable message if it is missing, rather than
+# surfacing an opaque 404 on a checkout the caller does not own. One secret
+# configures both.
+#
+# NOTE: .atlas/manifest.yml in otpless-tech/atlas has no entry for this repo
+# yet. Until it does, both jobs are no-ops on this repo's pages (Atlas warns
+# rather than failing on an unknown source repo), so wiring this in now is safe
+# and starts gating the moment the manifest row lands. Adding that row is a
+# change to the Atlas repo, not to this one.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    uses: otpless-tech/atlas/.github/workflows/verify-docs.yml@main
+    with:
+      source_repo: otpless-headless-iOS-sdk
+      source_sha: ${{ github.event.pull_request.head.sha }}
+    secrets:
+      ATLAS_PAT: ${{ secrets.ATLAS_PAT }}
+
+  sync:
+    if: github.event_name == 'push'
+    uses: otpless-tech/atlas/.github/workflows/sync-from-source.yml@main
+    with:
+      source_repo: otpless-headless-iOS-sdk
+      source_ref: ${{ github.sha }}
+    secrets:
+      ATLAS_PAT: ${{ secrets.ATLAS_PAT }}

@@ -36,13 +36,13 @@ bash scripts/docs-verify.sh
 
 ## 3. Behavior check — compilation does not cover this
 
-- **`OtplessEventIO`:** does the event payload shape or delivery timing change? This repo's telemetry wrapper (`utils/Events/OtplessBMEvents.swift`) calls into it — verify call sites still behave as documented (there's no `docs/SDK-GUIDE.md` yet to cross-check against; describe what you verified in the PR instead).
+- **`OtplessEventIO`:** does the event payload shape or delivery timing change? This repo's telemetry wrapper (`utils/Events/OtplessBMEvents.swift`) calls into it — verify call sites still behave as documented (cross-check against this repo's Atlas pages under `repos/otpless-headless-iOS-sdk/` — documentation lives only in `otpless-tech/atlas`, never in a `docs/` directory here — and describe what you verified in the PR).
 - **Facebook/Google SDKs:** manually exercise (or state plainly that you couldn't, and why) the real sign-in flow — a major SDK version bump changing a delegate callback's timing or a deprecated API's removal is exactly the kind of thing that compiles fine and breaks at runtime.
 
 ## 4. Docs
 
 - `CHANGELOG.md` `## Unreleased`: one bullet, `<dependency> old → new (#NN — title)` plus what changed at runtime if anything. Prefix internal-only bumps "Repo & tooling."
-- Once `docs/SDK-GUIDE.md` exists, update its dependency-table section too; until then, describe what you verified in the PR body.
+- If the bump changes anything a dependency-table or architecture page in Atlas states, open a companion PR against `otpless-tech/atlas` (`repos/otpless-headless-iOS-sdk/`) in the same cycle and link it here — see the **docs-sync** skill §5. Do not add a `docs/` directory to this repo to hold it.
 - Run `bash scripts/docs-verify.sh` before finishing — check whether it reports any new `WARN` that wasn't there before (e.g. if this bump somehow touched a version-string location).
 
 ## 5. Merge rules

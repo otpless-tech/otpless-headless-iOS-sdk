@@ -11,8 +11,8 @@ This repo's git history (`git log --oneline | grep -i version`) shows every past
 
 - Working tree clean, on an up-to-date `main` (or a release branch cut from it).
 - `make gate` passes (see the **verify** skill).
-- Wrapper check: if this release changes the response contract or public API, confirm **both** `otpless-rn-lite` and `otpless-rn-full` (the hub topology: both pin this iOS SDK) have a coordinated plan. Breaking entries in the changelog must carry `**BREAKING:**`.
-- Once `docs/SDK-GUIDE.md` exists: confirm it's current before releasing (run the docs-sync skill first if not). It does not exist yet on this branch — skip this check until the parallel guide PR (`feat/sdk-guide`) merges.
+- Wrapper check: if this release changes the response contract or public API, confirm **both** `react-native-headless-lite` and `react-native-headless-sdk` (the hub topology: both pin this iOS SDK) have a coordinated plan. Breaking entries in the changelog must carry `**BREAKING:**`.
+- Confirm this repo's Atlas pages (`repos/otpless-headless-iOS-sdk/` in `otpless-tech/atlas` — the only home for platform documentation; there is no `docs/` here) are current before releasing; run the **docs-sync** skill's §5 first if not. The `atlas-docs` PR check is the mechanical signal, but it is only as good as Atlas's `.atlas/manifest.yml`, which has no entry for this repo yet — so check by hand for now.
 
 ## 2. Version bump — ALL locations, not just the podspec
 

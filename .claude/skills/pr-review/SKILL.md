@@ -15,7 +15,7 @@ This SDK runs inside enterprise clients' apps — the constitution in `CLAUDE.md
 - Confirm `bash scripts/check-api-baseline.sh --update` was run and `api-baseline/OtplessBM.json` was regenerated if the diff touches public surface — the CI gate would otherwise fail; check whether the PR ran it and committed the diff.
 - Scan public signatures for leaked third-party types (`OtplessEventIO` internals, `FBSDKLoginKit`/`GoogleSignIn` types) reachable by SPM consumers, who never get the Facebook/Google pods.
 - **No compiler-enforced visibility restriction exists** (no Swift equivalent of Kotlin's `explicitApi()` is turned on here) — manually check whether a new type/member actually needs to be `public`, or should default to `internal`.
-- Any breaking change needs a `**BREAKING:**` changelog entry and a stated wrapper-SDK check against **both** `otpless-rn-lite` and `otpless-rn-full` (the hub topology: both pin this iOS SDK) — flag if missing.
+- Any breaking change needs a `**BREAKING:**` changelog entry and a stated wrapper-SDK check against **both** `react-native-headless-lite` and `react-native-headless-sdk` (the hub topology: both pin this iOS SDK) — flag if missing.
 - A removed public member must go through a deprecation cycle first (`@available(*, deprecated, ...)`), not be deleted cold.
 
 ## Article 2 — Never harm the host app
@@ -52,7 +52,7 @@ This SDK runs inside enterprise clients' apps — the constitution in `CLAUDE.md
 - Any public-API/`Package.swift`/`OtplessBM.podspec` change: was `bash scripts/check-api-baseline.sh` (and `--update` if intentional) run? No evidence in the PR = blocking finding.
 - Behavioral changes: does the PR state what was manually exercised, given there's no sample app? SNA/deep-link/passkey/SSO flows need an explicit "human-only, not run" statement if not actually run on a device.
 - Any new `@available(iOS X, *)`-gated call: confirm a defined fallback exists for iOS 13/14 (the package's declared floor), not just the availability annotation with no `else`.
-- If the response contract or public API moved: does the PR note a wrapper-SDK check against **both** `otpless-rn-lite` and `otpless-rn-full`? Absence is a blocking finding for any breaking change.
+- If the response contract or public API moved: does the PR note a wrapper-SDK check against **both** `react-native-headless-lite` and `react-native-headless-sdk`? Absence is a blocking finding for any breaking change.
 - Does `bash scripts/docs-verify.sh` still report the same `WARN`s as before (or fewer) — a new, previously-unseen `WARN` (e.g. a fresh version mismatch) deserves a comment even though it won't fail CI.
 
 ## Report format

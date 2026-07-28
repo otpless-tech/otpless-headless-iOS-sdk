@@ -6,12 +6,13 @@
 
 <!-- See CLAUDE.md's "SDK development constitution" for the full rules behind each item. -->
 
-- [ ] No public API/response-contract change, or `bash scripts/check-api-baseline.sh --update` run + `api-baseline/OtplessBM.json` committed + CHANGELOG.md updated + wrapper impact checked against **both** `otpless-rn-lite` and `otpless-rn-full` (both pin this iOS SDK)
+- [ ] No public API/response-contract change, or `bash scripts/check-api-baseline.sh --update` run + `api-baseline/OtplessBM.json` committed + CHANGELOG.md updated + wrapper impact checked against **both** `react-native-headless-lite` and `react-native-headless-sdk` (both pin this iOS SDK)
 - [ ] Both distributions verified: `bash scripts/build.sh` (SPM) AND `pod lib lint OtplessBM.podspec --allow-warnings` (CocoaPods, all 3 subspecs) — not just one
 - [ ] Source-size delta considered (no binary artifact to measure yet — see the size-review skill) and any new dependency challenged per constitution article 5
 - [ ] New collected data documented in `Sources/PrivacyInfo.xcprivacy`, or none added
 - [ ] `CHANGELOG.md` `## Unreleased` entry added
 - [ ] `bash scripts/docs-verify.sh` run — no new `WARN`/`FAIL` beyond the pre-existing, tracked ones (see CLAUDE.md's Known findings)
+- [ ] Atlas checked: this change leaves no page under `repos/otpless-headless-iOS-sdk/` in [`otpless-tech/atlas`](https://github.com/otpless-tech/atlas) wrong, or a companion Atlas PR is linked here (docs live **only** in Atlas — this repo has no `docs/`; see the docs-sync skill, section 5)
 
 ## Parity statement (hub rule: Android ↔ iOS parity)
 

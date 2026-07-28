@@ -7,15 +7,19 @@
 # Used by .github/workflows/build-test.yml and by `make gate` (see the root
 # Makefile).
 #
-# NOTE: docs/SDK-GUIDE.md does not exist on this branch yet — it is landing in
-# a parallel PR (feat/sdk-guide). This script therefore only checks what
-# already exists: the CHANGELOG heading vs. the podspec version, and gate-line
-# consistency between the Makefile and CLAUDE.md. TODO(after the guide PR
-# merges): add guide-vs-source checks — e.g. the guide's documented public API
-# list vs. api-baseline/OtplessBM.json, the guide's error-code table vs.
-# OtplessConstant.swift, the guide's response-type list vs. ResponseTypes.swift
-# — following the pattern of otpless-headless-android-lite's
-# scripts/docs-verify.sh.
+# SCOPE: source-side checks only. This repo carries no docs/ directory — the
+# prose description of this SDK lives solely in otpless-tech/atlas, under
+# repos/otpless-headless-iOS-sdk/. A guide-vs-source check therefore cannot run
+# here: there is no Atlas checkout in this repo, and a repo-local copy of the
+# guide would only ever verify itself. Atlas owns that check and reports it back
+# as a status on the PR — see .github/workflows/atlas-docs.yml, which calls
+# otpless-tech/atlas/.github/workflows/verify-docs.yml.
+#
+# What this script checks, both sides of every comparison being files in THIS
+# repo: the CHANGELOG heading vs. the podspec version, gate-line consistency
+# between the Makefile and CLAUDE.md, and version consistency across the
+# podspec, the latest git tag, and Constants.SDK_VERSION. Add a check here only
+# when it stays inside that boundary.
 
 set -u
 

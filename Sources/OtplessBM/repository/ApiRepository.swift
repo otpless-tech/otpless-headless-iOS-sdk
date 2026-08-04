@@ -169,14 +169,14 @@ internal final class ApiRepository: @unchecked Sendable {
             return result
     }
     
-    func makeSNACall(url: String, onComplete: @escaping @Sendable ([String: Any]) -> Void) {
+    func makeSNACall(url: String, onComplete: @escaping @Sendable (Result<[String: Any], SnaErrorKind>) -> Void) {
         guard let otplessCellularNetwork = otplessCellularNetwork else {
-            onComplete(Utils.createErrorDictionary(errorCode: "5800", errorMessage: "Could not get instance of OtplessCellularManager"))
+            onComplete(Result.failure(SnaErrorKind.iosConnectivityApiUnavailable))
             return
         }
         
         guard let url = URL(string: url) else {
-            onComplete(Utils.createErrorDictionary(errorCode: "5800", errorMessage: "Could not parse URL \(url)"))
+            onComplete(Result.failure(SnaErrorKind.badUrl(url: url)))
             return
         }
         

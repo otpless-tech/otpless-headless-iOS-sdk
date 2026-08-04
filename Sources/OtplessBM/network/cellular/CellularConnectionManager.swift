@@ -44,19 +44,16 @@ final class CellularConnectionManager: @unchecked Sendable {
         self.CONNECTION_TIME_OUT = connectionTimeout
     }
     
-    func open(url: URL, operators: String?, completion: @Sendable @escaping ([String : Any]) -> Void) {
+    func open(url: URL, operators: String?, completion: @escaping @Sendable (Result<[String: Any], SnaErrorKind>) -> Void) {
         guard let _ = url.scheme, let _ = url.host else {
-            completion(convertNetworkErrorToDictionary(err: NetworkError.other("No scheme or host found")))
+            completion(Result.failure(SnaErrorKind.badUrl(url: "Url is missing scheme or host.\nURL: \(url.absoluteString)")))
             return
         }
         
         // This closure will be called on main thread
         checkResponseHandler = { [weak self] (response) -> Void in
             guard let self = self else {
-                var json = [String : Any]()
-                json["error"] = "sdk_error"
-                json["error_description"] = "Unable to carry on"
-                completion(json)
+                completion(Result.failure(SnaErrorKind.callbackInstanceLost(response: response.toDict())))
                 return
             }
             
@@ -72,13 +69,13 @@ final class CellularConnectionManager: @unchecked Sendable {
                 }
             case .err(let error):
                 self.cleanUp()
-                completion(self.convertNetworkErrorToDictionary(err: error))
+                completion(Result.failure(error))
             case .dataOK(let connResp):
                 self.cleanUp()
-                completion(self.convertConnectionResponseToDictionary(resp: connResp))
+                completion(connResp.toResult())
             case .dataErr(let connResp):
                 self.cleanUp()
-                completion(self.convertConnectionResponseToDictionary(resp: connResp))
+                completion(connResp.toResult())
             }
         }
 
@@ -92,41 +89,6 @@ final class CellularConnectionManager: @unchecked Sendable {
         }
     }
     
-    func convertConnectionResponseToDictionary(resp: ConnectionResponse)  -> [String : Any] {
-        let json = ["":""]
-        do {
-            // load JSON response into a dictionary
-            if let body = resp.body, let dictionary = try JSONSerialization.jsonObject(with: body, options: .mutableContainers) as? [String : Any] {
-                return dictionary
-            }
-        } catch {
-                return convertNetworkErrorToDictionary(err: NetworkError.other("JSON deserializarion"))
-        }
-        return json
-    }
-    
-    func convertNetworkErrorToDictionary(err: NetworkError) -> [String : Any] {
-        var json = [String : Any]()
-        switch err {
-        case .invalidRedirectURL(let string):
-            json["error"] = "sdk_redirect_error"
-            json["error_description"] = string
-        case .tooManyRedirects:
-            json["error"] = "sdk_redirect_error"
-            json["error_description"] = "Too many redirects"
-        case .connectionFailed(let string):
-            json["error"] = "sdk_connection_error"
-            json["error_description"] = string
-        case .connectionCantBeCreated(let string):
-            json["error"] = "sdk_connection_error"
-            json["error_description"] = string
-        case .other(let string):
-            json["error"] = "sdk_error"
-            json["error_description"] = string
-        }
-
-        return json
-    }
     
     func cancelExistingConnection() {
         if self.connection != nil {
@@ -149,9 +111,9 @@ final class CellularConnectionManager: @unchecked Sendable {
             case .cancelled:
                 break
             case .failed(let error):
-                completion(.err(NetworkError.other("Connection State: Failed \(error.localizedDescription)")))
+                completion(.err(SnaErrorKind.nwProtocolConnectionError(state: "failed")))
             @unknown default:
-                completion(.err(NetworkError.other("Connection State: Unknown \(newState)")))
+                completion(.err(SnaErrorKind.nwProtocolConnectionError(state: "unknown")))
             }
         }
     }
@@ -293,7 +255,7 @@ final class CellularConnectionManager: @unchecked Sendable {
     
     @objc func fireTimer() {
         timer?.invalidate()
-        checkResponseHandler?(.err(NetworkError.connectionCantBeCreated("Connection cancelled - time out")))
+        checkResponseHandler?(.err(SnaErrorKind.timerFinished))
     }
     
     func startMonitoring() {
@@ -339,17 +301,20 @@ final class CellularConnectionManager: @unchecked Sendable {
         self.cancelExistingConnection()
     }
     
-    func activateConnectionForDataFetch(url: URL, completion: @escaping ResultHandler) {
+    private func activateConnectionForDataFetch(url: URL, completion: @escaping ResultHandler) {
         self.cancelExistingConnection()
         guard let scheme = url.scheme,
               let host = url.host else {
-            completion(.err(NetworkError.other("URL has no Host or Scheme")))
+            completion(.err(SnaErrorKind.badUrl(url: url.absoluteString)))
             return
         }
         
-        guard let command = createHttpCommand(url: url),
-              let data = command.data(using: .utf8) else {
-            completion(.err(NetworkError.other("Unable to create HTTP Request command")))
+        guard let command = createHttpCommand(url: url) else {
+            completion(.err(SnaErrorKind.httpCommandConversionError(command: nil)))
+            return
+        }
+        guard let data = command.data(using: .utf8) else {
+            completion(.err(SnaErrorKind.httpCommandConversionError(command: command)))
             return
         }
         
@@ -361,15 +326,14 @@ final class CellularConnectionManager: @unchecked Sendable {
             // All connection events will be delivered on the main thread.
             connection.start(queue: .main)
         } else {
-            completion(.err(NetworkError.connectionCantBeCreated("Problem creating a connection \(url.absoluteString)")))
+            completion(.err(SnaErrorKind.nwProtocolMakeError))
         }
     }
     
     func sendAndReceiveWithBody(requestUrl: URL, data: Data, completion: @escaping ResultHandler) {
         connection?.send(content: data, completion: NWConnection.SendCompletion.contentProcessed({ (error) in
             if let err = error {
-                completion(.err(NetworkError.other(err.localizedDescription)))
-                
+                completion(.err(SnaErrorKind.nwProtocolFailedToSendData(url: requestUrl, error: err)))
             }
         }))
         
@@ -379,7 +343,7 @@ final class CellularConnectionManager: @unchecked Sendable {
         connection?.receive(minimumIncompleteLength: 1, maximumLength: 65536){ data, context, isComplete, error in
             
             if let err = error {
-                completion(.err(NetworkError.other(err.localizedDescription)))
+                completion(.err(SnaErrorKind.nwProtocolFailedToReceiveData(url: requestUrl, error: err)))
                 return
             }
             
@@ -398,16 +362,16 @@ final class CellularConnectionManager: @unchecked Sendable {
                 case 200...202:
                     OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
-                        completion(.dataOK(ConnectionResponse(status: status, body: r)))
+                        completion(.dataOK(ConnectionResponse(request: requestUrl, status: status, body: r)))
                     } else {
-                        completion(.dataOK(ConnectionResponse(status: status, body: nil)))
+                        completion(.dataOK(ConnectionResponse(request: requestUrl, status: status, body: nil)))
                     }
                 case 204:
                     OtplessBMEvents.Sna.response(statusCode: status, body: nil)
-                    completion(.dataOK(ConnectionResponse(status: status, body: nil)))
+                    completion(.dataOK(ConnectionResponse(request: requestUrl, status: status, body: nil)))
                 case 301...303, 307...308:
                     guard let ru = self.parseRedirect(requestUrl: requestUrl, response: response) else {
-                        completion(.err(NetworkError.invalidRedirectURL("Invalid URL - unable to parseRecirect")))
+                        completion(.err(SnaErrorKind.redirectParsingFailed(response: response)))
                         return
                     }
                     OtplessBMEvents.Sna.redirected(location: ru.url?.absoluteString ?? "", statusCode: status)
@@ -415,22 +379,28 @@ final class CellularConnectionManager: @unchecked Sendable {
                 case 400...451:
                     OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
-                        completion(.dataErr(ConnectionResponse(status: status, body:r)))
+                        completion(.dataErr(ConnectionResponse(request: requestUrl, status: status, body:r)))
                     } else {
-                        completion(.err(NetworkError.other("Unexpected HTTP Status \(status)")))
+                        completion(.err(SnaErrorKind.nonOkError(
+                            url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                        )
                     }
                 case 500...511:
                     OtplessBMEvents.Sna.response(statusCode: status, body: snaBodyDict)
                     if let r = self.getResponseBody(response: response) {
-                        completion(.dataErr(ConnectionResponse(status: status, body:r)))
+                        completion(.dataErr(ConnectionResponse(request: requestUrl, status: status, body:r)))
                     } else {
-                        completion(.err(NetworkError.other("Unexpected HTTP Status \(status)")))
+                        completion(
+                            .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                        )
                     }
                 default:
-                    completion(.err(NetworkError.other("Unexpected HTTP Status \(status)")))
+                    completion(
+                        .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                    )
                 }
             } else {
-                completion(.err(NetworkError.other("Response has no data or corrupt")))
+                completion(.err(SnaErrorKind.invalidResponseBody))
             }
         }
     }
@@ -474,27 +444,207 @@ final class CellularConnectionManager: @unchecked Sendable {
     }
 }
 
-public struct RedirectResult {
+// MARK: - RedirectResult
+
+internal struct RedirectResult {
     public var url: URL?
     public let cookies: [HTTPCookie]?
+    
+    func toDict() -> [String: String] {
+        var result: [String: String] = [:]
+        result["url"] = url?.absoluteString ?? ""
+        if let cookies = cookies, !cookies.isEmpty {
+            result["cookies"] = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        }
+        return result
+    }
 }
 
-enum NetworkError: Error, Equatable {
-    case invalidRedirectURL(String)
-    case tooManyRedirects
-    case connectionFailed(String)
-    case connectionCantBeCreated(String)
-    case other(String)
-}
+// MARK: - ConnectionResponse
 
-public struct ConnectionResponse {
+internal struct ConnectionResponse {
+    public let request: URL
     public var status: Int
-    public let body: Data?
+    public let body: Data?;
+    
+    func toResult() -> Result<[String: Any], SnaErrorKind> {
+        if status >= 200 && status < 300 {
+            do {
+                // load JSON response into a dictionary
+                if let body = body, let dictionary = try JSONSerialization.jsonObject(with: body, options: .mutableContainers) as? [String : Any] {
+                    return Result.success(dictionary)
+                } else {
+                    return Result.failure(SnaErrorKind.invalidResponseBody)
+                }
+            } catch {
+                return Result.failure(SnaErrorKind.parsingError(src: body, error: error))
+            }
+        } else {
+            let errorDescription: String = String(data: body ?? Data(), encoding: .utf8) ?? ""
+            var errorBody : [String: String] = [
+                "status": String(status),
+                "error": "api_not_ok_response",
+                "error_response": errorDescription
+            ]
+            return Result.failure(SnaErrorKind.nonOkError(url: request, code: status, data: errorBody))
+        }
+    }
+    
+    func toDict() -> [String: String] {
+        var result = ["status": String(status)]
+        if let body = body {
+            result["body"] = String(data: body, encoding: .utf8) ?? ""
+        }
+        return result
+    }
 }
 
-enum ConnectionResult {
-    case err(NetworkError)
+// MARK: - ConnectionResult
+
+internal enum ConnectionResult {
+    case err(SnaErrorKind)
     case dataOK(ConnectionResponse)
     case dataErr(ConnectionResponse)
-    case follow(RedirectResult)
+    case follow(RedirectResult);
+    
+    func toDict() -> [String: String] {
+        switch self {
+        case .err(let result):
+            return result.toDictionary()
+        case .dataOK(let r):
+            return r.toDict()
+        case .dataErr(let r):
+            return r.toDict()
+        case .follow(let r):
+            return r.toDict()
+        }
+    }
+}
+
+// MARK: - SnaErrorKind
+
+internal enum SnaErrorKind: Error {
+    // connectivity manager related error
+    case iosConnectivityApiUnavailable
+    case callbackInstanceLost(response: [String: String])
+    
+    // url and data parsing releated error
+    case badUrl(url: String)
+    case parsingError(src: Data?, error: Error)
+    case timerFinished
+    case httpCommandConversionError(command: String?)
+    
+    // connectivity manager callback related error
+    case nwProtocolConnectionError(state: String)
+    case noDataConnectivity(error: Error)
+    case nwProtocolMakeError
+    case nwProtocolFailedToSendData(url: URL, error: Error)
+    case nwProtocolFailedToReceiveData(url: URL, error: Error)
+    case nonOkError(url: URL, code: Int, data: [String: Any])
+    case invalidResponseBody
+    
+    
+    
+    // sna redirect and status code releated error releted error
+    case redirectParsingFailed(response: String?)
+    
+    case pollingTimeOut
+    
+    ;
+    
+    func toDictionary() -> [String: String] {
+        switch self {
+        // connectivity manager related error
+        case .iosConnectivityApiUnavailable:
+            return [
+                Constants.ERROR_KEY: "cellular_api_unavaiable",
+                Constants.ERROR_DESCRIPTION_KEY: "could not get instance of OtplessCellularManager."
+            ]
+        case .callbackInstanceLost(var result):
+            result[Constants.ERROR_KEY] = "cellular_api_instance_lost"
+            result[Constants.ERROR_DESCRIPTION_KEY] = "The callback self instance is lost. could not revert the callback."
+            return result
+        
+        // url and data parsing releated error
+        case .badUrl(let url):
+            return [
+                Constants.ERROR_KEY: "sna_bad_url",
+                Constants.ERROR_DESCRIPTION_KEY: "Failed to parse the sna URL \(url)."
+            ]
+        case .parsingError(src: let src, error: let error):
+            return [
+                Constants.ERROR_KEY: "sna_parsing_error",
+                Constants.ERROR_DESCRIPTION_KEY: "Failed to parse the sna response: \(error).\n\(String(data: src ?? Data(), encoding: .utf8) ?? "")"
+            ]
+        case .timerFinished:
+            return [
+                Constants.ERROR_KEY: "sna_url_timeout",
+                Constants.ERROR_DESCRIPTION_KEY: "Didn't get the response in 7 seconds. Closing nw protocol call."
+            ]
+        case .httpCommandConversionError(let error):
+            var result: [String: String] = [:]
+            result[Constants.ERROR_KEY] = "sna_http_command_conversion_error"
+            if let error = error {
+                result[Constants.ERROR_DESCRIPTION_KEY] = "Failed to convert HTTP command to Data\ncommand: \(error)"
+            } else {
+                result[Constants.ERROR_DESCRIPTION_KEY] = "Failed to create the HTTP command"
+            }
+            return result
+        
+        // connectivity manager callback related error
+        case .noDataConnectivity(let error):
+            return [
+                Constants.ERROR_KEY: "sna_no_data_connectivity",
+                Constants.ERROR_DESCRIPTION_KEY: error.localizedDescription ?? "No data connectivity. Please check your internet connection."
+            ]
+        case .nwProtocolConnectionError(let state):
+            return [
+                Constants.ERROR_KEY: "nw_protocol_connection_error",
+                Constants.ERROR_DESCRIPTION_KEY: "Failed to create NW connection. state is: \(state)",
+            ]
+        case .nwProtocolMakeError:
+            return [
+                Constants.ERROR_KEY: "nw_protocol_make_error",
+                Constants.ERROR_DESCRIPTION_KEY: "iOS api failed to create NWPathConnection instance.",
+            ]
+        case .nwProtocolFailedToSendData(let url, let error):
+            return [
+                Constants.ERROR_KEY: "nw_protocol_data_send_error",
+                Constants.ERROR_DESCRIPTION_KEY: error.localizedDescription ?? "NWPathConnection failed to send the data.",
+                "url": url.absoluteString ?? "NA"
+            ]
+        case .nwProtocolFailedToReceiveData(let url, let error):
+            return [
+                Constants.ERROR_KEY: "nw_protocol_data_receive_error",
+                Constants.ERROR_DESCRIPTION_KEY: error.localizedDescription ?? "NWPathConnection failed to receive the data.",
+                "url": url.absoluteString
+            ]
+        case .nonOkError(let url, let code, let data):
+            return [
+                Constants.ERROR_KEY: "sna_non_ok_response",
+                Constants.ERROR_DESCRIPTION_KEY: "Non 200..299 response received.\ndata:\n\(Utils.convertDictionaryToString(data))",
+                "status_code": String(code),
+                "url": url.absoluteString ?? "NA"
+            ]
+        case .invalidResponseBody:
+            return [
+                Constants.ERROR_KEY: "invalid_sna_response",
+                Constants.ERROR_DESCRIPTION_KEY: "No response received from NWPathConnection",
+            ]
+            
+        // sna redirect api error
+        case .redirectParsingFailed(let response):
+            return [
+                Constants.ERROR_KEY: "sna_redirect_parsing_failed",
+                Constants.ERROR_DESCRIPTION_KEY: "Failed to parse redirect response: \(response)"
+            ]
+        
+        // sna polling related timeout
+        case .pollingTimeOut:
+            return [
+                Constants.ERROR_KEY: "sna_polling_timeout",
+                Constants.ERROR_DESCRIPTION_KEY: "Transaction could not be polled anymore."
+            ]
+        }
+    }
 }

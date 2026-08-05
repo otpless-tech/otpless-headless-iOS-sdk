@@ -17,7 +17,7 @@ internal struct Constants {
     static let PENDING = "PENDING"
     static let FAILED = "FAILED"
     
-    static let SDK_VERSION = "2.3.3"
+    static let SDK_VERSION = "2.4.0"
     
     static let ERROR_KEY = "cause"
     static let ERROR_DESCRIPTION_KEY = "brief"

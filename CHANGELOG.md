@@ -1,3 +1,12 @@
+## 2.4.0 (5th August 2026)
+### Fixes
+- SNA api error propagation
+
+
+## 2.3.2 (8th July 2026)
+### Feature
+-  SNA failure error code and description added.
+
 
 ## 2.3.1 (2nd July 2026)
 

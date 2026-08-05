@@ -122,6 +122,12 @@ internal enum OtplessBMEvents {
         private static let INIT_TERMINAL = "sna_init_terminal_response"
         private static let AUTH_TERMINAL = "sna_auth_terminal_response"
         private static let CALLBACK_RESULT = "sna_callback_result"
+        private static let SNA_API_ERROR = "sna_api_error"
+        
+        static func snaError(data: [String: Any]) {
+            trackEvent(name: SNA_API_ERROR, type: .SDK, action: .RESPONSE,
+                       data: data, errorCode: "5004")
+        }
 
         static func statusCheckStarted(isMfaEnabled: Bool) {
             trackEvent(
@@ -164,12 +170,12 @@ internal enum OtplessBMEvents {
             trackEvent(name: AUTH_TERMINAL, type: .SDK, action: .RESPONSE, errorCode: errorCode)
         }
 
-        static func callbackResult(status: String) {
+        static func callbackResult(data: [String: Any]) {
             trackEvent(
                 name: CALLBACK_RESULT,
                 type: .SDK,
                 action: .RESPONSE,
-                data: ["status": status]
+                data: data
             )
         }
     }

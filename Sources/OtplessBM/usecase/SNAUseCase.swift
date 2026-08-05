@@ -10,7 +10,7 @@ import Foundation
 internal final class SNAUseCase: @unchecked Sendable {
     private var isPolling = true
     private var snaStatusPollingLapse: Bool = false
-    private var snaUrlHitError: [String: String]?
+    private var snaErrorKind: SnaErrorKind? = nil
 
     private let SILENT_AUTH = "SILENT_AUTH"
 
@@ -32,22 +32,19 @@ internal final class SNAUseCase: @unchecked Sendable {
             snaConnectionTimeout = 7.0
         }
         Otpless.shared.apiRepository.updateSNAConnectionTimeout(connectionTimeout: snaConnectionTimeout)
+        self.snaErrorKind = nil
 
         async let snaApiCall: Void = Otpless.shared.apiRepository
             .makeSNACall(url: url) { [weak self] snaResponse in
-                let status = snaResponse["status"] as? String
-
-                if status == nil || status?.lowercased() != "ok" {
-                    let snaError = [
-                        "cause": snaResponse["error"] as? String ?? "Unable to find cause",
-                        "brief": snaResponse["error_description"] as? String ?? "Unable to find brief"
-                    ]
-                    self?.snaUrlHitError = ["lapseMeta": Utils.convertDictionaryToString(snaError)]
+                switch snaResponse {
+                case let .success(value):
+                    self?.snaErrorKind = nil
+                    OtplessBMEvents.Sna.callbackResult(data: value)
+                case let .failure(kind):
+                    self?.snaErrorKind = kind
                     self?.stopPolling()
+                    OtplessBMEvents.Sna.snaError(data: kind.toDictionary())
                 }
-
-                log(message: "Sna response: \(snaResponse)", type: .SNA_RESPONSE)
-                OtplessBMEvents.Sna.callbackResult(status: status ?? "nil")
             }
 
         async let snaTransactionApiCall = pollSNATransaction(timerSettings: timerSettings)
@@ -102,14 +99,9 @@ internal final class SNAUseCase: @unchecked Sendable {
             try? await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000))
             startTime += pollingInterval
         }
-
+        let lapseMetaDict: [String: String] = self.snaErrorKind?.toDictionary() ?? SnaErrorKind.pollingTimeOut.toDictionary()
         return await performFallbackTransactionRequest(
-            withErrorDict: snaUrlHitError ?? [
-                "lapseMeta": Utils.convertDictionaryToString([
-                    "cause": "sdk_polling_timeout",
-                    "brief": "Transaction could not be polled anymore."
-                ])
-            ]
+            withErrorDict: ["lapseMeta": Utils.convertDictionaryToString(lapseMetaDict)]
         )
     }
 

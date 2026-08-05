@@ -382,7 +382,7 @@ final class CellularConnectionManager: @unchecked Sendable {
                         completion(.dataErr(ConnectionResponse(request: requestUrl, status: status, body:r)))
                     } else {
                         completion(.err(SnaErrorKind.nonOkError(
-                            url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                            url: requestUrl, code: status, data: Utils.convertDictionaryToString(snaBodyDict ?? [:])))
                         )
                     }
                 case 500...511:
@@ -391,12 +391,12 @@ final class CellularConnectionManager: @unchecked Sendable {
                         completion(.dataErr(ConnectionResponse(request: requestUrl, status: status, body:r)))
                     } else {
                         completion(
-                            .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                            .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: Utils.convertDictionaryToString(snaBodyDict ?? [:])))
                         )
                     }
                 default:
                     completion(
-                        .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: snaBodyDict ?? [:]))
+                        .err(SnaErrorKind.nonOkError(url: requestUrl, code: status, data: Utils.convertDictionaryToString(snaBodyDict ?? [:])))
                     )
                 }
             } else {
@@ -486,7 +486,7 @@ internal struct ConnectionResponse {
                 "errorBody": errorDescription,
                 "url": request.absoluteString
             ]
-            return Result.failure(SnaErrorKind.nonOkError(url: request, code: status, data: errorBody))
+            return Result.failure(SnaErrorKind.nonOkError(url: request, code: status, data: Utils.convertDictionaryToString(errorBody)))
         }
     }
     
@@ -524,7 +524,7 @@ internal enum ConnectionResult {
 
 // MARK: - SnaErrorKind
 
-internal enum SnaErrorKind: Error {
+internal enum SnaErrorKind: Error, Sendable {
     // connectivity manager related error
     case iosConnectivityApiUnavailable
     case callbackInstanceLost(response: [String: String])
@@ -541,7 +541,7 @@ internal enum SnaErrorKind: Error {
     case nwProtocolMakeError
     case nwProtocolFailedToSendData(url: URL, error: Error)
     case nwProtocolFailedToReceiveData(url: URL, error: Error)
-    case nonOkError(url: URL, code: Int, data: [String: Any])
+    case nonOkError(url: URL, code: Int, data: String?)
     case invalidResponseBody
     
     
@@ -623,7 +623,7 @@ internal enum SnaErrorKind: Error {
         case .nonOkError(let url, let code, let data):
             return [
                 Constants.ERROR_KEY: "sna_non_ok_response",
-                Constants.ERROR_DESCRIPTION_KEY: "Non 200..299 response received.\ndata:\n\(Utils.convertDictionaryToString(data))",
+                Constants.ERROR_DESCRIPTION_KEY: "Non 200..299 response received.\ndata:\n\(data ?? "NA")",
                 "status_code": String(code),
                 "url": url.absoluteString ?? "NA"
             ]

@@ -483,8 +483,8 @@ internal struct ConnectionResponse {
             let errorDescription: String = String(data: body ?? Data(), encoding: .utf8) ?? ""
             var errorBody : [String: String] = [
                 "status": String(status),
-                Constants.ERROR_KEY: "api_non_ok_response",
-                Constants.ERROR_DESCRIPTION_KEY: errorDescription
+                "errorBody": errorDescription,
+                "url": request.absoluteString
             ]
             return Result.failure(SnaErrorKind.nonOkError(url: request, code: status, data: errorBody))
         }
@@ -495,6 +495,7 @@ internal struct ConnectionResponse {
         if let body = body {
             result["body"] = String(data: body, encoding: .utf8) ?? ""
         }
+        result["url"] = request.absoluteString
         return result
     }
 }

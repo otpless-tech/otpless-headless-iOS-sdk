@@ -19,6 +19,6 @@ internal struct Constants {
     
     static let SDK_VERSION = "2.3.3"
     
-    static let ERROR_KEY = "error"
-    static let ERROR_DESCRIPTION_KEY = "error_description"
+    static let ERROR_KEY = "cause"
+    static let ERROR_DESCRIPTION_KEY = "brief"
 }

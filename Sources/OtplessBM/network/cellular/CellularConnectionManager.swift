@@ -483,8 +483,8 @@ internal struct ConnectionResponse {
             let errorDescription: String = String(data: body ?? Data(), encoding: .utf8) ?? ""
             var errorBody : [String: String] = [
                 "status": String(status),
-                "error": "api_not_ok_response",
-                "error_response": errorDescription
+                Constants.ERROR_KEY: "api_non_ok_response",
+                Constants.ERROR_DESCRIPTION_KEY: errorDescription
             ]
             return Result.failure(SnaErrorKind.nonOkError(url: request, code: status, data: errorBody))
         }

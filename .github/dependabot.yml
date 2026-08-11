@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Dependabot's "swift" ecosystem covers Package.swift/Package.resolved
+    # (SPM) only — it does not support CocoaPods (Podfile/.podspec) as of this
+    # writing, so OtplessBM.podspec's FBSDKCoreKit/FBSDKLoginKit/GoogleSignIn/
+    # GoogleSignInSwiftSupport version constraints are NOT covered by this
+    # file and must be bumped manually (see the bump-dependency skill).
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

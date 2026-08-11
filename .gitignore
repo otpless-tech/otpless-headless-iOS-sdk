@@ -1,14 +1,16 @@
 # macOS
 .DS_Store
-.build
 
-# Claude Code / agent session artifacts
-CLAUDE.md
-docs/
+# Swift Package Manager / Xcode build output
+.build/
+DerivedData/
 
 # IDE / editor state
 .idea/
 
-# Xcode per-user data
+# Xcode per-user data (never useful to another contributor or CI)
 xcuserdata/
 *.xcuserstate
+
+# scripts/check-api-baseline.sh working state
+/api-baseline/*.tmp.json

@@ -8,6 +8,14 @@
 -  SNA failure error code and description added.
 
 
+## Unreleased
+
+<!-- Add new entries here as PRs merge. Rename this heading to "## <version> (<date>)"
+     on release (see the release skill) — never rewrite an already-released heading below. -->
+
+### Notes
+- `OtplessBM.podspec` was bumped to `2.3.2` (tag `2.3.2` exists) in the same commit as "SNA failure error code and description added. (#40)", but no `## 2.3.2` entry was ever added here — a pre-existing gap from before this repo had agentic-readiness scaffolding. Not backfilled by this PR (out of scope for scaffolding; a follow-up should reconcile it against source).
+
 ## 2.3.1 (2nd July 2026)
 
 ### Features
@@ -20,7 +28,7 @@
 
 ### Notes
 - To enable device intelligence in your app:
-  1. Install `OTPlessIntelligence` yourself — pod: `pod 'OTPlessIntelligence', '~> 1.3'`; SPM: add `https://github.com/otpless-tech/otpless-ios-intelligence-sdk` to your app's Package.swift.
+  1. Install `OTPlessIntelligence` yourself — pod: `pod 'OTPlessIntelligence', '~> 1.3'`; SPM: add `https://github.com/otpless-tech/otpless-iOS-intelligence-sdk` to your app's Package.swift.
   2. Import it in your AppDelegate / App struct and call `OTPlessIntelligence.shared.initialize(appId: "<your-app-id>") { _ in }` before any OtplessBM request that has `setDeviceFingerprintMode(.SYNC)` or `.ASYNC` enabled.
   3. OtplessBM detects the SDK at runtime; no OtplessBM configuration flag needed.
 

@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build:*)",
+      "Bash(swift test:*)",
+      "Bash(swift package:*)",
+      "Bash(xcrun:*)",
+      "Bash(xcodebuild -version:*)",
+      "Bash(xcodebuild -list:*)",
+      "Bash(pod --version:*)",
+      "Bash(pod lib lint:*)",
+      "Bash(make:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git tag:*)",
+      "Bash(stat:*)",
+      "Bash(unzip:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": [
+      "Bash(git push origin main:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import json,sys,os\ntry:\n    data=json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\nfp=(data.get(\"tool_input\") or {}).get(\"file_path\") or \"\"\nif not fp:\n    sys.exit(0)\n# realpath on both sides: macOS resolves /tmp -> /private/tmp at the kernel\n# getcwd() level, which breaks a plain startswith() check for worktrees\n# created under /tmp (the mandated worktree-driven-development location).\nfp=os.path.realpath(fp)\nroot=os.path.realpath(os.getcwd())\nrel=fp[len(root)+1:] if fp.startswith(root+\"/\") else (None if os.path.isabs(fp) else fp)\nif rel is not None and rel.startswith(\"api-baseline/\"):\n    sys.stderr.write(\"api-baseline/ files are GENERATED contract goldens (swift-api-digester dumps) — never hand-edit. Regenerate instead: bash scripts/check-api-baseline.sh --update, then review the diff.\\n\")\n    sys.exit(2)\n'"
+          },
+          {
+            "type": "command",
+            "command": "python3 scripts/hooks/changelog-history-guard.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import json,sys,os\ntry:\n    data=json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\nfp=(data.get(\"tool_input\") or {}).get(\"file_path\") or \"\"\nif not fp:\n    sys.exit(0)\nfp=os.path.realpath(fp)\nroot=os.path.realpath(os.getcwd())\nrel=fp[len(root)+1:] if fp.startswith(root+\"/\") else (None if os.path.isabs(fp) else fp)\nif rel is None:\n    sys.exit(0)\nif rel==\"Sources/OtplessBM/Otpless.swift\" or rel.startswith(\"Sources/OtplessBM/dto/\") or rel.startswith(\"Sources/OtplessBM/network/model/\"):\n    sys.stderr.write(\"Contract-adjacent file changed. If a public method, response payload key, or response type moved, the SAME PR must carry: bash scripts/check-api-baseline.sh --update (api-baseline/OtplessBM.json), a CHANGELOG.md entry (**BREAKING:** flag if applicable), a wrapper-SDK check (react-native-headless-lite AND react-native-headless-sdk both pin this iOS SDK), and an Atlas companion-PR decision (docs live only in otpless-tech/atlas under repos/otpless-headless-iOS-sdk/, never a docs/ dir here - see the docs-sync skill, section 5) — CLAUDE.md constitution article 1.\\n\")\n    sys.exit(2)\n'"
+          }
+        ]
+      }
+    ]
+  }
+}

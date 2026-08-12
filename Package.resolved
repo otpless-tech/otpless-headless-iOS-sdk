@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "facebook-ios-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/facebook/facebook-ios-sdk.git",
+      "state" : {
+        "revision" : "09eb5b0cb74127a360e0bc74a2d75ec1fd351e48",
+        "version" : "17.0.0"
+      }
+    },
+    {
       "identity" : "otpless-event-io-ios",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/otpless-tech/otpless-event-io-ios.git",

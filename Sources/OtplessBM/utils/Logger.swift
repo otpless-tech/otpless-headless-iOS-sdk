@@ -48,6 +48,7 @@ public enum LogType: String, @unchecked Sendable {
     case DEVICE_INTELLIGENCE = "Device Intelligence"
     case ONETAP = "OneTap"
     case RESPONSE_RELAY = "Response Relay"
+    case PIN_VALIDATION = "Pin Validation"
 
     public static func < (lhs: LogType, rhs: LogType) -> Bool {
         return lhs.rawValue < rhs.rawValue

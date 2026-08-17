@@ -35,7 +35,12 @@ public struct OtplessResponse: @unchecked Sendable {
         "errorCode": "5003",
         "errorMessage": "Failed to initialize the SDK"
     ], statusCode: 5003)
-    
+
+    internal static let pinValidationFailedResponse = OtplessResponse(responseType: .FAILED, response: [
+        "errorCode": "5004",
+        "errorMessage": "SSL pin validation failed"
+    ], statusCode: 5004)
+
     internal static let sdkReady = OtplessResponse(responseType: .SDK_READY, response: ["success" : true, "tsId": Otpless.shared.tsid], statusCode: 200)
     
     internal static func createUnauthorizedResponse(

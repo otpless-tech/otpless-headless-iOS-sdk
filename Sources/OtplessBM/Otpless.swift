@@ -114,10 +114,22 @@ import OtplessEventIO
     private weak var onetapController: UIViewController?
     
     //initialize method
+    // Objective-C compatible overload; OtplessSslKind is a Swift enum with associated values,
+    // so this shim defaults to .sslDisabled — preserving pre-2.4 behavior for existing
+    // merchants, exactly like Android's legacy initialize() shim.
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
         vc: UIViewController
+    ) {
+        initialise(withAppId: appId, loginUri: loginUri, vc: vc, sslKind: .sslDisabled)
+    }
+
+    public func initialise(
+        withAppId appId: String,
+        loginUri: String? = nil,
+        vc: UIViewController,
+        sslKind: OtplessSslKind
     ) {
         self.merchantOtplessRequest = nil
         self.sdkState = .NOT_READY
@@ -133,6 +145,11 @@ import OtplessEventIO
         self.tsid = trackingIds.sessionId
         OtplessBMEvents.Init.initCalled(hasApiBaseUrlOverride: false)
         OtplessEventIO.retryFailedEvents()
+
+        // After OtplessEventIO.initialize so the pin telemetry configure() emits isn't dropped;
+        // still ahead of any network call — the first request fires from the init task below,
+        // which also awaits the envelope bootstrap first.
+        PinnedSessionProvider.shared.configure(sslKind: sslKind)
 
         log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
 
@@ -156,6 +173,9 @@ import OtplessEventIO
                     guard let self = self else { return }
 
                     await DeviceInfoUtils.shared.initialise()
+                    // Cache-first envelope bootstrap (.sslEnabled only) — must complete before
+                    // init resolves so start()'s isOkSsl gate observes the outcome.
+                    await PinnedSessionProvider.shared.bootstrap()
 
                     let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
                     self.uid = uid
@@ -205,6 +225,11 @@ import OtplessEventIO
     }
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
+        if PinnedSessionProvider.shared.isPinFailedPersistent {
+            invokeResponse(OtplessResponse.pinValidationFailedResponse)
+            return
+        }
+
         if let initTask = self.initialisationTask {
             let waitStartNs = DispatchTime.now().uptimeNanoseconds
             let initSuccess = await initTask.value
@@ -215,6 +240,14 @@ import OtplessEventIO
                 invokeResponse(OtplessResponse.failedToInitializeResponse)
                 return
             }
+        }
+
+        // Fail-closed short-circuit (mirror of Android's isOkSsl gate): in .sslEnabled mode the
+        // signed pin envelope must have been applied this session — otherwise do not touch the
+        // network and deliver the terminal 5004 response.
+        if !PinnedSessionProvider.shared.isOkSsl {
+            invokeResponse(OtplessResponse.pinValidationFailedResponse)
+            return
         }
 
         self.pendingCode = ""

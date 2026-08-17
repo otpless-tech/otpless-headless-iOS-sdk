@@ -362,6 +362,58 @@ internal enum OtplessBMEvents {
         }
     }
 
+    // MARK: - Pin (SSL pinning — mirrors Android LongClawEvents.Pin)
+
+    enum Pin {
+        private static let FETCH_FAILED = "sdk_pin_manifest_fetch_failed"
+        private static let VALIDATION_FAILED_AND_REFRESHING = "sdk_pin_validation_failed_refreshing_pin"
+        private static let APPLIED = "sdk_pin_applied"
+        private static let DISABLED_BY_OVERRIDE = "sdk_pin_disabled_by_override"
+        private static let SSL_ERROR_CODE = "5004"
+
+        static func manifestFetchFailed(reason: String, data: [String: Any]? = nil) {
+            var combined: [String: Any] = ["reason": reason]
+            data?.forEach { combined[$0.key] = $0.value }
+            trackEvent(
+                name: FETCH_FAILED,
+                type: .SDK,
+                action: .RESPONSE,
+                data: combined,
+                errorCode: SSL_ERROR_CODE
+            )
+        }
+
+        static func validationFailedAndEnvelopeRefreshed(host: String, data: [String: Any]) {
+            var combined: [String: Any] = ["host": host]
+            data.forEach { combined[$0.key] = $0.value }
+            trackEvent(
+                name: VALIDATION_FAILED_AND_REFRESHING,
+                type: .SDK,
+                action: .RESPONSE,
+                data: combined,
+                errorCode: SSL_ERROR_CODE
+            )
+        }
+
+        static func applied(extra: [String: Any]) {
+            trackEvent(
+                name: APPLIED,
+                type: .SDK,
+                action: .RESPONSE,
+                data: extra
+            )
+        }
+
+        static func disabledByOverride(reason: String) {
+            trackEvent(
+                name: DISABLED_BY_OVERRIDE,
+                type: .SDK,
+                action: .RESPONSE,
+                data: ["reason": reason]
+            )
+        }
+    }
+
     // MARK: - Exception
 
     enum Exception {

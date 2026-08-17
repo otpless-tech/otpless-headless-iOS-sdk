@@ -12,6 +12,7 @@ final class ApiManager: Sendable {
     private let userAuthTimeout: TimeInterval
     private let snaTimeout: TimeInterval
     private let enableLogging: Bool
+    private let session: URLSession
     private let baseURLSekura = "http://80.in.safr.sekuramobile.com"
     private var baseURLUserAuth: String {
         return Otpless.shared.environment.userAuthBaseURL
@@ -31,11 +32,13 @@ final class ApiManager: Sendable {
     init(
         userAuthTimeout: TimeInterval = 20.0,
         snaTimeout: TimeInterval = 5.0,
-        enableLogging: Bool = false
+        enableLogging: Bool = false,
+        session: URLSession = PinnedSessionProvider.shared.session
     ) {
         self.userAuthTimeout = userAuthTimeout
         self.snaTimeout = snaTimeout
         self.enableLogging = enableLogging
+        self.session = session
     }
     
     // MARK: - User Auth API Request
@@ -70,7 +73,7 @@ final class ApiManager: Sendable {
             OtplessBMEvents.Api.request(path: newPath, data: nil)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
 
             if enableLogging {
                 var sentBodyDict: [String: Any]? = nil

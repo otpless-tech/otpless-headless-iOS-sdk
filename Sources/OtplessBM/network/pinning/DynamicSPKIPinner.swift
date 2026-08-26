@@ -17,8 +17,8 @@ internal final class DynamicSPKIPinner: @unchecked Sendable {
 
     func setPins(_ hostToPins: [String: [String]]) {
         lock.lock()
+        defer { lock.unlock() }
         pins = hostToPins
-        lock.unlock()
     }
 
     func currentPins() -> [String: [String]] {

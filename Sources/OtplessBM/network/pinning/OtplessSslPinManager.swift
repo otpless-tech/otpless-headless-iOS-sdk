@@ -12,7 +12,7 @@ import Security
 ///
 /// - **Bootstrap** (`bootstrap()`): try a cached envelope first so the first API call doesn't
 ///   wait on a network round-trip; fall back to a remote fetch if the cache is missing,
-///   unverifiable, expired, or older than `PinConstants.refreshIntervalSeconds`.
+///   unverifiable, expired, or older than `OtplessSslPinManager.refreshIntervalSeconds`.
 /// - **Verification** (`verify(_:)`): every envelope is authenticated against
 ///   `OtplessKeyVault.verifyAnchors` (hardcoded ECDSA P-256 public keys) before its pins are
 ///   trusted. Compromising the CDN alone cannot forge a manifest — the signer's private key is
@@ -27,7 +27,7 @@ import Security
 /// `isSslDone` is the readiness flag `PinnedSessionProvider.isOkSsl` consumes to gate
 /// `Otpless.start(withRequest:)`.
 internal final class OtplessSslPinManager: @unchecked Sendable {
-
+    
     private let pinner: DynamicSPKIPinner
 
     private let lock = NSLock()
@@ -35,7 +35,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
     private var sessionRefreshed = false
     private var inFlightRefresh: Task<Bool, Never>?
 
-    /// Bootstrap fetch client. Deliberately unpinned (see `PinConstants.manifestURL`) and
+    /// Bootstrap fetch client. Deliberately unpinned (see `OtplessSslPinManager.manifestURL`) and
     /// ephemeral so nothing about the manifest transport is cached at the URL layer.
     private let fetchSession: URLSession
 
@@ -48,15 +48,15 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
     init(pinner: DynamicSPKIPinner) {
         self.pinner = pinner
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = PinConstants.manifestFetchTimeoutSeconds
-        config.timeoutIntervalForResource = PinConstants.manifestFetchTimeoutSeconds
+        config.timeoutIntervalForRequest = Self.manifestFetchTimeoutSeconds
+        config.timeoutIntervalForResource = Self.manifestFetchTimeoutSeconds
         self.fetchSession = URLSession(configuration: config)
     }
 
     /// Cache-first bootstrap, called once from the SDK init task before the first pinned request
     /// can fire. A cached envelope is used only when it (a) still verifies against the anchors,
     /// (b) has not passed its `exp`, and (c) was written no more than
-    /// `PinConstants.refreshIntervalSeconds` ago. If any of those fails the cache is cleared and
+    /// `OtplessSslPinManager.refreshIntervalSeconds` ago. If any of those fails the cache is cleared and
     /// a blocking remote refresh runs; no cache at all goes straight to remote. The outcome
     /// lands in `isSslDone` — a failure here means pins were not applied and `start()` will
     /// refuse to send user-auth requests.
@@ -67,7 +67,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
             let passesFreshness = (verified != nil) && !(verified!.isExpired)
             let nowEpoch = Date().timeIntervalSince1970
             let lastFetchedAt = lastFetchAtEpoch()
-            let isNewerCache = (nowEpoch - lastFetchedAt) < PinConstants.refreshIntervalSeconds
+            let isNewerCache = (nowEpoch - lastFetchedAt) < Self.refreshIntervalSeconds
 
             if let verified = verified, passesFreshness, isNewerCache {
                 log(message: "[Pin] Pins applied from cached envelope (ver \(verified.ver))", type: .PIN_VALIDATION)
@@ -84,7 +84,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
                     "currentTime": Int(nowEpoch),
                     "lastFetchedTime": Int(lastFetchedAt),
                     "isNewerCache": isNewerCache,
-                    "refreshIntervalSeconds": Int(PinConstants.refreshIntervalSeconds)
+                    "refreshIntervalSeconds": Int(Self.refreshIntervalSeconds)
                 ])
             }
         } else {
@@ -189,7 +189,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
 
     private func fetchEnvelope() async -> SslEnvelopeResult {
         do {
-            let (data, response) = try await fetchSession.data(for: URLRequest(url: PinConstants.manifestURL))
+            let (data, response) = try await fetchSession.data(for: URLRequest(url: Self.manifestURL))
             guard let http = response as? HTTPURLResponse else { return .networkError }
             guard (200..<300).contains(http.statusCode) else { return .httpError(code: http.statusCode) }
             guard let envelope = String(data: data, encoding: .utf8) else { return .networkError }
@@ -305,21 +305,41 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
     // MARK: - Envelope cache
 
     private func readCachedEnvelope() -> String? {
-        let cached: String = SecureStorage.shared.getFromUserDefaults(key: PinConstants.manifestEnvelopeKey, defaultValue: "")
+        let cached: String = SecureStorage.shared.getFromUserDefaults(key: Self.manifestEnvelopeKey, defaultValue: "")
         return cached.isEmpty ? nil : cached
     }
 
     private func lastFetchAtEpoch() -> TimeInterval {
-        return SecureStorage.shared.getFromUserDefaults(key: PinConstants.manifestLastFetchAtKey, defaultValue: TimeInterval(0))
+        return SecureStorage.shared.getFromUserDefaults(key: Self.manifestLastFetchAtKey, defaultValue: TimeInterval(0))
     }
 
     private func writeEnvelopeCache(_ envelope: String) {
-        SecureStorage.shared.saveToUserDefaults(key: PinConstants.manifestEnvelopeKey, value: envelope)
-        SecureStorage.shared.saveToUserDefaults(key: PinConstants.manifestLastFetchAtKey, value: Date().timeIntervalSince1970)
+        SecureStorage.shared.saveToUserDefaults(key: Self.manifestEnvelopeKey, value: envelope)
+        SecureStorage.shared.saveToUserDefaults(key: Self.manifestLastFetchAtKey, value: Date().timeIntervalSince1970)
     }
 
     private func clearEnvelopeCache() {
-        UserDefaults.standard.removeObject(forKey: PinConstants.manifestEnvelopeKey)
-        UserDefaults.standard.removeObject(forKey: PinConstants.manifestLastFetchAtKey)
+        UserDefaults.standard.removeObject(forKey: Self.manifestEnvelopeKey)
+        UserDefaults.standard.removeObject(forKey: Self.manifestLastFetchAtKey)
     }
+}
+
+/// constants declaration for
+extension OtplessSslPinManager {
+    /// Signed pin manifest ("envelope") CDN location. Fetched over plain HTTPS with NO pin
+    /// enforcement of its own — pinning this fetch would be circular, since the envelope IS the
+    /// pin source; its integrity comes entirely from the ECDSA signature verified against the
+    /// anchors above.
+    private static let manifestURL = URL(string: "https://d3efyv4lemhheo.cloudfront.net/envelope.json")!
+    
+    /// A cached envelope older than this triggers a remote refresh at init (matches Android's
+    /// 7-day interval).
+    private static let refreshIntervalSeconds: TimeInterval = 7 * 24 * 60 * 60
+
+    private static let manifestFetchTimeoutSeconds: TimeInterval = 10
+
+    // Envelope cache lives in SecureStorage.saveToUserDefaults/getFromUserDefaults — NOT the
+    // Keychain-backed pair — so it survives Otpless.shared.clearAll().
+    private static let manifestEnvelopeKey = "otplessbm_pin_manifest_envelope"
+    private static let manifestLastFetchAtKey = "otplessbm_pin_last_fetch_at"
 }

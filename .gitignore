@@ -12,3 +12,6 @@ docs/
 # Xcode per-user data
 xcuserdata/
 *.xcuserstate
+
+# Python virtualenv for scripts/
+scripts/env/

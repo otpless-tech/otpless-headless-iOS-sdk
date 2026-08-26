@@ -21,4 +21,6 @@ internal struct Constants {
     
     static let ERROR_KEY = "cause"
     static let ERROR_DESCRIPTION_KEY = "brief"
+    
+    static let SSL_ERROR_CODE = 5004
 }

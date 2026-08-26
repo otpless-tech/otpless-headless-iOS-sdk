@@ -68,11 +68,6 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
             pinner.setPins([:])
             log(message: "[Pin] SSL pinning disabled by merchant", type: .PIN_VALIDATION)
             OtplessBMEvents.Pin.disabledByOverride(reason: "ssl_disabled")
-        case .customSsl(let pins):
-            self.manager = nil
-            stateLock.unlock()
-            pinner.setPins(pins)
-            log(message: "[Pin] Custom SSL pins installed for hosts: \(pins.keys.sorted().joined(separator: ", "))", type: .PIN_VALIDATION)
         case .sslEnabled:
             let manager = OtplessSslPinManager(pinner: pinner)
             self.manager = manager
@@ -94,7 +89,7 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
     /// `.sslEnabled` is ready only once the initial envelope load succeeded.
     var isOkSsl: Bool {
         switch currentSslKind() {
-        case .sslDisabled, .customSsl:
+        case .sslDisabled:
             return true
         case .sslEnabled:
             return currentManager()?.isSslDone ?? false

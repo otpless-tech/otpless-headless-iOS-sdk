@@ -37,9 +37,9 @@ public struct OtplessResponse: @unchecked Sendable {
     ], statusCode: 5003)
 
     internal static let pinValidationFailedResponse = OtplessResponse(responseType: .FAILED, response: [
-        "errorCode": "5004",
+        "errorCode": String(Constants.SSL_ERROR_CODE),
         "errorMessage": "SSL pin validation failed"
-    ], statusCode: 5004)
+    ], statusCode: Constants.SSL_ERROR_CODE)
 
     internal static let sdkReady = OtplessResponse(responseType: .SDK_READY, response: ["success" : true, "tsId": Otpless.shared.tsid], statusCode: 200)
     

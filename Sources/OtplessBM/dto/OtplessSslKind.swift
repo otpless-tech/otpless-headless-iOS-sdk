@@ -19,5 +19,4 @@ import Foundation
 public enum OtplessSslKind: Sendable {
     case sslDisabled
     case sslEnabled
-    case customSsl(pins: [String: [String]])
 }

@@ -42,7 +42,7 @@ internal final class PinningURLSessionDelegate: NSObject, URLSessionDelegate, @u
             completionHandler(.performDefaultHandling, nil)
             return
         }
-
+        
         var trustError: CFError?
         guard SecTrustEvaluateWithError(trust, &trustError) else {
             completionHandler(.cancelAuthenticationChallenge, nil)

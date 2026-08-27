@@ -70,12 +70,12 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
             let isNewerCache = (nowEpoch - lastFetchedAt) < Self.refreshIntervalSeconds
 
             if let verified = verified, passesFreshness, isNewerCache {
-                log(message: "[Pin] Pins applied from cached envelope (ver \(verified.ver))", type: .PIN_VALIDATION)
+                DLog("[Pin] Pins applied from cached envelope (ver \(verified.ver))")
                 pinner.setPins(Self.union(OtplessKeyVault.baselinePins, Self.restrictToKnownHosts(verified.pins)))
                 OtplessBMEvents.Pin.applied(extra: ["srcSsl": "cached", "version": verified.ver])
                 done = true
             } else {
-                log(message: "[Pin] Cached envelope invalid/expired/stale — refreshing from remote", type: .PIN_VALIDATION)
+                DLog("[Pin] Cached envelope invalid/expired/stale — refreshing from remote.")
                 clearEnvelopeCache()
                 done = await refreshFromRemote()
                 OtplessBMEvents.Pin.manifestFetchFailed(reason: "cache_invalid", data: [
@@ -145,23 +145,23 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
         case .success(let fetched):
             envelope = fetched
         case .httpError(let code):
-            log(message: "[Pin] Envelope fetch failed — HTTP \(code)", type: .PIN_VALIDATION)
+            DLog("[Pin] Envelope fetch failed — HTTP \(code)")
             OtplessBMEvents.Pin.manifestFetchFailed(reason: "http_\(code)")
             return false
         case .networkError:
-            log(message: "[Pin] Envelope fetch failed — network error", type: .PIN_VALIDATION)
+            DLog("[Pin] Envelope fetch failed — network error")
             OtplessBMEvents.Pin.manifestFetchFailed(reason: "network")
             return false
         }
 
         guard let verified = verify(envelope) else {
-            log(message: "[Pin] Envelope signature verification failed", type: .PIN_VALIDATION)
+            DLog("[Pin] Envelope signature verification failed")
             OtplessBMEvents.Pin.manifestFetchFailed(reason: "signature")
             return false
         }
 
         if verified.isExpired {
-            log(message: "[Pin] Envelope expired (exp \(Int(verified.exp)))", type: .PIN_VALIDATION)
+            DLog("[Pin] Envelope expired (exp \(Int(verified.exp)))")
             OtplessBMEvents.Pin.manifestFetchFailed(reason: "expired", data: [
                 "currentTime": Int(Date().timeIntervalSince1970),
                 "envelopeExpiry": Int(verified.exp)
@@ -177,7 +177,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
 
         pinner.setPins(Self.union(OtplessKeyVault.baselinePins, restricted))
         writeEnvelopeCache(envelope)
-        log(message: "[Pin] Pins applied from remote envelope (ver \(verified.ver), \(restricted.count) host(s))", type: .PIN_VALIDATION)
+        DLog("[Pin] Pins applied from remote envelope (ver \(verified.ver), \(restricted.count) host(s))")
         OtplessBMEvents.Pin.applied(extra: [
             "kid": verified.kid ?? "",
             "hostCount": restricted.count,

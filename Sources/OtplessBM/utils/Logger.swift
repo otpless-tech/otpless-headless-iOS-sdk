@@ -6,6 +6,13 @@
 //
 
 import Foundation
+import OSLog
+
+@available(iOS 14.0, *)
+private let logger = Logger(
+    subsystem: "com.otpless",
+    category: "OtplessBM"
+)
 
 func log(message: String, type: LogType) {
 #if DEBUG
@@ -63,6 +70,11 @@ public protocol OtplessLoggerDelegate: NSObjectProtocol {
 @inline(__always)
 internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
 #if DEBUG
-    print("[\(file):\(line)] \(function) → \(message())")
+    let msg = "\(message())"
+    if #available(iOS 14.0, *) {
+        logger.debug("OtplessBM 🟢\n\(msg)\nfile: [\(file):\(line)] function: \(function)")
+        return
+    }
+    print("[\(file):\(line)] \(function) → \(msg)")
 #endif
 }

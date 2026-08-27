@@ -73,7 +73,7 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
             self.manager = manager
             stateLock.unlock()
             pinner.setPins(OtplessKeyVault.baselinePins)
-            log(message: "[Pin] Baseline pins installed for hosts: \(OtplessKeyVault.baselinePins.keys.sorted().joined(separator: ", "))", type: .PIN_VALIDATION)
+            DLog("[Pin] Baseline pins installed for hosts: \(OtplessKeyVault.baselinePins.keys.sorted().joined(separator: ", "))")
         }
     }
 

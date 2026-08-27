@@ -18,6 +18,7 @@ internal enum SPKIPinner {
     // key-type/size reconstructs the DER blob whose SHA-256 hash is the standard
     // `sha256/<base64>` pin format (same technique TrustKit and Apple's own pinning sample code
     // use — there is no public API that returns full SPKI DER directly).
+    /// constants declared from following link: https://github.com/datatheorem/TrustKit/blob/master/TrustKit/Pinning/TSKSPKIHashCache.m
     private static let rsa2048Header: [UInt8] = [
         0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09,
         0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01,
@@ -46,14 +47,16 @@ internal enum SPKIPinner {
     /// read at all, `presentedHashes` is empty and this returns `false`.
     static func evaluate(trust: SecTrust, host: String, pins: [String: [String]]) -> Bool {
         guard let expectedPins = pins[host], !expectedPins.isEmpty else {
+            DLog("Expect pins for host: \(host) is empty. Skipping pinning check.")
             return true
         }
-        let presentedHashes = Set(spkiHashes(in: trust))
+        let presentedHashes = Set(spkiHashes(in: trust, for: host))
+        DLog("Pin check for \(host) — expected: \(expectedPins), presented: \(Array(presentedHashes))")
         return !presentedHashes.isDisjoint(with: Set(expectedPins))
     }
 
     /// Returns the `sha256/<base64>` pin string for every certificate in the chain.
-    static func spkiHashes(in trust: SecTrust) -> [String] {
+    private static func spkiHashes(in trust: SecTrust, for host: String) -> [String] {
         var hashes: [String] = []
         let count = SecTrustGetCertificateCount(trust)
         for index in 0..<count {
@@ -66,7 +69,9 @@ internal enum SPKIPinner {
                 continue
             }
             let digest = SHA256.hash(data: spkiDER)
-            hashes.append("sha256/" + Data(digest).base64EncodedString())
+            let encodedHash = "sha256/" + Data(digest).base64EncodedString()
+            DLog("SPKI hash for \(host): \(encodedHash)")
+            hashes.append(encodedHash)
         }
         return hashes
     }

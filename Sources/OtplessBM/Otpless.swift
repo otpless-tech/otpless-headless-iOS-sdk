@@ -151,7 +151,7 @@ import OtplessEventIO
         // which also awaits the envelope bootstrap first.
         PinnedSessionProvider.shared.configure(sslKind: sslKind)
 
-        log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
+        DLog("[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)")
 
         // Resolve any prior initialisation continuation with false so callers
         // awaiting an earlier initialise() don't hang when init is re-issued.
@@ -180,7 +180,7 @@ import OtplessEventIO
                     let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
                     self.uid = uid
 
-                    log(message: "[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+                    DLog("[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)")
 
                     await MainActor.run {
                         self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
@@ -319,10 +319,10 @@ import OtplessEventIO
     }
     
     @objc public func handleDeeplink(_ url: URL) async {
-        log(message: "[Deeplink] Received — url: \(url.absoluteString)", type: .DEEPLINK)
+        DLog("[Deeplink] Received — url: \(url.absoluteString)")
 
         guard url.host == "otpless" else {
-            log(message: "[Deeplink] Invalid host — expected 'otpless', got '\(url.host ?? "nil")'", type: .INVALID_DEEPLINK)
+            DLog("[Deeplink] Invalid host — expected 'otpless', got '\(url.host ?? "nil")'")
             return
         }
 
@@ -337,16 +337,16 @@ import OtplessEventIO
         }
 
         if code.isEmpty {
-            log(message: "[Deeplink] No code found in URL — ignoring", type: .DEEPLINK)
+            DLog("[Deeplink] No code found in URL — ignoring")
             return
         }
 
-        log(message: "[Deeplink] Code extracted — sdkState: \(self.sdkState)", type: .DEEPLINK)
+        DLog("[Deeplink] Code extracted — sdkState: \(self.sdkState)")
 
         if self.sdkState == .READY {
             await self.verifyCodeAndInvokeIfReady(code: code)
         } else {
-            log(message: "[Deeplink] SDK not ready — code queued as pendingCode", type: .DEEPLINK)
+            DLog("[Deeplink] SDK not ready — code queued as pendingCode")
             self.pendingCode = code
         }
     }
@@ -579,7 +579,7 @@ private extension Otpless {
                     self.invokeResponse(otplessResponse)
                     self.resolveInit(success: false)
                 } else {
-                    log(message: "[Init] SDK ready", type: .SDK_READY)
+                    DLog("[Init] SDK ready")
                     self.sdkState = .READY
                     OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
@@ -591,7 +591,7 @@ private extension Otpless {
 
             let code = self.pendingCode
             if !code.isEmpty {
-                log(message: "[Deeplink] Processing pending code now that SDK is ready", type: .DEEPLINK)
+                DLog("[Deeplink] Processing pending code now that SDK is ready")
                 await self.verifyCodeAndInvokeIfReady(code: code)
             }
         }

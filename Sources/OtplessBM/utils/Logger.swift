@@ -39,23 +39,18 @@ public enum LogType: String, @unchecked Sendable {
     case POLLING_STOPPED = "Polling Stopped"
     case POLLING_STARTED = "Polling Started"
     case POLLING_RESPONSE = "Polling Response"
-    case INVALID_DEEPLINK = "Invalid Deeplink"
     case SNA_RESPONSE = "SNA Response"
     case EVENT_API_ERROR = "EVENT API ERROR"
     case EVENT_CREATING_FAILED = "EVENT CREATING FAILED"
-    case SDK_INIT = "SDK Init"
-    case SDK_READY = "SDK Ready"
     case SDK_STATE_FETCH = "State Fetch"
     case MERCHANT_CONFIG = "Merchant Config"
     case TRANSACTION_START = "Transaction Start"
     case TRANSACTION_VALIDATION = "Transaction Validation"
     case INTENT = "Intent"
     case VERIFY = "Verify"
-    case DEEPLINK = "Deeplink"
     case DEVICE_INTELLIGENCE = "Device Intelligence"
     case ONETAP = "OneTap"
     case RESPONSE_RELAY = "Response Relay"
-    case PIN_VALIDATION = "Pin Validation"
 
     public static func < (lhs: LogType, rhs: LogType) -> Bool {
         return lhs.rawValue < rhs.rawValue

@@ -53,7 +53,7 @@ internal enum OtplessKeyVault {
 
     private static func reportFailure(id: String, detail: String) {
         OtplessBMEvents.Exception.captured(where: "key_vault_read_failed", message: "\(id): \(detail)")
-        log(message: "[Pin] Key vault load failed for \(id): \(detail)", type: .PIN_VALIDATION)
+        DLog("[Pin] Key vault load failed for \(id): \(detail)")
     }
 
     private static func decodeHex(_ hex: String) -> Data? {

@@ -66,7 +66,7 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
             self.manager = nil
             stateLock.unlock()
             pinner.setPins([:])
-            log(message: "[Pin] SSL pinning disabled by merchant", type: .PIN_VALIDATION)
+            DLog("[Pin] SSL pinning disabled by merchant")
             OtplessBMEvents.Pin.disabledByOverride(reason: "ssl_disabled")
         case .sslEnabled:
             let manager = OtplessSslPinManager(pinner: pinner)
@@ -118,9 +118,6 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
         stateLock.lock()
         _isPinFailedPersistent = true
         stateLock.unlock()
-        log(
-            message: "[Pin] Validation failed for host: \(host) — failing closed for the rest of this session",
-            type: .PIN_VALIDATION
-        )
+        DLog("[Pin] Validation failed for host: \(host) — failing closed for the rest of this session")
     }
 }

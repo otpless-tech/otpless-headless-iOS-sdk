@@ -82,7 +82,7 @@ internal final class SessionServiceImpl: SessionService, @unchecked Sendable {
     private let baseURL: URL
     private let http: CoreHTTPClient
     
-    init(http: CoreHTTPClient = CoreHTTPClient(session: PinnedSessionProvider.shared.session)) {
+    init(http: CoreHTTPClient = CoreHTTPClient()) {
         self.baseURL = URL(string: "https://api.otpless.com/")!
         self.http = http
     }

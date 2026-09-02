@@ -45,6 +45,7 @@ internal final class PinningURLSessionDelegate: NSObject, URLSessionDelegate, @u
         
         var trustError: CFError?
         guard SecTrustEvaluateWithError(trust, &trustError) else {
+            onPinFailure?(challenge.protectionSpace.host)
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }

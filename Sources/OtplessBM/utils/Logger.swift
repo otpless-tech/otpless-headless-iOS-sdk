@@ -43,7 +43,6 @@ public enum LogType: String, @unchecked Sendable {
     case EVENT_API_ERROR = "EVENT API ERROR"
     case EVENT_CREATING_FAILED = "EVENT CREATING FAILED"
     case SDK_STATE_FETCH = "State Fetch"
-    case MERCHANT_CONFIG = "Merchant Config"
     case TRANSACTION_START = "Transaction Start"
     case TRANSACTION_VALIDATION = "Transaction Validation"
     case INTENT = "Intent"
@@ -63,13 +62,33 @@ public protocol OtplessLoggerDelegate: NSObjectProtocol {
 }
 
 @inline(__always)
-internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
+internal func DLog(
+    _ message: @autoclosure () -> Any,
+    file: String = #fileID,
+    function: String = #function,
+    line: Int = #line
+) {
 #if DEBUG
     let msg = "\(message())"
     if #available(iOS 14.0, *) {
-        logger.debug("OtplessBM 🟢\n\(msg)\nfile: [\(file):\(line)] function: \(function)")
+        logger.debug("""
+        🟢 OtplessBM
+        ├─ 📍 \(file):\(line)
+        ├─ 🔧 \(function)
+        └─ \(msg)
+        ────────────────────────────────────────────────────────────────────────────────────────
+        
+        """)
         return
     }
-    print("[\(file):\(line)] \(function) → \(msg)")
+
+    print("""
+        🟢 OtplessBM
+        ├─ 📍 \(file):\(line)
+        ├─ 🔧 \(function)
+        └─ \(msg)
+        ────────────────────────────────────────────────────────────────────────────────────────
+    """)
+
 #endif
 }

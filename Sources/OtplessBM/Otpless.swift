@@ -544,7 +544,7 @@ private extension Otpless {
     func fetchMerchantConfig() {
         guard let state = self.state else { return }
 
-        log(message: "[Init] Fetching merchant config — state: \(state.prefix(8))…", type: .MERCHANT_CONFIG)
+        DLog("[Init] Fetching merchant config — state: \(state.prefix(8))…")
 
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
@@ -570,11 +570,11 @@ private extension Otpless {
 
                 if let config = merchantConfig {
                     let diType = config.metaData?.deviceIntelligence?.type ?? "<not set>"
-                    log(message: "[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)", type: .MERCHANT_CONFIG)
+                    DLog("[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)")
                 }
 
                 if let otplessResponse = otplessResponse {
-                    log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
+                    DLog("[Init] Merchant config fetch failed — relaying error response")
                     OtplessBMEvents.Init.stateFailed()
                     self.invokeResponse(otplessResponse)
                     self.resolveInit(success: false)

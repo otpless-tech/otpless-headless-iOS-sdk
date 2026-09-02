@@ -109,6 +109,26 @@ final class ApiManager: Sendable {
 
             return data
         } catch {
+            // normalizing ssl error
+            if let error = error as NSError? {
+                let errorMessage = error.localizedDescription ??  "SSL certificate validation failed."
+                switch error.code {
+                case NSURLErrorCancelled:
+                    // Request was cancelled
+                    if PinnedSessionProvider.shared.isPinFailedPersistent {
+                        fallthrough
+                    }
+                case NSURLErrorSecureConnectionFailed:
+                    // SSL error
+                    throw ApiError(message: errorMessage, statusCode: Constants.SSL_ERROR_CODE,
+                                   responseJson: ["errorCode": String(Constants.SSL_ERROR_CODE),
+                                                  "errorMessage": errorMessage]
+                    )
+                default:
+                    break
+
+                }
+            }
             // normalize
             let apiError: ApiError
             if let e = error as? ApiError {

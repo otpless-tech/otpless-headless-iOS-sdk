@@ -71,7 +71,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
 
             if let verified = verified, passesFreshness, isNewerCache {
                 DLog("[Pin] Pins applied from cached envelope (ver \(verified.ver))")
-                pinner.setPins(Self.union(OtplessKeyVault.baselinePins, Self.restrictToKnownHosts(verified.pins)))
+                pinner.setPins(Self.union(Self.restrictToKnownHosts(verified.pins), OtplessKeyVault.baselinePins))
                 OtplessBMEvents.Pin.applied(extra: ["srcSsl": "cached", "version": verified.ver])
                 done = true
             } else {
@@ -175,7 +175,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
             return false
         }
 
-        pinner.setPins(Self.union(OtplessKeyVault.baselinePins, restricted))
+        pinner.setPins(Self.union(restricted, OtplessKeyVault.baselinePins))
         writeEnvelopeCache(envelope)
         DLog("[Pin] Pins applied from remote envelope (ver \(verified.ver), \(restricted.count) host(s))")
         OtplessBMEvents.Pin.applied(extra: [
@@ -227,6 +227,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
                 nil
             )
         }
+        DLog("signature validity: \(signatureValid)")
         guard signatureValid else { return nil }
 
         guard let json = (try? JSONSerialization.jsonObject(with: payloadBytes)) as? [String: Any],
@@ -253,54 +254,6 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
         )
     }
 
-    /// Parse a base64 DER `SubjectPublicKeyInfo` anchor into a `SecKey` for signature
-    /// verification. `SecKeyCreateWithData` wants the raw ANSI X9.63 point (`04 || X || Y`),
-    /// not full SPKI DER, so the fixed 26-byte P-256 SPKI header is stripped first. Returns nil
-    /// (instead of throwing) so a malformed anchor entry cannot crash the SDK — the verify loop
-    /// just falls through to the next anchor.
-    private static func loadAnchor(_ anchorBase64Der: String) -> SecKey? {
-        guard let spki = Data(base64Encoded: anchorBase64Der), spki.count == 91 else { return nil }
-        let rawPoint = spki.suffix(65)
-        guard rawPoint.first == 0x04 else { return nil }
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits as String: 256
-        ]
-        return SecKeyCreateWithData(Data(rawPoint) as CFData, attributes as CFDictionary, nil)
-    }
-
-    /// Decode base64url (URL-safe, unpadded); also tolerates the standard `+/` alphabet and
-    /// present padding, matching okio's behavior on Android.
-    private static func decodeBase64Url(_ s: String) -> Data? {
-        var normalized = s
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        normalized += String(repeating: "=", count: (4 - normalized.count % 4) % 4)
-        return Data(base64Encoded: normalized)
-    }
-
-    // MARK: - Defense in depth
-
-    /// Merge manifest pins into the baseline set, deduplicating per host. Baseline pins remain
-    /// trusted even if the manifest omits them — a signed manifest can only ADD to trust.
-    static func union(_ first: [String: [String]], _ second: [String: [String]]) -> [String: [String]] {
-        var merged = first
-        for (host, pins) in second {
-            var combined = merged[host] ?? []
-            for pin in pins where !combined.contains(pin) {
-                combined.append(pin)
-            }
-            merged[host] = combined
-        }
-        return merged
-    }
-
-    /// Drop any manifest host not already in the baseline — a compromised manifest signer cannot
-    /// install pins for arbitrary hosts and redirect trust to a domain they control.
-    static func restrictToKnownHosts(_ hostToPins: [String: [String]]) -> [String: [String]] {
-        return hostToPins.filter { OtplessKeyVault.baselinePins.keys.contains($0.key) }
-    }
 
     // MARK: - Envelope cache
 
@@ -318,7 +271,7 @@ internal final class OtplessSslPinManager: @unchecked Sendable {
         SecureStorage.shared.saveToUserDefaults(key: Self.manifestLastFetchAtKey, value: Date().timeIntervalSince1970)
     }
 
-    private func clearEnvelopeCache() {
+    internal func clearEnvelopeCache() {
         UserDefaults.standard.removeObject(forKey: Self.manifestEnvelopeKey)
         UserDefaults.standard.removeObject(forKey: Self.manifestLastFetchAtKey)
     }
@@ -342,4 +295,53 @@ extension OtplessSslPinManager {
     // Keychain-backed pair — so it survives Otpless.shared.clearAll().
     private static let manifestEnvelopeKey = "otplessbm_pin_manifest_envelope"
     private static let manifestLastFetchAtKey = "otplessbm_pin_last_fetch_at"
+    
+    // MARK: - Defense in depth
+    
+    /// Decode base64url (URL-safe, unpadded); also tolerates the standard `+/` alphabet and
+    /// present padding, matching okio's behavior on Android.
+    private static func decodeBase64Url(_ s: String) -> Data? {
+        var normalized = s
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        normalized += String(repeating: "=", count: (4 - normalized.count % 4) % 4)
+        return Data(base64Encoded: normalized)
+    }
+
+    /// Merge manifest pins into the baseline set, deduplicating per host. Baseline pins remain
+    /// trusted even if the manifest omits them — a signed manifest can only ADD to trust.
+    private static func union(_ first: [String: [String]], _ second: [String: [String]]) -> [String: [String]] {
+        var merged = first
+        for (host, pins) in second {
+            var combined = merged[host] ?? []
+            for pin in pins where !combined.contains(pin) {
+                combined.append(pin)
+            }
+            merged[host] = combined
+        }
+        return merged
+    }
+    
+    /// Drop any manifest host not already in the baseline — a compromised manifest signer cannot
+    /// install pins for arbitrary hosts and redirect trust to a domain they control.
+    private static func restrictToKnownHosts(_ hostToPins: [String: [String]]) -> [String: [String]] {
+        return hostToPins.filter { OtplessKeyVault.baselinePins.keys.contains($0.key) }
+    }
+    
+    /// Parse a base64 DER `SubjectPublicKeyInfo` anchor into a `SecKey` for signature
+    /// verification. `SecKeyCreateWithData` wants the raw ANSI X9.63 point (`04 || X || Y`),
+    /// not full SPKI DER, so the fixed 26-byte P-256 SPKI header is stripped first. Returns nil
+    /// (instead of throwing) so a malformed anchor entry cannot crash the SDK — the verify loop
+    /// just falls through to the next anchor.
+    private static func loadAnchor(_ anchorBase64Der: String) -> SecKey? {
+        guard let spki = Data(base64Encoded: anchorBase64Der), spki.count == 91 else { return nil }
+        let rawPoint = spki.suffix(65)
+        guard rawPoint.first == 0x04 else { return nil }
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
+            kSecAttrKeySizeInBits as String: 256
+        ]
+        return SecKeyCreateWithData(Data(rawPoint) as CFData, attributes as CFDictionary, nil)
+    }
 }

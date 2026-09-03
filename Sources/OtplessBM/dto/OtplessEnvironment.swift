@@ -14,7 +14,9 @@ import Foundation
     internal var userAuthBaseURL: String {
         switch self {
         case .PRODUCTION:
-            return "https://user-auth.otpless.app"
+            // Moved from user-auth.otpless.app for SSL pinning (Android parity — this is the
+            // host the signed pin manifest covers). The old host stays aliased server-side.
+            return "https://sigma.otpless.app"
         #if DEBUG
         case .STAGING:
             return "https://user-auth.otpless.tech"

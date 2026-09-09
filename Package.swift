@@ -23,6 +23,10 @@ let package = Package(
                 .product(name: "OtplessEventIO", package: "otpless-event-io-ios")
             ]
         ),
+        .testTarget(
+            name: "OtplessBMTests",
+            dependencies: ["OtplessBM"]
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )

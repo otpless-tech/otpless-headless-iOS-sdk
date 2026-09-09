@@ -6,6 +6,13 @@
 //
 
 import Foundation
+import OSLog
+
+@available(iOS 14.0, *)
+private let logger = Logger(
+    subsystem: "com.otpless",
+    category: "OtplessBM"
+)
 
 func log(message: String, type: LogType) {
 #if DEBUG
@@ -32,19 +39,14 @@ public enum LogType: String, @unchecked Sendable {
     case POLLING_STOPPED = "Polling Stopped"
     case POLLING_STARTED = "Polling Started"
     case POLLING_RESPONSE = "Polling Response"
-    case INVALID_DEEPLINK = "Invalid Deeplink"
     case SNA_RESPONSE = "SNA Response"
     case EVENT_API_ERROR = "EVENT API ERROR"
     case EVENT_CREATING_FAILED = "EVENT CREATING FAILED"
-    case SDK_INIT = "SDK Init"
-    case SDK_READY = "SDK Ready"
     case SDK_STATE_FETCH = "State Fetch"
-    case MERCHANT_CONFIG = "Merchant Config"
     case TRANSACTION_START = "Transaction Start"
     case TRANSACTION_VALIDATION = "Transaction Validation"
     case INTENT = "Intent"
     case VERIFY = "Verify"
-    case DEEPLINK = "Deeplink"
     case DEVICE_INTELLIGENCE = "Device Intelligence"
     case ONETAP = "OneTap"
     case RESPONSE_RELAY = "Response Relay"
@@ -60,8 +62,33 @@ public protocol OtplessLoggerDelegate: NSObjectProtocol {
 }
 
 @inline(__always)
-internal func DLog(_ message: @autoclosure () -> Any, file: String = #fileID, function: String = #function, line: Int = #line) {
+internal func DLog(
+    _ message: @autoclosure () -> Any,
+    file: String = #fileID,
+    function: String = #function,
+    line: Int = #line
+) {
 #if DEBUG
-    print("[\(file):\(line)] \(function) → \(message())")
+    let msg = "\(message())"
+    if #available(iOS 14.0, *) {
+        logger.debug("""
+        🟢 OtplessBM
+        ├─ 📍 \(file):\(line)
+        ├─ 🔧 \(function)
+        └─ \(msg)
+        ────────────────────────────────────────────────────────────────────────────────────────
+        
+        """)
+        return
+    }
+
+    print("""
+        🟢 OtplessBM
+        ├─ 📍 \(file):\(line)
+        ├─ 🔧 \(function)
+        └─ \(msg)
+        ────────────────────────────────────────────────────────────────────────────────────────
+    """)
+
 #endif
 }

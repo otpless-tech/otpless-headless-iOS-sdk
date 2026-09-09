@@ -15,9 +15,9 @@ class GetMerchantConfigUseCase {
     ) async -> (MerchantConfigResponse?, OtplessResponse?) {
         if !isRetry {
             retryCount = 0
-            log(message: "[MerchantConfig] Fetching config — state: \(state.prefix(8))…", type: .MERCHANT_CONFIG)
+            DLog( "[MerchantConfig] Fetching config — state: \(state.prefix(8))…")
         } else {
-            log(message: "[MerchantConfig] Retrying config fetch — attempt: \(retryCount + 1)", type: .MERCHANT_CONFIG)
+            DLog("[MerchantConfig] Retrying config fetch — attempt: \(retryCount + 1)")
         }
 
         let response = await Otpless.shared.apiRepository
@@ -26,12 +26,22 @@ class GetMerchantConfigUseCase {
         switch response {
         case .success(let success):
             let diType = success.metaData?.deviceIntelligence?.type ?? "<not set>"
-            log(message: "[MerchantConfig] Config fetch succeeded — isMFAEnabled: \(success.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)", type: .MERCHANT_CONFIG)
+            DLog("[MerchantConfig] Config fetch succeeded — isMFAEnabled: \(success.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)")
             return (success, nil)
         case .failure(let failure):
-            log(message: "[MerchantConfig] Config fetch failed — \(failure.localizedDescription)", type: .API_RESPONSE_FAILURE)
+            DLog("[MerchantConfig] Config fetch failed — \(failure.localizedDescription)")
+            /// checking for ssl failure error no need to retry in this case
+            if let apiError = failure as? ApiError, apiError.statusCode == Constants.SSL_ERROR_CODE {
+                let response: [String: Any] = [
+                    "errorCode": String(Constants.SSL_ERROR_CODE),
+                    "errorMessage": "SSL pin validation failed"
+                ]
+                retryCount = 0
+                /// todo: send the event here.
+                return (nil, OtplessResponse(responseType: .FAILED, response: response, statusCode: Constants.SSL_ERROR_CODE))
+            }
             if retryCount == 1 {
-                log(message: "[MerchantConfig] Config fetch failed after max retries — returning error response", type: .API_RESPONSE_FAILURE)
+                DLog("[MerchantConfig] Config fetch failed after max retries — returning error response")
                 retryCount = 0
                 return (nil, OtplessResponse.failedToInitializeResponse)
             } else {

@@ -114,10 +114,22 @@ import OtplessEventIO
     private weak var onetapController: UIViewController?
     
     //initialize method
+    // Objective-C compatible overload; OtplessSslKind is a Swift enum with associated values,
+    // so this shim defaults to .sslDisabled — preserving pre-2.4 behavior for existing
+    // merchants, exactly like Android's legacy initialize() shim.
     @objc public func initialise(
         withAppId appId: String,
         loginUri: String? = nil,
         vc: UIViewController
+    ) {
+        initialise(withAppId: appId, loginUri: loginUri, vc: vc, sslKind: .sslDisabled)
+    }
+
+    public func initialise(
+        withAppId appId: String,
+        loginUri: String? = nil,
+        vc: UIViewController,
+        sslKind: OtplessSslKind
     ) {
         self.merchantOtplessRequest = nil
         self.sdkState = .NOT_READY
@@ -134,7 +146,12 @@ import OtplessEventIO
         OtplessBMEvents.Init.initCalled(hasApiBaseUrlOverride: false)
         OtplessEventIO.retryFailedEvents()
 
-        log(message: "[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)", type: .SDK_INIT)
+        // After OtplessEventIO.initialize so the pin telemetry configure() emits isn't dropped;
+        // still ahead of any network call — the first request fires from the init task below,
+        // which also awaits the envelope bootstrap first.
+        PinnedSessionProvider.shared.configure(sslKind: sslKind)
+
+        DLog("[Init] SDK initialising — appId: \(appId), loginUri: \(self.merchantLoginUri)")
 
         // Resolve any prior initialisation continuation with false so callers
         // awaiting an earlier initialise() don't hang when init is re-issued.
@@ -156,11 +173,14 @@ import OtplessEventIO
                     guard let self = self else { return }
 
                     await DeviceInfoUtils.shared.initialise()
+                    // Cache-first envelope bootstrap (.sslEnabled only) — must complete before
+                    // init resolves so start()'s isOkSsl gate observes the outcome.
+                    await PinnedSessionProvider.shared.bootstrap()
 
                     let uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
                     self.uid = uid
 
-                    log(message: "[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)", type: .SDK_INIT)
+                    DLog("[Init] Device IDs resolved — inId: \(self.inid), tsId: \(self.tsid), uid: \(uid.isEmpty ? "<none>" : uid)")
 
                     await MainActor.run {
                         self.deviceInfo = DeviceInfoUtils.shared.getDeviceInfoDict()
@@ -205,6 +225,11 @@ import OtplessEventIO
     }
     
     @objc public func start(withRequest otplessRequest: OtplessRequest) async {
+        if PinnedSessionProvider.shared.isPinFailedPersistent {
+            invokeResponse(OtplessResponse.pinValidationFailedResponse)
+            return
+        }
+
         if let initTask = self.initialisationTask {
             let waitStartNs = DispatchTime.now().uptimeNanoseconds
             let initSuccess = await initTask.value
@@ -215,6 +240,14 @@ import OtplessEventIO
                 invokeResponse(OtplessResponse.failedToInitializeResponse)
                 return
             }
+        }
+
+        // Fail-closed short-circuit (mirror of Android's isOkSsl gate): in .sslEnabled mode the
+        // signed pin envelope must have been applied this session — otherwise do not touch the
+        // network and deliver the terminal 5004 response.
+        if !PinnedSessionProvider.shared.isOkSsl {
+            invokeResponse(OtplessResponse.pinValidationFailedResponse)
+            return
         }
 
         self.pendingCode = ""
@@ -286,10 +319,10 @@ import OtplessEventIO
     }
     
     @objc public func handleDeeplink(_ url: URL) async {
-        log(message: "[Deeplink] Received — url: \(url.absoluteString)", type: .DEEPLINK)
+        DLog("[Deeplink] Received — url: \(url.absoluteString)")
 
         guard url.host == "otpless" else {
-            log(message: "[Deeplink] Invalid host — expected 'otpless', got '\(url.host ?? "nil")'", type: .INVALID_DEEPLINK)
+            DLog("[Deeplink] Invalid host — expected 'otpless', got '\(url.host ?? "nil")'")
             return
         }
 
@@ -304,16 +337,16 @@ import OtplessEventIO
         }
 
         if code.isEmpty {
-            log(message: "[Deeplink] No code found in URL — ignoring", type: .DEEPLINK)
+            DLog("[Deeplink] No code found in URL — ignoring")
             return
         }
 
-        log(message: "[Deeplink] Code extracted — sdkState: \(self.sdkState)", type: .DEEPLINK)
+        DLog("[Deeplink] Code extracted — sdkState: \(self.sdkState)")
 
         if self.sdkState == .READY {
             await self.verifyCodeAndInvokeIfReady(code: code)
         } else {
-            log(message: "[Deeplink] SDK not ready — code queued as pendingCode", type: .DEEPLINK)
+            DLog("[Deeplink] SDK not ready — code queued as pendingCode")
             self.pendingCode = code
         }
     }
@@ -511,7 +544,7 @@ private extension Otpless {
     func fetchMerchantConfig() {
         guard let state = self.state else { return }
 
-        log(message: "[Init] Fetching merchant config — state: \(state.prefix(8))…", type: .MERCHANT_CONFIG)
+        DLog("[Init] Fetching merchant config — state: \(state.prefix(8))…")
 
         Task(priority: .medium) { [weak self] in
             guard let self = self else { return }
@@ -537,16 +570,16 @@ private extension Otpless {
 
                 if let config = merchantConfig {
                     let diType = config.metaData?.deviceIntelligence?.type ?? "<not set>"
-                    log(message: "[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)", type: .MERCHANT_CONFIG)
+                    DLog("[Init] Merchant config received — phoneChannel: \(self.phoneIntentChannel), emailChannel: \(self.emailIntentChannel), isMFAEnabled: \(config.isMFAEnabled ?? false), deviceIntelligence.type: \(diType)")
                 }
 
                 if let otplessResponse = otplessResponse {
-                    log(message: "[Init] Merchant config fetch failed — relaying error response", type: .MERCHANT_CONFIG)
+                    DLog("[Init] Merchant config fetch failed — relaying error response")
                     OtplessBMEvents.Init.stateFailed()
                     self.invokeResponse(otplessResponse)
                     self.resolveInit(success: false)
                 } else {
-                    log(message: "[Init] SDK ready", type: .SDK_READY)
+                    DLog("[Init] SDK ready")
                     self.sdkState = .READY
                     OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
@@ -558,7 +591,7 @@ private extension Otpless {
 
             let code = self.pendingCode
             if !code.isEmpty {
-                log(message: "[Deeplink] Processing pending code now that SDK is ready", type: .DEEPLINK)
+                DLog("[Deeplink] Processing pending code now that SDK is ready")
                 await self.verifyCodeAndInvokeIfReady(code: code)
             }
         }

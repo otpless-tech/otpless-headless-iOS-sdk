@@ -1,3 +1,7 @@
+## 3.0.0 (3rd September 2026)
+### Feature
+- SSL Pin Validation
+
 ## 2.4.0 (5th August 2026)
 ### Fixes
 - SNA api error propagation

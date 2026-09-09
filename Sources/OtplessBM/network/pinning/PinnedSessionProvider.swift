@@ -27,7 +27,8 @@ internal final class PinnedSessionProvider: @unchecked Sendable {
     static let shared = PinnedSessionProvider()
 
     let session: URLSession
-    private let pinner = DynamicSPKIPinner()
+    /// `internal` (not private) so OtplessBMTests can install a known-bad pin set.
+    let pinner = DynamicSPKIPinner()
     private let pinningDelegate: PinningURLSessionDelegate
 
     private let stateLock = NSLock()

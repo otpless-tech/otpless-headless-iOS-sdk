@@ -283,7 +283,8 @@ extension OtplessSslPinManager {
     /// enforcement of its own — pinning this fetch would be circular, since the envelope IS the
     /// pin source; its integrity comes entirely from the ECDSA signature verified against the
     /// anchors above.
-    private static let manifestURL = URL(string: "https://d3efyv4lemhheo.cloudfront.net/envelope.json")!
+    // `internal` (not private) so OtplessBMTests can reach them via @testable import.
+    static let manifestURL = URL(string: "https://d3efyv4lemhheo.cloudfront.net/envelope.json")!
     
     /// A cached envelope older than this triggers a remote refresh at init (matches Android's
     /// 7-day interval).
@@ -293,8 +294,8 @@ extension OtplessSslPinManager {
 
     // Envelope cache lives in SecureStorage.saveToUserDefaults/getFromUserDefaults — NOT the
     // Keychain-backed pair — so it survives Otpless.shared.clearAll().
-    private static let manifestEnvelopeKey = "otplessbm_pin_manifest_envelope"
-    private static let manifestLastFetchAtKey = "otplessbm_pin_last_fetch_at"
+    static let manifestEnvelopeKey = "otplessbm_pin_manifest_envelope"
+    static let manifestLastFetchAtKey = "otplessbm_pin_last_fetch_at"
     
     // MARK: - Defense in depth
     
@@ -310,7 +311,7 @@ extension OtplessSslPinManager {
 
     /// Merge manifest pins into the baseline set, deduplicating per host. Baseline pins remain
     /// trusted even if the manifest omits them — a signed manifest can only ADD to trust.
-    private static func union(_ first: [String: [String]], _ second: [String: [String]]) -> [String: [String]] {
+    static func union(_ first: [String: [String]], _ second: [String: [String]]) -> [String: [String]] {
         var merged = first
         for (host, pins) in second {
             var combined = merged[host] ?? []
@@ -324,7 +325,7 @@ extension OtplessSslPinManager {
     
     /// Drop any manifest host not already in the baseline — a compromised manifest signer cannot
     /// install pins for arbitrary hosts and redirect trust to a domain they control.
-    private static func restrictToKnownHosts(_ hostToPins: [String: [String]]) -> [String: [String]] {
+    static func restrictToKnownHosts(_ hostToPins: [String: [String]]) -> [String: [String]] {
         return hostToPins.filter { OtplessKeyVault.baselinePins.keys.contains($0.key) }
     }
     

@@ -17,8 +17,8 @@ final class SslPinningTests: XCTestCase {
         super.setUp()
         // Each test drives PinnedSessionProvider (a process singleton) through configure(),
         // which resets the fail-closed latch and rebuilds the manager, so ordering is safe.
-        UserDefaults.standard.removeObject(forKey: PinConstants.manifestEnvelopeKey)
-        UserDefaults.standard.removeObject(forKey: PinConstants.manifestLastFetchAtKey)
+        UserDefaults.standard.removeObject(forKey: OtplessSslPinManager.manifestEnvelopeKey)
+        UserDefaults.standard.removeObject(forKey: OtplessSslPinManager.manifestLastFetchAtKey)
     }
 
     // MARK: - Vault
@@ -40,7 +40,7 @@ final class SslPinningTests: XCTestCase {
 
     func testLiveEnvelopeVerifiesAndTamperIsRejected() async throws {
         let manager = OtplessSslPinManager(pinner: DynamicSPKIPinner())
-        let (data, _) = try await URLSession.shared.data(from: PinConstants.manifestURL)
+        let (data, _) = try await URLSession.shared.data(from: OtplessSslPinManager.manifestURL)
         let envelope = try XCTUnwrap(String(data: data, encoding: .utf8))
 
         // 1. The genuine envelope must verify and parse.
@@ -92,7 +92,7 @@ final class SslPinningTests: XCTestCase {
         let applied = pinner.currentPins()["sigma.otpless.app"] ?? []
         XCTAssertEqual(Set(applied), Set(OtplessKeyVault.baselinePins["sigma.otpless.app"] ?? []), "envelope pins currently equal the baseline")
 
-        let cachedEnvelope: String = SecureStorage.shared.getFromUserDefaults(key: PinConstants.manifestEnvelopeKey, defaultValue: "")
+        let cachedEnvelope: String = SecureStorage.shared.getFromUserDefaults(key: OtplessSslPinManager.manifestEnvelopeKey, defaultValue: "")
         XCTAssertFalse(cachedEnvelope.isEmpty, "bootstrap must cache the fetched envelope")
 
         // Second manager should apply from cache (observable as isSslDone without clearing it).
@@ -117,16 +117,20 @@ final class SslPinningTests: XCTestCase {
         XCTAssertFalse(provider.isPinFailedPersistent)
     }
 
-    func testWrongCustomPinsFailClosedAndLatch() async {
+    func testWrongPinsFailClosedAndLatch() async {
         // Uses click.otpless.app (same *.otpless.app wildcard cert) rather than sigma: other
         // tests in this suite open pooled TLS connections to sigma through the shared session,
         // and URLSession only fires the trust challenge on a NEW handshake — a reused connection
-        // would bypass the freshly-configured wrong pins. Pinning is handshake-time enforcement
+        // would bypass the freshly-installed wrong pins. Pinning is handshake-time enforcement
         // on both platforms; the test just needs a host with no pooled connection.
+        //
+        // `.sslEnabled` without `bootstrap()` leaves the manager's initial load unfinished, so a
+        // mismatch has no envelope to fall back on and must cancel the challenge outright.
         let provider = PinnedSessionProvider.shared
-        provider.configure(sslKind: .customSsl(pins: [
+        provider.configure(sslKind: .sslEnabled)
+        provider.pinner.setPins([
             "click.otpless.app": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]
-        ]))
+        ])
         XCTAssertFalse(provider.isPinFailedPersistent)
 
         do {

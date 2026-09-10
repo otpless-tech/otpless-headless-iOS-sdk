@@ -9,44 +9,21 @@ import Foundation
 import os
 import UIKit
 
-#if !canImport(FBSDKLoginKit) && !canImport(FacebookCore)
-class FBSdkUseCase: NSObject, FacebookAuthProtocol {
-    func register(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]?) {}
-    
-    func register(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any]) {}
-    
-    @available(iOS 13.0, *)
-    func register(openURLContexts URLContexts: Set<UIOpenURLContext>) {}
-    
-    func startFBSignIn(withNonce nonce: String, withPermissions permissions: [String]) async -> FacebookSignInResponse {
-        os_log("OTPLESS: Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile")
-        return FacebookSignInResponse(
-            success: false,
-            token: nil,
-            idToken: nil,
-            error: "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
-        )
-    }
-    
-    func logoutFBUser() {}
-}
-#else
-
-#if canImport(FBSDKCoreKit)
+#if canImport(FBSDKCoreKit) && canImport(FBSDKLoginKit)
 import FBSDKCoreKit
 import FBSDKLoginKit
-#endif
-
-#if canImport(FacebookCore)
+#elseif canImport(FacebookCore) && canImport(FacebookLogin)
 import FacebookCore
+import FacebookLogin
 #endif
 
+#if (canImport(FBSDKCoreKit) && canImport(FBSDKLoginKit)) || (canImport(FacebookCore) && canImport(FacebookLogin))
 class FBSdkUseCase: NSObject, FacebookAuthProtocol {
-    
+
     func register(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]?) {
         ApplicationDelegate.shared.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
-    
+
     func register(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any]) {
         ApplicationDelegate.shared.application(
             app,
@@ -55,7 +32,7 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
             annotation: options[UIApplication.OpenURLOptionsKey.annotation]
         )
     }
-    
+
     @available(iOS 13.0, *)
     @MainActor
     func register(openURLContexts URLContexts: Set<UIOpenURLContext>) async {
@@ -67,12 +44,12 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
             annotation: [UIApplication.OpenURLOptionsKey.annotation]
         )
     }
-    
+
     @MainActor
     func startFBSignIn(withNonce nonce: String, withPermissions permissions: [String]) async -> FacebookSignInResponse {
         let loginManager = LoginManager()
         let configuration = LoginConfiguration(permissions: permissions, tracking: .enabled, nonce: nonce)
-        
+
         guard let config = configuration else {
             return FacebookSignInResponse(
                 success: false,
@@ -81,7 +58,7 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
                 error: "Could not get LocalConfiguration instance"
             )
         }
-        
+
         return await withCheckedContinuation { continuation in
             loginManager.logIn(configuration: config) { result in
                 switch result {
@@ -92,7 +69,7 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
                         idToken: nil,
                         error: "User cancelled the Facebook login"
                     ))
-                    
+
                 case .failed(let error):
                     continuation.resume(returning: FacebookSignInResponse(
                         success: false,
@@ -100,11 +77,11 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
                         idToken: nil,
                         error: error.localizedDescription
                     ))
-                    
+
                 case .success(_, _, let token):
                     let accessToken = token?.tokenString
                     let authToken = AuthenticationToken.current?.tokenString
-                    
+
                     if (accessToken?.isEmpty ?? true) && (authToken?.isEmpty ?? true) {
                         continuation.resume(returning: FacebookSignInResponse(
                             success: false,
@@ -124,10 +101,31 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
             }
         }
     }
-    
+
     func logoutFBUser() {
         LoginManager().logOut()
     }
+}
+#else
+class FBSdkUseCase: NSObject, FacebookAuthProtocol {
+    func register(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]?) {}
+
+    func register(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any]) {}
+
+    @available(iOS 13.0, *)
+    func register(openURLContexts URLContexts: Set<UIOpenURLContext>) {}
+
+    func startFBSignIn(withNonce nonce: String, withPermissions permissions: [String]) async -> FacebookSignInResponse {
+        os_log("OTPLESS: Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile")
+        return FacebookSignInResponse(
+            success: false,
+            token: nil,
+            idToken: nil,
+            error: "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
+        )
+    }
+
+    func logoutFBUser() {}
 }
 #endif
 

@@ -17,7 +17,11 @@ internal struct Constants {
     static let PENDING = "PENDING"
     static let FAILED = "FAILED"
     
-    static let SDK_VERSION = "3.0.0"
+    static let SDK_VERSION = "3.0.1"
+
+    // MARK: - Build platform (wrapper attribution)
+    /// Default platform reported in the device event when no wrapper declares itself.
+    static let DEFAULT_BUILD_PLATFORM = "ios"
     
     static let ERROR_KEY = "cause"
     static let ERROR_DESCRIPTION_KEY = "brief"

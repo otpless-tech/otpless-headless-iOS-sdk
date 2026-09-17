@@ -434,6 +434,13 @@ internal enum OtplessBMEvents {
     // MARK: - Device
 
     enum Device {
+        /// Platform attribution reported with the device event, e.g. `otpless-headless(ios)`
+        /// or `otpless-headless(flutter)` when a wrapper called `Otpless.shared.setBuildPlatform(_:)`.
+        /// Mirrors Android's `otpless-headless-lite(${OtplessSDK.buildPlatform.platform})`.
+        static var platformAttribution: String {
+            "otpless-headless(\(Otpless.shared.buildPlatform))"
+        }
+
         static func pushDeviceEvent() {
             let extras: [String: Any] = [
                 "isMobileDataActive": Otpless.shared.isMobileDataEnabled,
@@ -441,7 +448,7 @@ internal enum OtplessBMEvents {
             ]
             OtplessEventIO.pushDeviceEvent(
                 sdkVersion: Constants.SDK_VERSION,
-                platform: "otpless-headless(ios)",
+                platform: platformAttribution,
                 extras: extras
             )
         }

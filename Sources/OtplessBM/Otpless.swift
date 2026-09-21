@@ -109,6 +109,12 @@ import OtplessEventIO
     private var initContinuation: CheckedContinuation<Bool, Never>?
     private let initLock = NSLock()
 
+    // Wrapper attribution (Flutter / React Native). Guarded by its own lock because
+    // wrappers set it from their bridge thread before initialise(), while the device
+    // event that reads it is pushed from inside the initialisation Task.
+    private let buildPlatformLock = NSLock()
+    private var _buildPlatform: String = Constants.DEFAULT_BUILD_PLATFORM
+
     internal private(set) var objcResponseDelegate: ((String) -> Void)?
     
     private weak var onetapController: UIViewController?
@@ -458,6 +464,29 @@ extension Otpless {
 
     @objc public func setMfaEnabled(_ enabled: Bool) {
         self.isMfaEnabled = enabled
+    }
+
+    /// Declares the cross-platform framework this SDK is embedded in, so telemetry can
+    /// attribute the session to it (mirrors Android's `OtplessSDK.buildPlatform`).
+    ///
+    /// Intended for Otpless' own wrappers (Flutter, React Native) — native integrations
+    /// never need to call it. Safe to call before `initialise`, which is what wrappers do.
+    /// Blank or whitespace-only values are ignored, keeping the previous value.
+    ///
+    /// - Parameter platform: e.g. `"flutter"`, `"react-native"`. Default is `"ios"`.
+    @objc public func setBuildPlatform(_ platform: String) {
+        let trimmed = platform.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        buildPlatformLock.lock()
+        _buildPlatform = trimmed
+        buildPlatformLock.unlock()
+    }
+
+    /// The currently declared build platform. Never empty.
+    @objc public var buildPlatform: String {
+        buildPlatformLock.lock()
+        defer { buildPlatformLock.unlock() }
+        return _buildPlatform
     }
 
     public func userAuthEvent(

@@ -1,3 +1,7 @@
+## 3.0.1 (17th September 2026)
+### Feature
+- Added `setBuildPlatform(_:)` on `Otpless` so cross-platform wrappers (Flutter, React Native) can attribute telemetry to the framework they run under — mirrors Android's `OtplessSDK.buildPlatform`. The device event's platform field becomes `otpless-headless(<platform>)`; it defaults to `otpless-headless(ios)`, so behaviour for native integrations is unchanged. Additive and non-breaking — no existing API, request body or query parameter changed.
+
 ## 3.0.0 (3rd September 2026)
 ### Feature
 - SSL Pin Validation

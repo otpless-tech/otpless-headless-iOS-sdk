@@ -96,7 +96,6 @@ import OtplessEventIO
 
     internal private(set) weak var merchantVC: UIViewController?
     
-    private var eventCounter = 1
 
     internal private(set) var isMobileDataEnabled: Bool = true
     
@@ -944,14 +943,6 @@ extension Otpless {
         userSelectedOAuthChannel = nil
         merchantOtplessRequest = nil
         // rsId, diState, and deviceFingerprintMode are reset in the ONETAP handler inside invokeResponse
-    }
-}
-
-extension Otpless {
-    func getEventCounterAndIncrement() -> Int {
-        let currentCounter = eventCounter
-        eventCounter += 1
-        return currentCounter
     }
 }
 

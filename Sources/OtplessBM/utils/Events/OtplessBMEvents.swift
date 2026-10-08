@@ -141,12 +141,7 @@ internal enum OtplessBMEvents {
                 data["proxyEndpoint"] = endpoint
             }
             trackEvent(
-                name: PROXY_FOUND,
-                type: .SDK,
-                action: .RESPONSE,
-                statusCode: 400,
-                data: data,
-                errorCode: "5090"
+                name: PROXY_FOUND, type: .SDK, action: .RESPONSE, statusCode: 400, data: data, errorCode: "5090"
             )
         }
 

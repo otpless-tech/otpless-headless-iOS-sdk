@@ -202,7 +202,6 @@ final class CellularConnectionManager: @unchecked Sendable {
         params.prohibitedInterfaceTypes = [.wifi, .loopback, .wiredEthernet]
 
         connection = NWConnection(host: NWEndpoint.Host(host), port: fport, using: params)
-        
         return connection
     }
     
@@ -321,6 +320,17 @@ final class CellularConnectionManager: @unchecked Sendable {
         connection = createConnection(scheme: scheme, host: host, port: url.port)
         if let connection = connection {
             connection.stateUpdateHandler = createConnectionUpdateHandler(completion: completion, readyStateHandler: { [weak self] in
+                // Report whether iOS wrapped this cellular connection in a proxy (iCloud
+                // Private Relay, VPN, manual proxy). SNA requires the carrier to see the
+                // request, so a proxied cellular connection effectively defeats SNA — we
+                // emit telemetry here so backend can correlate failing status polls.
+                if #available(iOS 14.0, *) {
+                    connection.requestEstablishmentReport(queue: .main) { report in
+                        guard let report = report, report.usedProxy else { return }
+                        let endpoint = report.proxyEndpoint.map { "\($0)" }
+                        OtplessBMEvents.Sna.proxyFound(proxyEndpoint: endpoint)
+                    }
+                }
                 self?.sendAndReceiveWithBody(requestUrl: url, data: data, completion: completion)
             })
             // All connection events will be delivered on the main thread.

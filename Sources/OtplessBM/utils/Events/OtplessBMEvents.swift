@@ -46,6 +46,7 @@ internal enum OtplessBMEvents {
         private static let STATE_READY = "sdk_init_state_ready"
         private static let STATE_FAILED = "sdk_init_state_failed"
         private static let WAIT_COMPLETED = "sdk_init_wait_completed"
+        private static let CLEANUP_CALLED = "sdk_cleanup_called"
 
         static func initCalled(hasApiBaseUrlOverride: Bool) {
             trackEvent(
@@ -54,6 +55,10 @@ internal enum OtplessBMEvents {
                 action: .REQUEST,
                 data: ["hasApiBaseUrlOverride": hasApiBaseUrlOverride]
             )
+        }
+
+        static func cleanupCalled() {
+            trackEvent(name: CLEANUP_CALLED, type: .CLIENT_TO_SDK, action: .REQUEST)
         }
 
         static func stateFromCache() {
@@ -123,10 +128,26 @@ internal enum OtplessBMEvents {
         private static let AUTH_TERMINAL = "sna_auth_terminal_response"
         private static let CALLBACK_RESULT = "sna_callback_result"
         private static let SNA_API_ERROR = "sna_api_error"
-        
+        private static let PROXY_FOUND = "sna_proxy_found"
+
         static func snaError(data: [String: Any]) {
             trackEvent(name: SNA_API_ERROR, type: .SDK, action: .RESPONSE,
                        data: data, errorCode: "5004")
+        }
+
+        static func proxyFound(proxyEndpoint: String?) {
+            var data: [String: Any] = ["usedProxy": true]
+            if let endpoint = proxyEndpoint {
+                data["proxyEndpoint"] = endpoint
+            }
+            trackEvent(
+                name: PROXY_FOUND,
+                type: .SDK,
+                action: .RESPONSE,
+                statusCode: 400,
+                data: data,
+                errorCode: "5090"
+            )
         }
 
         static func statusCheckStarted(isMfaEnabled: Bool) {

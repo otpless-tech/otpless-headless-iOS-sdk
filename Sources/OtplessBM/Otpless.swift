@@ -97,8 +97,7 @@ import OtplessEventIO
     internal private(set) weak var merchantVC: UIViewController?
     
     private var eventCounter = 1
-    
-    let cellularMonitor = NWPathMonitor(requiredInterfaceType: .cellular)
+
     internal private(set) var isMobileDataEnabled: Bool = true
     
     internal private(set) var otpLength: Int = -1
@@ -143,7 +142,6 @@ import OtplessEventIO
         self.merchantVC = vc
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
-        startMobileDataMonitoring()
 
         OtplessEventIO.initialize(appId: appId)
         let trackingIds = OtplessEventIO.trackingIds
@@ -270,7 +268,7 @@ import OtplessEventIO
         }
 
         log(message: "[Transaction] start() called — medium: \(otplessRequest.getAuthenticationMedium()?.rawValue ?? "unknown"), isIntentRequest: \(otplessRequest.isIntentRequest())", type: .TRANSACTION_START)
-
+        await refreshIsMobileDataEnabled()
         OtplessBMEvents.Auth.startCalled(request: otplessRequest)
         await processRequestIfRequestIsValid(otplessRequest)
     }
@@ -309,6 +307,7 @@ import OtplessEventIO
     }
     
     private func startOnetapAuth(config authConfig: OtplessAuthCofig, request otplessRequest: OtplessRequest) async {
+        await refreshIsMobileDataEnabled()
         let intentResponse = await postIntentUseCase.invoke(
             state: self.state ?? "",
             withOtplessRequest: otplessRequest,
@@ -422,8 +421,8 @@ import OtplessEventIO
     }
     
     @objc public func cleanup() {
+        OtplessBMEvents.Init.cleanupCalled()
         self.merchantVC = nil
-        cellularMonitor.cancel()
         self.responseDelegate = nil
     }
     
@@ -870,21 +869,67 @@ private extension Otpless {
         return ""
     }
     
-    private func startMobileDataMonitoring() {
-        cellularMonitor.pathUpdateHandler = { path in
-            DispatchQueue.main.async { [weak self] in
-                self?.isMobileDataEnabled = path.status == .satisfied
+    /// One-shot cellular path probe. Allocates a fresh `NWPathMonitor` each call
+    /// (NWPathMonitor cannot restart after cancel), awaits its first update with a
+    /// `timeout`-second budget, then updates `isMobileDataEnabled`. On timeout keeps
+    /// the last known value. Call before any decision that depends on current cellular
+    /// reachability (e.g. before the intent API, which gates `silentAuthEnabled` on this).
+    @discardableResult
+    internal func refreshIsMobileDataEnabled(timeout: TimeInterval = 0.3) async -> Bool {
+        let startedAt = Date()
+        let monitor = NWPathMonitor(requiredInterfaceType: .cellular)
+        let queue = DispatchQueue(label: "com.otpless.cellular.refresh")
+        let resumeOnce = CellularRefreshResumeFlag()
+
+        let probed: Bool? = await withCheckedContinuation { (continuation: CheckedContinuation<Bool?, Never>) in
+            monitor.pathUpdateHandler = { path in
+                guard resumeOnce.claim() else { return }
+                continuation.resume(returning: path.status == .satisfied)
+            }
+            monitor.start(queue: queue)
+
+            queue.asyncAfter(deadline: .now() + timeout) {
+                guard resumeOnce.claim() else { return }
+                continuation.resume(returning: nil)
             }
         }
-        cellularMonitor.start(queue: DispatchQueue.global())
+        monitor.cancel()
+
+        let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
+        let resolved = probed ?? self.isMobileDataEnabled
+        if probed == nil {
+            DLog(String(format: "[Cellular] Refresh timed out after %.1fms — using cached value: %@", elapsedMs, resolved ? "enabled" : "disabled"))
+        } else {
+            DLog(String(format: "[Cellular] Refresh completed in %.1fms — cellular %@", elapsedMs, resolved ? "enabled" : "disabled"))
+        }
+
+        await MainActor.run {
+            self.isMobileDataEnabled = resolved
+        }
+        return resolved
     }
-    
+
     func getMerchantConfigQueryParams() -> [String: String] {
         var queryParams: [String: String] = [:]
         if !uid.isEmpty {
             queryParams["uid"] = uid
         }
         return queryParams
+    }
+}
+
+// Lock-backed one-shot flag used by `refreshIsMobileDataEnabled` to ensure exactly one
+// of the probe-success / timeout branches resumes the continuation.
+fileprivate final class CellularRefreshResumeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
     }
 }
 

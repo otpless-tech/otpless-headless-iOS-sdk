@@ -875,7 +875,6 @@ private extension Otpless {
     /// reachability (e.g. before the intent API, which gates `silentAuthEnabled` on this).
     @discardableResult
     internal func refreshIsMobileDataEnabled(timeout: TimeInterval = 0.3) async -> Bool {
-        let startedAt = Date()
         let monitor = NWPathMonitor(requiredInterfaceType: .cellular)
         let queue = DispatchQueue(label: "com.otpless.cellular.refresh")
         let resumeOnce = CellularRefreshResumeFlag()

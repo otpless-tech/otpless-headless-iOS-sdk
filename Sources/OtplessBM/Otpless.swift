@@ -879,7 +879,6 @@ private extension Otpless {
         let monitor = NWPathMonitor(requiredInterfaceType: .cellular)
         let queue = DispatchQueue(label: "com.otpless.cellular.refresh")
         let resumeOnce = CellularRefreshResumeFlag()
-
         let probed: Bool? = await withCheckedContinuation { (continuation: CheckedContinuation<Bool?, Never>) in
             monitor.pathUpdateHandler = { path in
                 guard resumeOnce.claim() else { return }
@@ -893,15 +892,7 @@ private extension Otpless {
             }
         }
         monitor.cancel()
-
-        let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
         let resolved = probed ?? self.isMobileDataEnabled
-        if probed == nil {
-            DLog(String(format: "[Cellular] Refresh timed out after %.1fms — using cached value: %@", elapsedMs, resolved ? "enabled" : "disabled"))
-        } else {
-            DLog(String(format: "[Cellular] Refresh completed in %.1fms — cellular %@", elapsedMs, resolved ? "enabled" : "disabled"))
-        }
-
         await MainActor.run {
             self.isMobileDataEnabled = resolved
         }

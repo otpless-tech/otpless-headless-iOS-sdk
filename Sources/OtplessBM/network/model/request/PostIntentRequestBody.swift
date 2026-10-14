@@ -31,6 +31,8 @@ struct PostIntentRequestBody: DictionaryConvertible {
     let asId: String?
     let isViSnaWhitelisted = true
     let isAirtelSnaWhitelisted = true
+    var keyId: String?
+    var assertion: String?
     
     init(
         channel: String,

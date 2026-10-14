@@ -26,7 +26,15 @@ internal class PostIntentUseCase {
         Otpless.shared.snaUseCase.stopPolling()
 
         flushExistingAuthTypeAndDeliveryChannel()
-        let requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+        var requestBody = getPostIntentRequestBody(otplessRequest, uiId: uiId, uid: uid)
+
+        if #available(iOS 14.0, *) {
+            let appAttest = AppAttestUseCase()
+            await appAttest.attest(nonce: state)
+            let canonical = "\(requestBody.channel)|\(requestBody.mobile ?? requestBody.email ?? "")|\(requestBody.identifierType)"
+            requestBody.keyId = appAttest.getKeyId()
+            requestBody.assertion = await appAttest.generateAssertion(nonce: state, canonicalPayload: canonical)
+        }
 
         log(message: "[Intent] Calling intent API — channel: \(requestBody.channel), identifierType: \(requestBody.identifierType), silentAuthEnabled: \(requestBody.silentAuthEnabled), triggerWebauthn: \(requestBody.triggerWebauthn), rsId: \(Otpless.shared.rsId.isEmpty ? "<none>" : Otpless.shared.rsId)", type: .INTENT)
 

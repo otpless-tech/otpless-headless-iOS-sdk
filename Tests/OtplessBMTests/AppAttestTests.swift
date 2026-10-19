@@ -447,3 +447,103 @@ final class AppAttestConfigGateTests: XCTestCase {
         XCTAssertEqual(redacted.count, 2)
     }
 }
+
+// MARK: - Request shape (what the backend actually receives)
+
+private final class StubURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var _lastRequest: URLRequest?
+    private static var _lastBody: Data?
+    private static var _responseJSON = "{}"
+
+    static var lastRequest: URLRequest? { lock.locked { _lastRequest } }
+    static var lastBody: Data? { lock.locked { _lastBody } }
+    static func reset(responseJSON: String) {
+        lock.locked { _lastRequest = nil; _lastBody = nil; _responseJSON = responseJSON }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        // URLProtocol receives the body as a stream, not as `httpBody`.
+        var body = Data()
+        if let stream = request.httpBodyStream {
+            stream.open()
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+            defer { buffer.deallocate(); stream.close() }
+            while stream.hasBytesAvailable {
+                let n = stream.read(buffer, maxLength: 4096)
+                if n <= 0 { break }
+                body.append(buffer, count: n)
+            }
+        } else if let direct = request.httpBody {
+            body = direct
+        }
+        let json = StubURLProtocol.lock.locked { () -> String in
+            StubURLProtocol._lastRequest = request
+            StubURLProtocol._lastBody = body
+            return StubURLProtocol._responseJSON
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                       headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+final class AppAttestRequestShapeTests: XCTestCase {
+
+    private func makeRepository() -> ApiRepository {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let manager = ApiManager(userAuthTimeout: 5, snaTimeout: 5, enableLogging: false,
+                                 session: URLSession(configuration: configuration))
+        return ApiRepository(apiManager: manager)
+    }
+
+    private func sentBody() throws -> [String: Any] {
+        let data = try XCTUnwrap(StubURLProtocol.lastBody, "no request reached the stub")
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    func testPostsToTheContractPathWithStateInTheUrl() async throws {
+        StubURLProtocol.reset(responseJSON: #"{"keyId":"k1","status":"SUCCESS"}"#)
+
+        let result = await makeRepository().postDeviceAttestation(state: "st-123", keyId: "k1", attestationObject: "QUJD")
+
+        guard case .success(let response) = result else { return XCTFail("expected success, got \(result)") }
+        XCTAssertEqual(response.status, "SUCCESS")
+        let request = try XCTUnwrap(StubURLProtocol.lastRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/v3/lp/user/device/attestation/st-123")
+    }
+
+    func testBodyCarriesKeyIdAndAttestationObject() async throws {
+        StubURLProtocol.reset(responseJSON: #"{"keyId":"k1","status":"SUCCESS"}"#)
+
+        _ = await makeRepository().postDeviceAttestation(state: "s", keyId: "key-abc", attestationObject: "QUJDREVG")
+
+        let body = try sentBody()
+        XCTAssertEqual(body["keyId"] as? String, "key-abc")
+        XCTAssertEqual(body["attestationObject"] as? String, "QUJDREVG")
+    }
+
+    /// Regression: the backend's state interceptor builds its AuthDTO from the POST body and
+    /// resolves the merchant app from `appId` (and `loginUri` / `packageName`). A bare
+    /// `{keyId, attestationObject}` body is rejected before it reaches the controller, so
+    /// these standard parameters must be present, exactly as for the intent request.
+    func testBodyKeepsTheStandardParamsTheServerNeedsToIdentifyTheApp() async throws {
+        StubURLProtocol.reset(responseJSON: #"{"keyId":"k1","status":"SUCCESS"}"#)
+
+        _ = await makeRepository().postDeviceAttestation(state: "s", keyId: "k", attestationObject: "QQ==")
+
+        let body = try sentBody()
+        for key in ["appId", "loginUri", "packageName"] {
+            XCTAssertNotNil(body[key], "POST body is missing `\(key)`; the server cannot resolve the app without it")
+        }
+    }
+}

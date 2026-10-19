@@ -18,6 +18,14 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// Test seam: lets a test supply an `ApiManager` built on a stubbed `URLSession`.
+    init(apiManager: ApiManager) {
+        self.apiManager = apiManager
+        if #available(iOS 12.0, *) {
+            self.otplessCellularNetwork = CellularConnectionManager()
+        }
+    }
+
     private func sendApiResponse(apiName: String, data: Data?, statusCode: Int, error: Error? = nil) {
         var responseDict: [String: Any] = ["apiName": apiName]
         
@@ -116,9 +124,11 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    /// Registers an App Attest key. The body is deliberately just `{keyId, attestationObject}`:
-    /// the server verifies the attestation against `state` as the challenge and reads the
-    /// merchant from the validated state, so none of the usual device/app parameters apply.
+    /// Registers an App Attest key. Like every other POST, the body keeps the standard
+    /// parameters (`appId`, `loginUri`, `packageName`, ...): the backend's state interceptor
+    /// builds its `AuthDTO` from the POST body and resolves the merchant app from `appId`, so
+    /// a bare `{keyId, attestationObject}` is rejected before it reaches the controller.
+    /// `state` is the attestation challenge.
     func postDeviceAttestation(
         state: String,
         keyId: String,
@@ -130,8 +140,7 @@ internal final class ApiRepository: @unchecked Sendable {
                 state: state,
                 path: ApiManager.POST_DEVICE_ATTESTATION_PATH,
                 method: "POST",
-                body: ["keyId": keyId, "attestationObject": attestationObject],
-                shoudlAppendBasicParams: false
+                body: ["keyId": keyId, "attestationObject": attestationObject]
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(AppAttestResponse.self, from: data))

@@ -116,6 +116,32 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// Registers an App Attest key. The body is deliberately just `{keyId, attestationObject}`:
+    /// the server verifies the attestation against `state` as the challenge and reads the
+    /// merchant from the validated state, so none of the usual device/app parameters apply.
+    func postDeviceAttestation(
+        state: String,
+        keyId: String,
+        attestationObject: String
+    ) async -> Result<AppAttestResponse, Error> {
+        let apiName = "postDeviceAttestation"
+        do {
+            let data = try await self.apiManager.performUserAuthRequest(
+                state: state,
+                path: ApiManager.POST_DEVICE_ATTESTATION_PATH,
+                method: "POST",
+                body: ["keyId": keyId, "attestationObject": attestationObject],
+                shoudlAppendBasicParams: false
+            )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
+            return try Result.success(JSONDecoder().decode(AppAttestResponse.self, from: data))
+        } catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
+            return Result.failure(error)
+        }
+    }
+
     func verifySSOCode(queryParams: [String: Any], state: String) async -> Result<TransactionStatusResponse, Error> {
         let apiName = "verifySSOCode"
         do {

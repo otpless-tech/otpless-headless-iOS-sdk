@@ -568,6 +568,20 @@ private extension Otpless {
         }
     }
     
+    /// Registers an App Attest key in the background when — and only when — the merchant
+    /// config enables it. Deliberately after `SDK_READY` and fire-and-forget: attestation can
+    /// never delay or fail the merchant's flow, and a config without the flag does nothing.
+    func startAppAttestIfEnabled(state: String) {
+        guard merchantConfig?.isAppAttestEnabled == true else { return }
+        guard #available(iOS 14.0, *) else {
+            DLog("[AppAttest] Enabled by config but App Attest needs iOS 14 — skipping")
+            return
+        }
+        Task(priority: .utility) {
+            await AppAttestUseCase.shared.attestIfNeeded(state: state)
+        }
+    }
+
     func fetchMerchantConfig() {
         guard let state = self.state else { return }
 
@@ -611,6 +625,7 @@ private extension Otpless {
                     OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
                     self.resolveInit(success: true)
+                    self.startAppAttestIfEnabled(state: state)
                 }
             }
 

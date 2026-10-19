@@ -243,6 +243,7 @@ internal enum OtplessBMEvents {
         private static let SNA_STATUS = "api_sna_status"
         private static let MFA_SNA_STATUS = "api_mfa_sna_status"
         private static let VERIFY_OTP = "api_verify_otp"
+        private static let DEVICE_ATTESTATION = "api_device_attestation"
         private static let UNKNOWN = "api_unknown"
         private static let TRANSACTION_STATUS_CHECK_STARTED = "transaction_status_check_started"
         private static let RESPONSE_ERROR = "api_response_error"
@@ -257,6 +258,7 @@ internal enum OtplessBMEvents {
             if p.contains(ApiManager.POST_INTENT_PATH.replacingOccurrences(of: "{state}", with: "")) { return INTENT }
             if p.contains(ApiManager.SSO_VERIFY_CODE_PATH.replacingOccurrences(of: "{state}", with: "")) { return VERIFY_CODE }
             if p.contains(ApiManager.OTP_VERIFICATION_PATH.replacingOccurrences(of: "{state}", with: "")) { return VERIFY_OTP }
+            if p.contains(ApiManager.POST_DEVICE_ATTESTATION_PATH.replacingOccurrences(of: "{state}", with: "")) { return DEVICE_ATTESTATION }
             return UNKNOWN
         }
 
@@ -566,6 +568,36 @@ internal enum OtplessBMEvents {
                 action: .RESPONSE,
                 data: ["message": message]
             )
+        }
+    }
+
+    // MARK: - AppAttest (mirrors Android LongClawEvents.PlayIntegrity: 5050 = integrity task failed)
+
+    enum AppAttest {
+        private static let SUCCESS = "app_attest_success"
+        private static let FAILURE = "app_attest_failure"
+        private static let SKIPPED = "app_attest_skipped"
+        private static let FAILURE_ERROR_CODE = "5050"
+
+        static func success() {
+            trackEvent(name: SUCCESS, type: .SDK, action: .RESPONSE, statusCode: 200)
+        }
+
+        /// `reason` is a short fixed token (e.g. `dcerror_3`, `backend_rejected`), never a
+        /// message from Apple or the server, and never the key id or attestation object.
+        static func failure(reason: String) {
+            trackEvent(
+                name: FAILURE,
+                type: .SDK,
+                action: .RESPONSE,
+                statusCode: 500,
+                data: ["reason": reason],
+                errorCode: FAILURE_ERROR_CODE
+            )
+        }
+
+        static func skipped(reason: String) {
+            trackEvent(name: SKIPPED, type: .SDK, action: .RESPONSE, data: ["reason": reason])
         }
     }
 }

@@ -1,3 +1,13 @@
+## Unreleased
+### Feature
+- Apple **App Attest** registration (iOS 14+), controlled by the merchant config. When the config API enables it for your app, the SDK registers a hardware-backed App Attest key with OTPLESS once per install, in the background and after `SDK_READY` — it never delays, blocks or fails an authentication, and any failure is reported as telemetry only. The server verifies the attestation against the transaction `state` as the challenge (`POST /v3/lp/user/device/attestation/{state}`). Nothing changes for apps whose config does not enable it, and no public API was added or changed.
+- Reinstall-safe: a key id left in the Keychain by a previous install is detected (the Keychain survives uninstall, App Attest keys do not) and re-attested. Failed attempts back off (30 s doubling to 1 h) so a broken backend or unsupported device does not cost an Apple round trip on every init.
+- The attestation object is redacted from the SDK's API request logging.
+
+### Notes
+- **Host-app requirement:** add the `com.apple.developer.devicecheck.appattest-environment` entitlement (`development` / `production`) to your app target. The SDK cannot add it; without it key generation fails and attestation is skipped silently. Unsupported devices and the simulator are skipped cleanly.
+- Per-request assertions are not part of this change; they need a server contract first.
+
 ## 3.0.1 (17th September 2026)
 ### Feature
 - Added `setBuildPlatform(_:)` on `Otpless` so cross-platform wrappers (Flutter, React Native) can attribute telemetry to the framework they run under — mirrors Android's `OtplessSDK.buildPlatform`. The device event's platform field becomes `otpless-headless(<platform>)`; it defaults to `otpless-headless(ios)`, so behaviour for native integrations is unchanged. Additive and non-breaking — no existing API, request body or query parameter changed.

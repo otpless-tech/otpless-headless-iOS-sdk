@@ -146,18 +146,41 @@ internal struct AppAttestTelemetry: Sendable {
     )
 }
 
-// MARK: - Assertion headers
+// MARK: - Assertion in the request body
 
-/// Headers that carry a per-request assertion. They are only ever added when attestation is
-/// enabled for the merchant, so a merchant without it sees no change on the wire.
+/// The `appAttestInfo` member that carries a per-request assertion in the intent body. It is
+/// only ever added when attestation is enabled for the merchant, so a merchant without it sends
+/// exactly the body it sent before.
 ///
-/// `clientDataHash = SHA256( UTF8(challenge) || the exact request body bytes )`. The
-/// assertion cannot live inside the body it signs, which is why it travels in headers.
-internal enum AppAttestHeader {
-    static let status = "X-Otpless-Attest-Status"
-    static let keyId = "X-Otpless-Attest-Key-Id"
-    static let assertion = "X-Otpless-Attest-Assertion"
-    static let challenge = "X-Otpless-Attest-Challenge"
+///     "appAttestInfo": { "status": "ok", "keyId": "...", "assertion": "...", "challenge": "..." }
+///
+/// `status` is `ok`, or the reason no assertion was produced (`unsupported`, `no_key`,
+/// `invalid_key`, `timeout`, `error`, `dcerror_N`); the other three appear only with `ok`.
+internal enum AppAttestInfo {
+    static let bodyKey = "appAttestInfo"
+    static let status = "status"
+    static let keyId = "keyId"
+    static let assertion = "assertion"
+    static let challenge = "challenge"
+
+    /// Version tag of the canonical-string format below. Bump it if the field list changes.
+    static let hashVersion = "v1"
+
+    /// The body fields the assertion is bound to, in this order. Together they pin the request
+    /// to one app, one session and one OTP destination, so a captured assertion cannot be
+    /// replayed to send an OTP somewhere else.
+    ///
+    /// Deliberately NOT included: `loginUri` and `packageName` (the backend's state interceptor
+    /// rewrites them before anything else sees them, so the two sides would disagree), and
+    /// everything that is free-form (`deviceInfo`, `metadata`, ...).
+    static let signedFields = ["appId", "tsId", "channel", "identifierType", "value"]
+
+    /// `clientDataHash = SHA256( UTF8( v1|challenge|appId|tsId|channel|identifierType|value ) )`.
+    /// A missing field is an empty string. `value` is last on purpose: it is the only free-form
+    /// member, so a `|` inside it cannot shift the fields in front of it.
+    static func canonicalString(challenge: String, fields: [String: String]) -> String {
+        ([hashVersion, challenge] + signedFields.map { fields[$0] ?? "" }).joined(separator: "|")
+    }
 }
 
 private struct AssertionTimeout: Error {}
@@ -268,12 +291,12 @@ internal actor AppAttestUseCase {
         return outcome
     }
 
-    /// Headers proving that a request whose exact body bytes are `body` comes from the app
-    /// install that registered the key. Never throws and never blocks the request for long:
-    /// if no assertion can be produced the status header says why, and the caller sends the
-    /// request anyway (fail open).
-    func assertionHeaders(forBody body: Data, challenge: String) async -> [String: String] {
-        func unavailable(_ reason: String) -> [String: String] { [AppAttestHeader.status: reason] }
+    /// The `appAttestInfo` content for a request whose body has these string fields: proof that
+    /// the request comes from the app install that registered the key. Never throws and never
+    /// blocks the request for long; if no assertion can be produced, `status` says why and the
+    /// caller sends the request anyway (fail open).
+    func assertionInfo(forFields fields: [String: String], challenge: String) async -> [String: String] {
+        func unavailable(_ reason: String) -> [String: String] { [AppAttestInfo.status: reason] }
 
         guard platform.isSupported else {
             telemetry.assertionSkipped("unsupported")
@@ -285,17 +308,18 @@ internal actor AppAttestUseCase {
             return unavailable("no_key")
         }
 
-        let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8) + body))
+        let canonical = AppAttestInfo.canonicalString(challenge: challenge, fields: fields)
+        let clientDataHash = Data(SHA256.hash(data: Data(canonical.utf8)))
         let platform = self.platform
         do {
             let assertion = try await withTimeout(seconds: assertionTimeout) {
                 try await platform.generateAssertion(keyId, clientDataHash: clientDataHash)
             }
             return [
-                AppAttestHeader.status: "ok",
-                AppAttestHeader.keyId: keyId,
-                AppAttestHeader.assertion: assertion.base64EncodedString(),
-                AppAttestHeader.challenge: challenge
+                AppAttestInfo.status: "ok",
+                AppAttestInfo.keyId: keyId,
+                AppAttestInfo.assertion: assertion.base64EncodedString(),
+                AppAttestInfo.challenge: challenge
             ]
         } catch is AssertionTimeout {
             telemetry.assertionFailure("timeout")

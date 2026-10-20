@@ -102,21 +102,21 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    /// The assertion signer for `state`, or nil when attestation is not enabled for this
-    /// merchant (so the request is byte-for-byte what it was before attestation existed).
-    /// The challenge is `state` for now: the same value the key was attested with. It is a
-    /// placeholder for a one-time server-issued challenge, which does not exist yet.
-    static func defaultAppAttestSigner(state: String) -> (@Sendable (Data) async -> [String: String])? {
+    /// The body signer for `state`, or nil when attestation is not enabled for this merchant
+    /// (so the request is byte-for-byte what it was before attestation existed). The challenge
+    /// is `state` for now: the value the key was attested with, which the server already has
+    /// from the URL. It is a placeholder for a one-time server-issued challenge.
+    static func defaultAppAttestSigner(state: String) -> ApiManager.BodySigner? {
         guard Otpless.shared.isAppAttestRequested, #available(iOS 14.0, *) else { return nil }
-        return { bodyBytes in
-            await AppAttestUseCase.shared.assertionHeaders(forBody: bodyBytes, challenge: state)
+        return { fields in
+            [AppAttestInfo.bodyKey: await AppAttestUseCase.shared.assertionInfo(forFields: fields, challenge: state)]
         }
     }
 
     func postIntent(
         state: String,
         body: PostIntentRequestBody,
-        requestSigner: (@Sendable (Data) async -> [String: String])? = nil
+        bodySigner: ApiManager.BodySigner? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
         do {
@@ -125,7 +125,7 @@ internal final class ApiRepository: @unchecked Sendable {
                 path: ApiManager.POST_INTENT_PATH,
                 method: "POST",
                 body: body.toDict(),
-                requestSigner: requestSigner ?? Self.defaultAppAttestSigner(state: state)
+                bodySigner: bodySigner ?? Self.defaultAppAttestSigner(state: state)
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(IntentResponse.self, from: data))

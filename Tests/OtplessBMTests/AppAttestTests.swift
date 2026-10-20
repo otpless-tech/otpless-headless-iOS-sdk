@@ -575,7 +575,7 @@ final class AppAttestRequestShapeTests: XCTestCase {
 }
 
 
-// MARK: - Assertion headers (ENG-521)
+// MARK: - Assertion in the body (ENG-521)
 
 @available(iOS 14.0, *)
 final class AppAttestAssertionTests: XCTestCase {
@@ -583,6 +583,12 @@ final class AppAttestAssertionTests: XCTestCase {
     private var platform: FakePlatform!
     private var store: FakeStore!
     private var log: TelemetryLog!
+
+    /// The body fields the server will read, as the SDK sends them for a phone intent.
+    private let fields: [String: String] = [
+        "appId": "APP1", "tsId": "TS1", "channel": "PHONE", "identifierType": "MOBILE", "value": "919999999999",
+        "loginUri": "otpless.app1://otpless", "packageName": "com.example", "uid": "U", "deviceInfo": "{...}"
+    ]
 
     override func setUp() {
         super.setUp()
@@ -596,46 +602,80 @@ final class AppAttestAssertionTests: XCTestCase {
                          telemetry: log.telemetry, assertionTimeout: timeout)
     }
 
-    func testRegisteredKeyProducesTheFourHeaders() async {
+    private func signedHash(_ fields: [String: String], challenge: String = "ch") async -> Data? {
+        platform = FakePlatform()
+        _ = await makeUseCase().assertionInfo(forFields: fields, challenge: challenge)
+        return platform.assertionCalls.first?.hash
+    }
+
+    // MARK: The info object
+
+    func testRegisteredKeyProducesTheFourMembers() async {
         platform.configureAssertion(output: Data("sig".utf8))
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data("{}".utf8), challenge: "ch-1")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "ch-1")
 
-        XCTAssertEqual(h[AppAttestHeader.status], "ok")
-        XCTAssertEqual(h[AppAttestHeader.keyId], "registered-key")
-        XCTAssertEqual(h[AppAttestHeader.assertion], Data("sig".utf8).base64EncodedString())
-        XCTAssertEqual(h[AppAttestHeader.challenge], "ch-1")
-        XCTAssertEqual(h.count, 4)
+        XCTAssertEqual(info[AppAttestInfo.status], "ok")
+        XCTAssertEqual(info[AppAttestInfo.keyId], "registered-key")
+        XCTAssertEqual(info[AppAttestInfo.assertion], Data("sig".utf8).base64EncodedString())
+        XCTAssertEqual(info[AppAttestInfo.challenge], "ch-1")
+        XCTAssertEqual(info.count, 4)
         XCTAssertTrue(log.events.isEmpty, "the happy path must not generate telemetry on every intent")
     }
 
-    /// The server recomputes this from the raw request bytes, so the formula is the contract.
-    func testClientDataHashIsSha256OfChallengeThenBodyBytes() async {
-        let body = Data(#"{"a":1,"b":"two"}"#.utf8)
+    // MARK: What is hashed (the contract with the backend)
 
-        _ = await makeUseCase().assertionHeaders(forBody: body, challenge: "ch-xyz")
+    /// Pinned literally: the backend implements exactly this string.
+    func testCanonicalStringFormat() {
+        XCTAssertEqual(AppAttestInfo.canonicalString(challenge: "ch", fields: fields),
+                       "v1|ch|APP1|TS1|PHONE|MOBILE|919999999999")
+    }
 
-        XCTAssertEqual(platform.assertionCalls.count, 1)
+    func testMissingFieldsBecomeEmptyStrings() {
+        XCTAssertEqual(AppAttestInfo.canonicalString(challenge: "ch", fields: ["appId": "A"]),
+                       "v1|ch|A||||")
+    }
+
+    func testClientDataHashIsSha256OfTheCanonicalString() async {
+        let h = await signedHash(fields, challenge: "ch-xyz")
+
+        let expected = Data(SHA256.hash(data: Data("v1|ch-xyz|APP1|TS1|PHONE|MOBILE|919999999999".utf8)))
+        XCTAssertEqual(h, expected)
         XCTAssertEqual(platform.assertionCalls.first?.keyId, "registered-key")
-        XCTAssertEqual(platform.assertionCalls.first?.hash, Data(SHA256.hash(data: Data("ch-xyz".utf8) + body)))
     }
 
-    func testHashDependsOnBothBodyAndChallenge() async {
-        let useCase = makeUseCase()
-        _ = await useCase.assertionHeaders(forBody: Data("A".utf8), challenge: "c")
-        _ = await useCase.assertionHeaders(forBody: Data("B".utf8), challenge: "c")
-        _ = await useCase.assertionHeaders(forBody: Data("A".utf8), challenge: "d")
-
-        let hashes = platform.assertionCalls.map { $0.hash }
-        XCTAssertEqual(Set(hashes).count, 3, "changing the body or the challenge must change what is signed")
+    /// Each signed field must matter: changing the destination, the app, the session or the
+    /// challenge has to change what is signed, or an assertion could be reused.
+    func testEverySignedFieldAndTheChallengeChangeTheHash() async {
+        let base = await signedHash(fields)
+        for name in AppAttestInfo.signedFields {
+            var changed = fields; changed[name] = (changed[name] ?? "") + "x"
+            let h = await signedHash(changed)
+            XCTAssertNotEqual(h, base, "changing `\(name)` must change the signed hash")
+        }
+        let otherChallenge = await signedHash(fields, challenge: "other")
+        XCTAssertNotEqual(otherChallenge, base, "changing the challenge must change the signed hash")
     }
+
+    /// The flip side: fields the backend rewrites or that are free-form must NOT matter, or the
+    /// two sides would disagree and every assertion would fail verification.
+    func testFieldsOutsideTheListDoNotChangeTheHash() async {
+        let base = await signedHash(fields)
+        for name in ["loginUri", "packageName", "uid", "deviceInfo", "metadata", "somethingNew"] {
+            var changed = fields; changed[name] = "different"
+            let h = await signedHash(changed)
+            XCTAssertEqual(h, base, "`\(name)` is not signed and must not affect the hash")
+        }
+    }
+
+    // MARK: Failure modes
 
     func testUnsupportedDeviceReportsStatusOnly() async {
         platform.configure(supported: false)
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h, [AppAttestHeader.status: "unsupported"])
+        XCTAssertEqual(info, [AppAttestInfo.status: "unsupported"])
         XCTAssertTrue(platform.assertionCalls.isEmpty)
         XCTAssertEqual(log.events, ["assertionSkipped:unsupported"])
     }
@@ -643,9 +683,9 @@ final class AppAttestAssertionTests: XCTestCase {
     func testNoRegisteredKeyReportsNoKey() async {
         store = FakeStore()
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h, [AppAttestHeader.status: "no_key"])
+        XCTAssertEqual(info, [AppAttestInfo.status: "no_key"])
         XCTAssertTrue(platform.assertionCalls.isEmpty, "must not ask Apple to sign with a key we never registered")
         XCTAssertEqual(log.events, ["assertionSkipped:no_key"])
     }
@@ -653,9 +693,9 @@ final class AppAttestAssertionTests: XCTestCase {
     func testStaleKeyFromAPreviousInstallIsNotUsed() async {
         store = FakeStore(keyId: "from-previous-install", marker: false)
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h[AppAttestHeader.status], "no_key")
+        XCTAssertEqual(info[AppAttestInfo.status], "no_key")
         XCTAssertTrue(platform.assertionCalls.isEmpty)
         XCTAssertNil(store.keyId(), "the stale key must be discarded")
     }
@@ -663,9 +703,9 @@ final class AppAttestAssertionTests: XCTestCase {
     func testInvalidKeyClearsTheStoredKeySoTheNextInitReattests() async {
         platform.configureAssertion(error: DCError(.invalidKey))
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h, [AppAttestHeader.status: "invalid_key"])
+        XCTAssertEqual(info, [AppAttestInfo.status: "invalid_key"])
         XCTAssertNil(store.keyId(), "a key Apple no longer knows must not be kept")
         XCTAssertEqual(log.events, ["assertionFailure:invalid_key"])
     }
@@ -673,19 +713,19 @@ final class AppAttestAssertionTests: XCTestCase {
     func testOtherAppleErrorsKeepTheKeyAndReportACode() async {
         platform.configureAssertion(error: DCError(.serverUnavailable))
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h[AppAttestHeader.status], "dcerror_\(DCError.Code.serverUnavailable.rawValue)")
+        XCTAssertEqual(info[AppAttestInfo.status], "dcerror_\(DCError.Code.serverUnavailable.rawValue)")
         XCTAssertEqual(store.keyId(), "registered-key", "a transient Apple error must not throw the key away")
-        XCTAssertNil(h[AppAttestHeader.assertion])
+        XCTAssertNil(info[AppAttestInfo.assertion])
     }
 
     func testUnknownErrorReportsGenericReason() async {
         platform.configureAssertion(error: BoomError())
 
-        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase().assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h, [AppAttestHeader.status: "error"])
+        XCTAssertEqual(info, [AppAttestInfo.status: "error"])
         XCTAssertEqual(store.keyId(), "registered-key")
     }
 
@@ -694,9 +734,9 @@ final class AppAttestAssertionTests: XCTestCase {
         platform.configureAssertion(delaySeconds: 2.0)
         let started = Date()
 
-        let h = await makeUseCase(timeout: 0.05).assertionHeaders(forBody: Data(), challenge: "c")
+        let info = await makeUseCase(timeout: 0.05).assertionInfo(forFields: fields, challenge: "c")
 
-        XCTAssertEqual(h, [AppAttestHeader.status: "timeout"])
+        XCTAssertEqual(info, [AppAttestInfo.status: "timeout"])
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "must return at the budget, not wait for Apple")
         XCTAssertEqual(store.keyId(), "registered-key")
         XCTAssertEqual(log.events, ["assertionFailure:timeout"])
@@ -736,56 +776,83 @@ final class AppAttestIntentRequestTests: XCTestCase {
         )
     }
 
-    private func headers() throws -> [String: String] {
-        try XCTUnwrap(StubURLProtocol.lastRequest, "no request reached the stub").allHTTPHeaderFields ?? [:]
-    }
-
-    /// The point of the whole feature: what Apple signed must be exactly what the server will
-    /// hash, i.e. SHA256(challenge || the bytes that actually went over the wire).
-    func testSignedHashMatchesTheExactBytesThatWereSent() async throws {
-        StubURLProtocol.reset(responseJSON: "{}")
+    private func realSigner(state: String) -> ApiManager.BodySigner {
         let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
                                        telemetry: TelemetryLog().telemetry)
-
-        _ = await makeRepository().postIntent(state: "st-123", body: makeBody(), requestSigner: { bytes in
-            await useCase.assertionHeaders(forBody: bytes, challenge: "st-123")
-        })
-
-        let sent = try XCTUnwrap(StubURLProtocol.lastBody)
-        XCTAssertFalse(sent.isEmpty)
-        let signed = try XCTUnwrap(platform.assertionCalls.first?.hash)
-        XCTAssertEqual(signed, Data(SHA256.hash(data: Data("st-123".utf8) + sent)),
-                       "the signed hash must be over the exact body bytes on the wire")
+        return { fields in [AppAttestInfo.bodyKey: await useCase.assertionInfo(forFields: fields, challenge: state)] }
     }
 
-    func testIntentCarriesTheHeaders() async throws {
+    private func sentJSON() throws -> [String: Any] {
+        let data = try XCTUnwrap(StubURLProtocol.lastBody, "no request reached the stub")
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    /// What the server will do: parse the body it received, rebuild the canonical string from the
+    /// fields it read, hash it. That must equal what Apple was asked to sign.
+    func testSignedHashMatchesWhatTheServerRebuildsFromTheReceivedBody() async throws {
         StubURLProtocol.reset(responseJSON: "{}")
-        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
-                                       telemetry: TelemetryLog().telemetry)
 
-        _ = await makeRepository().postIntent(state: "st-9", body: makeBody(), requestSigner: { bytes in
-            await useCase.assertionHeaders(forBody: bytes, challenge: "st-9")
-        })
+        _ = await makeRepository().postIntent(state: "st-123", body: makeBody(), bodySigner: realSigner(state: "st-123"))
 
-        let h = try headers()
-        XCTAssertEqual(h[AppAttestHeader.status], "ok")
-        XCTAssertEqual(h[AppAttestHeader.keyId], "registered-key")
-        XCTAssertEqual(h[AppAttestHeader.assertion], Data("the-assertion".utf8).base64EncodedString())
-        XCTAssertEqual(h[AppAttestHeader.challenge], "st-9")
+        let json = try sentJSON()
+        let info = try XCTUnwrap(json[AppAttestInfo.bodyKey] as? [String: String])
+        let serverFields = json.compactMapValues { $0 as? String }
+        let canonical = AppAttestInfo.canonicalString(challenge: info[AppAttestInfo.challenge] ?? "", fields: serverFields)
+        XCTAssertEqual(try XCTUnwrap(platform.assertionCalls.first?.hash),
+                       Data(SHA256.hash(data: Data(canonical.utf8))),
+                       "the signed hash must equal SHA256 of the string rebuilt from the received body")
+        XCTAssertTrue(canonical.hasPrefix("v1|st-123|"), canonical)
+        XCTAssertTrue(canonical.hasSuffix("|PHONE|MOBILE|919999999999"), canonical)
+    }
+
+    func testIntentBodyCarriesTheInfoObject() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+
+        _ = await makeRepository().postIntent(state: "st-9", body: makeBody(), bodySigner: realSigner(state: "st-9"))
+
+        let json = try sentJSON()
+        let info = try XCTUnwrap(json[AppAttestInfo.bodyKey] as? [String: String])
+        XCTAssertEqual(info[AppAttestInfo.status], "ok")
+        XCTAssertEqual(info[AppAttestInfo.keyId], "registered-key")
+        XCTAssertEqual(info[AppAttestInfo.assertion], Data("the-assertion".utf8).base64EncodedString())
+        XCTAssertEqual(info[AppAttestInfo.challenge], "st-9")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/v3/lp/user/transaction/intent/st-9")
     }
 
-    /// Merchants without attestation must see an unchanged request. `merchantConfig` is nil in
-    /// a unit test, which is exactly "attestation not enabled".
-    func testNoAttestationHeadersWhenAttestationIsNotEnabled() async throws {
+    /// No headers any more: the whole thing lives in the body.
+    func testNothingIsSentInHeaders() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+
+        _ = await makeRepository().postIntent(state: "st-9", body: makeBody(), bodySigner: realSigner(state: "st-9"))
+
+        let headers = try XCTUnwrap(StubURLProtocol.lastRequest).allHTTPHeaderFields ?? [:]
+        XCTAssertTrue(headers.keys.allSatisfy { !$0.lowercased().contains("attest") }, "\(headers)")
+    }
+
+    /// Adding the object must not disturb any existing member of the intent body.
+    func testExistingBodyMembersAreUntouched() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+        _ = await makeRepository().postIntent(state: "st-1", body: makeBody())
+        let without = try sentJSON()
+
+        StubURLProtocol.reset(responseJSON: "{}")
+        _ = await makeRepository().postIntent(state: "st-1", body: makeBody(), bodySigner: realSigner(state: "st-1"))
+        let with = try sentJSON()
+
+        XCTAssertEqual(Set(with.keys), Set(without.keys).union([AppAttestInfo.bodyKey]))
+        for (key, value) in without {
+            XCTAssertEqual(String(describing: with[key] ?? "<missing>"), String(describing: value), "`\(key)` changed")
+        }
+    }
+
+    /// Merchants without attestation must send the same body as before. `merchantConfig` is nil
+    /// in a unit test, which is exactly "attestation not enabled".
+    func testNoInfoObjectWhenAttestationIsNotEnabled() async throws {
         StubURLProtocol.reset(responseJSON: "{}")
 
         _ = await makeRepository().postIntent(state: "st-1", body: makeBody())
 
-        let h = try headers()
-        for name in [AppAttestHeader.status, AppAttestHeader.keyId, AppAttestHeader.assertion, AppAttestHeader.challenge] {
-            XCTAssertNil(h[name], "\(name) must not be sent when attestation is not enabled")
-        }
+        XCTAssertNil(try sentJSON()[AppAttestInfo.bodyKey])
         XCTAssertNil(ApiRepository.defaultAppAttestSigner(state: "st-1"))
     }
 
@@ -793,17 +860,11 @@ final class AppAttestIntentRequestTests: XCTestCase {
     func testIntentIsStillSentWhenNoAssertionCanBeProduced() async throws {
         StubURLProtocol.reset(responseJSON: "{}")
         store = FakeStore()                                        // nothing registered yet
-        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
-                                       telemetry: TelemetryLog().telemetry)
 
-        _ = await makeRepository().postIntent(state: "st-2", body: makeBody(), requestSigner: { bytes in
-            await useCase.assertionHeaders(forBody: bytes, challenge: "st-2")
-        })
+        _ = await makeRepository().postIntent(state: "st-2", body: makeBody(), bodySigner: realSigner(state: "st-2"))
 
         XCTAssertNotNil(StubURLProtocol.lastRequest, "the intent must still go out")
-        let h = try headers()
-        XCTAssertEqual(h[AppAttestHeader.status], "no_key")
-        XCTAssertNil(h[AppAttestHeader.assertion])
-        XCTAssertNil(h[AppAttestHeader.keyId])
+        let info = try XCTUnwrap(try sentJSON()[AppAttestInfo.bodyKey] as? [String: String])
+        XCTAssertEqual(info, [AppAttestInfo.status: "no_key"])
     }
 }

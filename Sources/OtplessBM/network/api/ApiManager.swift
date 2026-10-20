@@ -18,6 +18,10 @@ final class ApiManager: Sendable {
         return Otpless.shared.environment.userAuthBaseURL
     }
     
+    /// Adds members to a POST body that bind to some of its own fields. It receives only the
+    /// string-valued members of the final body and returns extra top-level members to add.
+    typealias BodySigner = @Sendable ([String: String]) async -> [String: [String: String]]
+
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"
     static let POST_INTENT_PATH = "/v3/lp/user/transaction/intent/{state}"
@@ -50,7 +54,7 @@ final class ApiManager: Sendable {
         body: [String: Any]? = nil,
         shoudlAppendBasicParams: Bool = true,
         queryParameters: [String: Any]? = nil,
-        requestSigner: (@Sendable (Data) async -> [String: String])? = nil
+        bodySigner: BodySigner? = nil
     ) async throws -> Data {
         var newPath = path
         if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
@@ -61,17 +65,19 @@ final class ApiManager: Sendable {
         request.timeoutInterval = userAuthTimeout
         
         if method.uppercased() == "POST" {
-            let newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
-            request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            var newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
 
-            // Sign the bytes exactly as they will be sent. Never re-serialise after this point:
-            // the server hashes the raw body it receives, so the two must match byte for byte.
-            if let requestSigner, let bodyBytes = request.httpBody {
-                for (name, value) in await requestSigner(bodyBytes) {
-                    request.setValue(value, forHTTPHeaderField: name)
+            // The signer reads the finished body and returns members to add. Those are added only
+            // after it has read, so a member it adds can never be part of what it signed.
+            if let bodySigner {
+                let stringFields = newBody.compactMapValues { $0 as? String }
+                for (name, member) in await bodySigner(stringFields) {
+                    newBody[name] = member
                 }
             }
+
+            request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
         var xRequestId: String? = nil

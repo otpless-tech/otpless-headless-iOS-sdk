@@ -29,6 +29,7 @@ internal protocol AppAttestPlatform: Sendable {
     var isSupported: Bool { get }
     func generateKey() async throws -> String
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data
+    func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data
 }
 
 @available(iOS 14.0, *)
@@ -41,6 +42,10 @@ internal struct LiveAppAttestPlatform: AppAttestPlatform {
 
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data {
         try await DCAppAttestService.shared.attestKey(keyId, clientDataHash: clientDataHash)
+    }
+
+    func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data {
+        try await DCAppAttestService.shared.generateAssertion(keyId, clientDataHash: clientDataHash)
     }
 }
 
@@ -129,12 +134,69 @@ internal struct AppAttestTelemetry: Sendable {
     var success: @Sendable () -> Void
     var failure: @Sendable (String) -> Void
     var skipped: @Sendable (String) -> Void
+    var assertionFailure: @Sendable (String) -> Void = { _ in }
+    var assertionSkipped: @Sendable (String) -> Void = { _ in }
 
     static let live = AppAttestTelemetry(
         success: { OtplessBMEvents.AppAttest.success() },
         failure: { OtplessBMEvents.AppAttest.failure(reason: $0) },
-        skipped: { OtplessBMEvents.AppAttest.skipped(reason: $0) }
+        skipped: { OtplessBMEvents.AppAttest.skipped(reason: $0) },
+        assertionFailure: { OtplessBMEvents.AppAttest.assertionFailure(reason: $0) },
+        assertionSkipped: { OtplessBMEvents.AppAttest.assertionSkipped(reason: $0) }
     )
+}
+
+// MARK: - Assertion headers
+
+/// Headers that carry a per-request assertion. They are only ever added when attestation is
+/// enabled for the merchant, so a merchant without it sees no change on the wire.
+///
+/// `clientDataHash = SHA256( UTF8(challenge) || the exact request body bytes )`. The
+/// assertion cannot live inside the body it signs, which is why it travels in headers.
+internal enum AppAttestHeader {
+    static let status = "X-Otpless-Attest-Status"
+    static let keyId = "X-Otpless-Attest-Key-Id"
+    static let assertion = "X-Otpless-Attest-Assertion"
+    static let challenge = "X-Otpless-Attest-Challenge"
+}
+
+private struct AssertionTimeout: Error {}
+
+/// Lets exactly one of two racing tasks resume a continuation.
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
+    }
+}
+
+/// Races `operation` against a timer. Unlike a task group this returns as soon as the timer
+/// fires even if `operation` never finishes: Apple's call is not cancellable, and a hung
+/// assertion must not hang the merchant's request.
+private func withTimeout<T: Sendable>(
+    seconds: TimeInterval,
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+        let once = ResumeOnce()
+        Task {
+            do {
+                let value = try await operation()
+                if once.claim() { continuation.resume(returning: value) }
+            } catch {
+                if once.claim() { continuation.resume(throwing: error) }
+            }
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+            if once.claim() { continuation.resume(throwing: AssertionTimeout()) }
+        }
+    }
 }
 
 // MARK: - Use case
@@ -163,6 +225,7 @@ internal actor AppAttestUseCase {
     private let store: AppAttestStore
     private let telemetry: AppAttestTelemetry
     private let now: @Sendable () -> Date
+    private let assertionTimeout: TimeInterval
 
     private var inFlight: Task<Outcome, Never>?
     private var consecutiveFailures = 0
@@ -173,13 +236,15 @@ internal actor AppAttestUseCase {
         backend: AppAttestBackend = LiveAppAttestBackend(),
         store: AppAttestStore = LiveAppAttestStore(),
         telemetry: AppAttestTelemetry = .live,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        assertionTimeout: TimeInterval = 1.0
     ) {
         self.platform = platform
         self.backend = backend
         self.store = store
         self.telemetry = telemetry
         self.now = now
+        self.assertionTimeout = assertionTimeout
     }
 
     /// Whether a confirmed key is stored for this install. Intended for the future
@@ -201,6 +266,50 @@ internal actor AppAttestUseCase {
         let outcome = await task.value
         inFlight = nil
         return outcome
+    }
+
+    /// Headers proving that a request whose exact body bytes are `body` comes from the app
+    /// install that registered the key. Never throws and never blocks the request for long:
+    /// if no assertion can be produced the status header says why, and the caller sends the
+    /// request anyway (fail open).
+    func assertionHeaders(forBody body: Data, challenge: String) async -> [String: String] {
+        func unavailable(_ reason: String) -> [String: String] { [AppAttestHeader.status: reason] }
+
+        guard platform.isSupported else {
+            telemetry.assertionSkipped("unsupported")
+            return unavailable("unsupported")
+        }
+        discardStaleKeyIfNeeded()
+        guard let keyId = store.keyId() else {
+            telemetry.assertionSkipped("no_key")
+            return unavailable("no_key")
+        }
+
+        let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8) + body))
+        let platform = self.platform
+        do {
+            let assertion = try await withTimeout(seconds: assertionTimeout) {
+                try await platform.generateAssertion(keyId, clientDataHash: clientDataHash)
+            }
+            return [
+                AppAttestHeader.status: "ok",
+                AppAttestHeader.keyId: keyId,
+                AppAttestHeader.assertion: assertion.base64EncodedString(),
+                AppAttestHeader.challenge: challenge
+            ]
+        } catch is AssertionTimeout {
+            telemetry.assertionFailure("timeout")
+            return unavailable("timeout")
+        } catch let error as DCError where error.code == .invalidKey {
+            // The key no longer exists on this device. Forget it so the next init re-attests.
+            store.clearKeyId()
+            telemetry.assertionFailure("invalid_key")
+            return unavailable("invalid_key")
+        } catch {
+            let reason = Self.reason(for: error)
+            telemetry.assertionFailure(reason)
+            return unavailable(reason)
+        }
     }
 
     // MARK: - Internals

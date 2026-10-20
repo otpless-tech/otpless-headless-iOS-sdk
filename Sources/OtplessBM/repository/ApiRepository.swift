@@ -102,9 +102,21 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// The assertion signer for `state`, or nil when attestation is not enabled for this
+    /// merchant (so the request is byte-for-byte what it was before attestation existed).
+    /// The challenge is `state` for now: the same value the key was attested with. It is a
+    /// placeholder for a one-time server-issued challenge, which does not exist yet.
+    static func defaultAppAttestSigner(state: String) -> (@Sendable (Data) async -> [String: String])? {
+        guard Otpless.shared.isAppAttestRequested, #available(iOS 14.0, *) else { return nil }
+        return { bodyBytes in
+            await AppAttestUseCase.shared.assertionHeaders(forBody: bodyBytes, challenge: state)
+        }
+    }
+
     func postIntent(
         state: String,
-        body: PostIntentRequestBody
+        body: PostIntentRequestBody,
+        requestSigner: (@Sendable (Data) async -> [String: String])? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
         do {
@@ -112,7 +124,8 @@ internal final class ApiRepository: @unchecked Sendable {
                 state: state,
                 path: ApiManager.POST_INTENT_PATH,
                 method: "POST",
-                body: body.toDict()
+                body: body.toDict(),
+                requestSigner: requestSigner ?? Self.defaultAppAttestSigner(state: state)
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(IntentResponse.self, from: data))

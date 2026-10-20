@@ -8,6 +8,7 @@
 //
 
 import CryptoKit
+import DeviceCheck
 import XCTest
 @testable import OtplessBM
 
@@ -30,6 +31,29 @@ private final class FakePlatform: AppAttestPlatform, @unchecked Sendable {
     private var _generateError: Error?
     private var _attestError: Error?
     private var _suspendInGenerate = false
+    private var _assertionCalls: [(keyId: String, hash: Data)] = []
+    private var _assertionError: Error?
+    private var _assertionDelayNs: UInt64 = 0
+    private var _assertionOutput = Data("assertion-bytes".utf8)
+
+    var assertionCalls: [(keyId: String, hash: Data)] { lock.locked { _assertionCalls } }
+    func configureAssertion(error: Error? = nil, delaySeconds: Double = 0, output: Data? = nil) {
+        lock.locked {
+            _assertionError = error
+            _assertionDelayNs = UInt64(delaySeconds * 1_000_000_000)
+            if let output { _assertionOutput = output }
+        }
+    }
+
+    func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data {
+        let (err, delay, out): (Error?, UInt64, Data) = lock.locked {
+            _assertionCalls.append((keyId, clientDataHash))
+            return (_assertionError, _assertionDelayNs, _assertionOutput)
+        }
+        if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+        if let err { throw err }
+        return out
+    }
 
     var isSupported: Bool { lock.locked { _supported } }
     var generateCalls: Int { lock.locked { _generated } }
@@ -111,7 +135,9 @@ private final class TelemetryLog: @unchecked Sendable {
         AppAttestTelemetry(
             success: { [self] in add("success") },
             failure: { [self] in add("failure:\($0)") },
-            skipped: { [self] in add("skipped:\($0)") }
+            skipped: { [self] in add("skipped:\($0)") },
+            assertionFailure: { [self] in add("assertionFailure:\($0)") },
+            assertionSkipped: { [self] in add("assertionSkipped:\($0)") }
         )
     }
 }
@@ -545,5 +571,239 @@ final class AppAttestRequestShapeTests: XCTestCase {
         for key in ["appId", "loginUri", "packageName"] {
             XCTAssertNotNil(body[key], "POST body is missing `\(key)`; the server cannot resolve the app without it")
         }
+    }
+}
+
+
+// MARK: - Assertion headers (ENG-521)
+
+@available(iOS 14.0, *)
+final class AppAttestAssertionTests: XCTestCase {
+
+    private var platform: FakePlatform!
+    private var store: FakeStore!
+    private var log: TelemetryLog!
+
+    override func setUp() {
+        super.setUp()
+        platform = FakePlatform()
+        store = FakeStore(keyId: "registered-key", marker: true)
+        log = TelemetryLog()
+    }
+
+    private func makeUseCase(timeout: TimeInterval = 1.0) -> AppAttestUseCase {
+        AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
+                         telemetry: log.telemetry, assertionTimeout: timeout)
+    }
+
+    func testRegisteredKeyProducesTheFourHeaders() async {
+        platform.configureAssertion(output: Data("sig".utf8))
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data("{}".utf8), challenge: "ch-1")
+
+        XCTAssertEqual(h[AppAttestHeader.status], "ok")
+        XCTAssertEqual(h[AppAttestHeader.keyId], "registered-key")
+        XCTAssertEqual(h[AppAttestHeader.assertion], Data("sig".utf8).base64EncodedString())
+        XCTAssertEqual(h[AppAttestHeader.challenge], "ch-1")
+        XCTAssertEqual(h.count, 4)
+        XCTAssertTrue(log.events.isEmpty, "the happy path must not generate telemetry on every intent")
+    }
+
+    /// The server recomputes this from the raw request bytes, so the formula is the contract.
+    func testClientDataHashIsSha256OfChallengeThenBodyBytes() async {
+        let body = Data(#"{"a":1,"b":"two"}"#.utf8)
+
+        _ = await makeUseCase().assertionHeaders(forBody: body, challenge: "ch-xyz")
+
+        XCTAssertEqual(platform.assertionCalls.count, 1)
+        XCTAssertEqual(platform.assertionCalls.first?.keyId, "registered-key")
+        XCTAssertEqual(platform.assertionCalls.first?.hash, Data(SHA256.hash(data: Data("ch-xyz".utf8) + body)))
+    }
+
+    func testHashDependsOnBothBodyAndChallenge() async {
+        let useCase = makeUseCase()
+        _ = await useCase.assertionHeaders(forBody: Data("A".utf8), challenge: "c")
+        _ = await useCase.assertionHeaders(forBody: Data("B".utf8), challenge: "c")
+        _ = await useCase.assertionHeaders(forBody: Data("A".utf8), challenge: "d")
+
+        let hashes = platform.assertionCalls.map { $0.hash }
+        XCTAssertEqual(Set(hashes).count, 3, "changing the body or the challenge must change what is signed")
+    }
+
+    func testUnsupportedDeviceReportsStatusOnly() async {
+        platform.configure(supported: false)
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h, [AppAttestHeader.status: "unsupported"])
+        XCTAssertTrue(platform.assertionCalls.isEmpty)
+        XCTAssertEqual(log.events, ["assertionSkipped:unsupported"])
+    }
+
+    func testNoRegisteredKeyReportsNoKey() async {
+        store = FakeStore()
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h, [AppAttestHeader.status: "no_key"])
+        XCTAssertTrue(platform.assertionCalls.isEmpty, "must not ask Apple to sign with a key we never registered")
+        XCTAssertEqual(log.events, ["assertionSkipped:no_key"])
+    }
+
+    func testStaleKeyFromAPreviousInstallIsNotUsed() async {
+        store = FakeStore(keyId: "from-previous-install", marker: false)
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h[AppAttestHeader.status], "no_key")
+        XCTAssertTrue(platform.assertionCalls.isEmpty)
+        XCTAssertNil(store.keyId(), "the stale key must be discarded")
+    }
+
+    func testInvalidKeyClearsTheStoredKeySoTheNextInitReattests() async {
+        platform.configureAssertion(error: DCError(.invalidKey))
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h, [AppAttestHeader.status: "invalid_key"])
+        XCTAssertNil(store.keyId(), "a key Apple no longer knows must not be kept")
+        XCTAssertEqual(log.events, ["assertionFailure:invalid_key"])
+    }
+
+    func testOtherAppleErrorsKeepTheKeyAndReportACode() async {
+        platform.configureAssertion(error: DCError(.serverUnavailable))
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h[AppAttestHeader.status], "dcerror_\(DCError.Code.serverUnavailable.rawValue)")
+        XCTAssertEqual(store.keyId(), "registered-key", "a transient Apple error must not throw the key away")
+        XCTAssertNil(h[AppAttestHeader.assertion])
+    }
+
+    func testUnknownErrorReportsGenericReason() async {
+        platform.configureAssertion(error: BoomError())
+
+        let h = await makeUseCase().assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h, [AppAttestHeader.status: "error"])
+        XCTAssertEqual(store.keyId(), "registered-key")
+    }
+
+    /// A hung Apple call must not hang the merchant's request.
+    func testSlowAssertionTimesOutAndReturnsPromptly() async {
+        platform.configureAssertion(delaySeconds: 2.0)
+        let started = Date()
+
+        let h = await makeUseCase(timeout: 0.05).assertionHeaders(forBody: Data(), challenge: "c")
+
+        XCTAssertEqual(h, [AppAttestHeader.status: "timeout"])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.0, "must return at the budget, not wait for Apple")
+        XCTAssertEqual(store.keyId(), "registered-key")
+        XCTAssertEqual(log.events, ["assertionFailure:timeout"])
+    }
+}
+
+// MARK: - Intent request on the wire (ENG-521)
+
+@available(iOS 14.0, *)
+final class AppAttestIntentRequestTests: XCTestCase {
+
+    private var platform: FakePlatform!
+    private var store: FakeStore!
+
+    override func setUp() {
+        super.setUp()
+        platform = FakePlatform()
+        store = FakeStore(keyId: "registered-key", marker: true)
+        platform.configureAssertion(output: Data("the-assertion".utf8))
+    }
+
+    private func makeRepository() -> ApiRepository {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let manager = ApiManager(userAuthTimeout: 5, snaTimeout: 5, enableLogging: false,
+                                 session: URLSession(configuration: configuration))
+        return ApiRepository(apiManager: manager)
+    }
+
+    private func makeBody() -> PostIntentRequestBody {
+        PostIntentRequestBody(
+            channel: "PHONE", email: nil, hasWhatsapp: "false", identifierType: "MOBILE",
+            mobile: "9999999999", selectedCountryCode: "91", silentAuthEnabled: false,
+            triggerWebauthn: false, type: "INTENT", uid: nil, value: "919999999999", expiry: nil,
+            deliveryMethod: nil, otpLength: nil, uiIds: nil, fireIntent: nil, requestId: nil,
+            clientMetaData: nil, asId: nil
+        )
+    }
+
+    private func headers() throws -> [String: String] {
+        try XCTUnwrap(StubURLProtocol.lastRequest, "no request reached the stub").allHTTPHeaderFields ?? [:]
+    }
+
+    /// The point of the whole feature: what Apple signed must be exactly what the server will
+    /// hash, i.e. SHA256(challenge || the bytes that actually went over the wire).
+    func testSignedHashMatchesTheExactBytesThatWereSent() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
+                                       telemetry: TelemetryLog().telemetry)
+
+        _ = await makeRepository().postIntent(state: "st-123", body: makeBody(), requestSigner: { bytes in
+            await useCase.assertionHeaders(forBody: bytes, challenge: "st-123")
+        })
+
+        let sent = try XCTUnwrap(StubURLProtocol.lastBody)
+        XCTAssertFalse(sent.isEmpty)
+        let signed = try XCTUnwrap(platform.assertionCalls.first?.hash)
+        XCTAssertEqual(signed, Data(SHA256.hash(data: Data("st-123".utf8) + sent)),
+                       "the signed hash must be over the exact body bytes on the wire")
+    }
+
+    func testIntentCarriesTheHeaders() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
+                                       telemetry: TelemetryLog().telemetry)
+
+        _ = await makeRepository().postIntent(state: "st-9", body: makeBody(), requestSigner: { bytes in
+            await useCase.assertionHeaders(forBody: bytes, challenge: "st-9")
+        })
+
+        let h = try headers()
+        XCTAssertEqual(h[AppAttestHeader.status], "ok")
+        XCTAssertEqual(h[AppAttestHeader.keyId], "registered-key")
+        XCTAssertEqual(h[AppAttestHeader.assertion], Data("the-assertion".utf8).base64EncodedString())
+        XCTAssertEqual(h[AppAttestHeader.challenge], "st-9")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/v3/lp/user/transaction/intent/st-9")
+    }
+
+    /// Merchants without attestation must see an unchanged request. `merchantConfig` is nil in
+    /// a unit test, which is exactly "attestation not enabled".
+    func testNoAttestationHeadersWhenAttestationIsNotEnabled() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+
+        _ = await makeRepository().postIntent(state: "st-1", body: makeBody())
+
+        let h = try headers()
+        for name in [AppAttestHeader.status, AppAttestHeader.keyId, AppAttestHeader.assertion, AppAttestHeader.challenge] {
+            XCTAssertNil(h[name], "\(name) must not be sent when attestation is not enabled")
+        }
+        XCTAssertNil(ApiRepository.defaultAppAttestSigner(state: "st-1"))
+    }
+
+    /// Fail open: no assertion available still sends the intent, with a reason.
+    func testIntentIsStillSentWhenNoAssertionCanBeProduced() async throws {
+        StubURLProtocol.reset(responseJSON: "{}")
+        store = FakeStore()                                        // nothing registered yet
+        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
+                                       telemetry: TelemetryLog().telemetry)
+
+        _ = await makeRepository().postIntent(state: "st-2", body: makeBody(), requestSigner: { bytes in
+            await useCase.assertionHeaders(forBody: bytes, challenge: "st-2")
+        })
+
+        XCTAssertNotNil(StubURLProtocol.lastRequest, "the intent must still go out")
+        let h = try headers()
+        XCTAssertEqual(h[AppAttestHeader.status], "no_key")
+        XCTAssertNil(h[AppAttestHeader.assertion])
+        XCTAssertNil(h[AppAttestHeader.keyId])
     }
 }

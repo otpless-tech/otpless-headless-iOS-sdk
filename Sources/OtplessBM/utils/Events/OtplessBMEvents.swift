@@ -577,6 +577,8 @@ internal enum OtplessBMEvents {
         private static let SUCCESS = "app_attest_success"
         private static let FAILURE = "app_attest_failure"
         private static let SKIPPED = "app_attest_skipped"
+        private static let ASSERTION_FAILURE = "app_attest_assertion_failure"
+        private static let ASSERTION_SKIPPED = "app_attest_assertion_skipped"
         private static let FAILURE_ERROR_CODE = "5050"
 
         static func success() {
@@ -598,6 +600,24 @@ internal enum OtplessBMEvents {
 
         static func skipped(reason: String) {
             trackEvent(name: SKIPPED, type: .SDK, action: .RESPONSE, data: ["reason": reason])
+        }
+
+        /// No assertion header on an intent: the key is missing or the device cannot sign.
+        static func assertionSkipped(reason: String) {
+            trackEvent(name: ASSERTION_SKIPPED, type: .SDK, action: .RESPONSE, data: ["reason": reason])
+        }
+
+        /// Producing the assertion failed (Apple error, timeout, invalid key). The request is
+        /// still sent; this only records why it went without one.
+        static func assertionFailure(reason: String) {
+            trackEvent(
+                name: ASSERTION_FAILURE,
+                type: .SDK,
+                action: .RESPONSE,
+                statusCode: 500,
+                data: ["reason": reason],
+                errorCode: FAILURE_ERROR_CODE
+            )
         }
     }
 }

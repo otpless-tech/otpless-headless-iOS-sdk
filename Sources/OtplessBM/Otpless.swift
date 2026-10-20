@@ -530,6 +530,14 @@ extension Otpless {
     
 }
 
+extension Otpless {
+    /// Whether the merchant config asks this install to use App Attest at all. The single gate
+    /// for both key registration and per-request assertions.
+    internal var isAppAttestRequested: Bool {
+        merchantConfig?.isAppAttestEnabled == true
+    }
+}
+
 private extension Otpless {
     func fetchStateAndMerchantConfig(onlyState:Bool) {
         log(message: "[Init] Fetching device state — onlyState: \(onlyState)", type: .SDK_STATE_FETCH)
@@ -572,7 +580,7 @@ private extension Otpless {
     /// config enables it. Deliberately after `SDK_READY` and fire-and-forget: attestation can
     /// never delay or fail the merchant's flow, and a config without the flag does nothing.
     func startAppAttestIfEnabled(state: String) {
-        guard merchantConfig?.isAppAttestEnabled == true else { return }
+        guard isAppAttestRequested else { return }
         guard #available(iOS 14.0, *) else {
             DLog("[AppAttest] Enabled by config but App Attest needs iOS 14 — skipping")
             return

@@ -49,7 +49,8 @@ final class ApiManager: Sendable {
         method: String,
         body: [String: Any]? = nil,
         shoudlAppendBasicParams: Bool = true,
-        queryParameters: [String: Any]? = nil
+        queryParameters: [String: Any]? = nil,
+        requestSigner: (@Sendable (Data) async -> [String: String])? = nil
     ) async throws -> Data {
         var newPath = path
         if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
@@ -63,6 +64,14 @@ final class ApiManager: Sendable {
             let newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            // Sign the bytes exactly as they will be sent. Never re-serialise after this point:
+            // the server hashes the raw body it receives, so the two must match byte for byte.
+            if let requestSigner, let bodyBytes = request.httpBody {
+                for (name, value) in await requestSigner(bodyBytes) {
+                    request.setValue(value, forHTTPHeaderField: name)
+                }
+            }
         }
 
         var xRequestId: String? = nil

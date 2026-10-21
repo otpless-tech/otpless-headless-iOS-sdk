@@ -107,16 +107,35 @@ private final class FakeBackend: AppAttestBackend, @unchecked Sendable {
 
 private final class FakeStore: AppAttestStore, @unchecked Sendable {
     private let lock = NSLock()
-    private var _keyId: String?
+    private var _keys: [String: String] = [:]
     private var _marker = false
 
-    init(keyId: String? = nil, marker: Bool = false) { _keyId = keyId; _marker = marker }
+    /// Seeds `keyId` under the current scope, which is what a use case built with the default
+    /// scope reads, so tests that do not care about scoping stay unchanged.
+    init(keyId: String? = nil, marker: Bool = false) {
+        if let keyId { _keys[AppAttestScope.current()] = keyId }
+        _marker = marker
+    }
 
-    func keyId() -> String? { lock.locked { _keyId } }
-    func saveKeyId(_ keyId: String) { lock.locked { _keyId = keyId } }
-    func clearKeyId() { lock.locked { _keyId = nil } }
+    func keyId(scope: String) -> String? { lock.locked { _keys[scope] } }
+    func saveKeyId(_ keyId: String, scope: String) { lock.locked { _keys[scope] = keyId } }
+    func clearKeyId(scope: String) { lock.locked { _keys[scope] = nil } }
     var hasInstallMarker: Bool { lock.locked { _marker } }
     func setInstallMarker() { lock.locked { _marker = true } }
+
+    /// The key under the current scope.
+    func keyId() -> String? { keyId(scope: AppAttestScope.current()) }
+}
+
+/// A scope the test can change between calls, like a host app switching merchant app.
+private final class ScopeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: String
+    init(_ value: String) { _value = value }
+    var value: String {
+        get { lock.locked { _value } }
+        set { lock.locked { _value = newValue } }
+    }
 }
 
 private final class Clock: @unchecked Sendable {
@@ -334,7 +353,7 @@ final class AppAttestTests: XCTestCase {
 
         // Simulate a later reinstall: fresh process state would also reset, but this proves
         // a success clears the failure counter rather than leaving a stale delay behind.
-        store.clearKeyId()
+        store.clearKeyId(scope: AppAttestScope.current())
         let again = await useCase.attestIfNeeded(state: "s")
         XCTAssertEqual(again, .attested, "no leftover backoff after a success")
     }
@@ -409,6 +428,106 @@ final class AppAttestTests: XCTestCase {
         XCTAssertEqual(AppAttestRegistration.from(http(503)), .failed(reason: "http_503"))
         XCTAssertEqual(AppAttestRegistration.from(.failure(URLError(.notConnectedToInternet))),
                        .failed(reason: "network"))
+    }
+}
+
+// MARK: - A key belongs to one merchant app and environment
+
+@available(iOS 14.0, *)
+final class AppAttestScopingTests: XCTestCase {
+
+    private var platform: FakePlatform!
+    private var backend: FakeBackend!
+    private var store: FakeStore!
+    private var box: ScopeBox!
+
+    override func setUp() {
+        super.setUp()
+        platform = FakePlatform(); backend = FakeBackend(); store = FakeStore(); box = ScopeBox("0.APP_A")
+    }
+
+    private func makeUseCase() -> AppAttestUseCase {
+        AppAttestUseCase(platform: platform, backend: backend, store: store,
+                         telemetry: TelemetryLog().telemetry, scope: { [box] in box!.value })
+    }
+
+    /// The bug found on a device: a key registered for one merchant app was reused for another,
+    /// so the second app never got registered and the backend never knew its key.
+    func testAKeyRegisteredForOneAppIsNotReusedForAnotherApp() async {
+        let useCase = makeUseCase()
+
+        let first = await useCase.attestIfNeeded(state: "s")
+        XCTAssertEqual(first, .attested)
+
+        box.value = "0.APP_B"
+        let second = await useCase.attestIfNeeded(state: "s")
+
+        XCTAssertEqual(second, .attested, "app B has no key of its own, so it must register one")
+        XCTAssertEqual(platform.generateCalls, 2)
+        XCTAssertEqual(backend.calls.count, 2, "the backend must be told about app B's key too")
+        XCTAssertEqual(store.keyId(scope: "0.APP_A"), "key-1")
+        XCTAssertEqual(store.keyId(scope: "0.APP_B"), "key-2")
+    }
+
+    func testSwitchingBackFindsTheOriginalAppsKeyAndDoesNotReRegister() async {
+        let useCase = makeUseCase()
+        _ = await useCase.attestIfNeeded(state: "s")
+        box.value = "0.APP_B"; _ = await useCase.attestIfNeeded(state: "s")
+        box.value = "0.APP_A"
+
+        let outcome = await useCase.attestIfNeeded(state: "s")
+
+        XCTAssertEqual(outcome, .alreadyAttested)
+        XCTAssertEqual(platform.generateCalls, 2, "no third key")
+    }
+
+    /// Staging and production are different databases: a key known to one is unknown to the other.
+    func testTheSameAppOnAnotherEnvironmentNeedsItsOwnKey() async {
+        let useCase = makeUseCase()
+        box.value = "1.APP_A"            // 1 = staging
+        _ = await useCase.attestIfNeeded(state: "s")
+        box.value = "0.APP_A"            // 0 = production
+        let onProduction = await useCase.attestIfNeeded(state: "s")
+
+        XCTAssertEqual(onProduction, .attested)
+        XCTAssertEqual(platform.generateCalls, 2)
+    }
+
+    func testABackoffEarnedByOneAppDoesNotBlockAnother() async {
+        backend.set(.failed(reason: "network"))
+        let useCase = makeUseCase()
+        let failed = await useCase.attestIfNeeded(state: "s")
+        XCTAssertEqual(failed, .failed)
+
+        box.value = "0.APP_B"
+        backend.set(.accepted)
+        let other = await useCase.attestIfNeeded(state: "s")
+
+        XCTAssertEqual(other, .attested, "app B must not wait out app A's backoff")
+    }
+
+    func testAnUninstalledInstallDiscardsOnlyTheKeyOfTheScopeInUse() async {
+        store = FakeStore(marker: false)
+        store.saveKeyId("old-A", scope: "0.APP_A")
+        store.saveKeyId("old-B", scope: "0.APP_B")
+
+        let outcome = await makeUseCase().attestIfNeeded(state: "s")   // scope A
+
+        XCTAssertEqual(outcome, .attested)
+        XCTAssertEqual(store.keyId(scope: "0.APP_A"), "key-1", "A's stale key is replaced")
+    }
+
+    func testLiveStoreKeepsOneKeychainItemPerScope() {
+        XCTAssertEqual(LiveAppAttestStore.keyName(scope: "0.MICKEY"), "otpless_bm_attest_key_id.0.MICKEY")
+        XCTAssertNotEqual(LiveAppAttestStore.keyName(scope: "0.MICKEY"), LiveAppAttestStore.keyName(scope: "1.MICKEY"))
+        XCTAssertNotEqual(LiveAppAttestStore.keyName(scope: "0.MICKEY"), LiveAppAttestStore.keyName(scope: "0.OTHER"))
+        XCTAssertNotEqual(LiveAppAttestStore.keyName(scope: "0.MICKEY"), "otpless_bm_attest_key_id",
+                          "must no longer be the single unscoped item")
+    }
+
+    func testScopeIsEnvironmentThenAppId() {
+        XCTAssertEqual(AppAttestScope.current(),
+                       "\(Otpless.shared.environment.rawValue).\(Otpless.shared.merchantAppId)")
     }
 }
 
@@ -698,6 +817,26 @@ final class AppAttestAssertionTests: XCTestCase {
         XCTAssertEqual(info[AppAttestInfo.status], "no_key")
         XCTAssertTrue(platform.assertionCalls.isEmpty)
         XCTAssertNil(store.keyId(), "the stale key must be discarded")
+    }
+
+    /// The device finding in the assertion path: signing with a key that was registered for a
+    /// different merchant app would produce an assertion the backend cannot match to any key.
+    func testAKeyRegisteredForAnotherAppIsNotUsedToSign() async {
+        let box = ScopeBox("0.APP_A")
+        store = FakeStore(marker: true)
+        store.saveKeyId("key-of-A", scope: "0.APP_A")
+        let useCase = AppAttestUseCase(platform: platform, backend: FakeBackend(), store: store,
+                                       telemetry: log.telemetry, scope: { box.value })
+
+        box.value = "0.APP_B"
+        let forB = await useCase.assertionInfo(forFields: fields, challenge: "c")
+        XCTAssertEqual(forB, [AppAttestInfo.status: "no_key"], "app B has no key of its own")
+        XCTAssertTrue(platform.assertionCalls.isEmpty, "must not sign with app A's key")
+
+        box.value = "0.APP_A"
+        let forA = await useCase.assertionInfo(forFields: fields, challenge: "c")
+        XCTAssertEqual(forA[AppAttestInfo.status], "ok")
+        XCTAssertEqual(forA[AppAttestInfo.keyId], "key-of-A")
     }
 
     func testInvalidKeyClearsTheStoredKeySoTheNextInitReattests() async {

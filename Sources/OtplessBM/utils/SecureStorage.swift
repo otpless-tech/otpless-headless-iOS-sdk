@@ -52,6 +52,17 @@ internal final class SecureStorage: @unchecked Sendable {
         return value
     }
     
+    /// False while the Keychain cannot be read at all (device locked, first unlock pending).
+    /// A failed read then looks exactly like "no item", so callers must tell the two apart.
+    func isReadable(key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        return SecItemCopyMatching(query as CFDictionary, nil) != errSecInteractionNotAllowed
+    }
+
     func delete(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

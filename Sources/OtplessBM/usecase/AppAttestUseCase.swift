@@ -106,6 +106,8 @@ internal enum AppAttestScope {
 /// Keys are kept per `scope` (see `AppAttestScope`); the install marker is per install.
 internal protocol AppAttestStore: Sendable {
     func keyId(scope: String) -> String?
+    /// False while the store cannot be read (locked device); an empty read is then not "no key".
+    func isReadable(scope: String) -> Bool
     func saveKeyId(_ keyId: String, scope: String)
     func clearKeyId(scope: String)
     var hasInstallMarker: Bool { get }
@@ -121,6 +123,10 @@ internal struct LiveAppAttestStore: AppAttestStore {
 
     func keyId(scope: String) -> String? {
         SecureStorage.shared.retrieve(key: Self.keyName(scope: scope))
+    }
+
+    func isReadable(scope: String) -> Bool {
+        SecureStorage.shared.isReadable(key: Self.keyName(scope: scope))
     }
 
     func saveKeyId(_ keyId: String, scope: String) {
@@ -162,6 +168,7 @@ internal actor AppAttestUseCase {
         case alreadyAttested
         case unsupported
         case backingOff
+        case storeUnavailable
         case failed
     }
 
@@ -234,6 +241,14 @@ internal actor AppAttestUseCase {
             DLog("[AppAttest] Not supported on this device — skipping")
             telemetry.skipped("unsupported")
             return .unsupported
+        }
+
+        // Locked device (e.g. a background launch): the Keychain reads as empty, which would
+        // register a new key that then could not be saved. Wait for the next launch instead.
+        guard store.isReadable(scope: scope) else {
+            DLog("[AppAttest] Keychain not readable (device locked) — skipping")
+            telemetry.skipped("store_unavailable")
+            return .storeUnavailable
         }
 
         discardStaleKeyIfNeeded(scope: scope)

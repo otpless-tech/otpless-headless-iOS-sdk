@@ -85,6 +85,10 @@ private final class FakeStore: AppAttestStore, @unchecked Sendable {
     private let lock = NSLock()
     private var _keys: [String: String] = [:]
     private var _marker = false
+    private var _readable = true
+
+    func setReadable(_ value: Bool) { lock.locked { _readable = value } }
+    func isReadable(scope: String) -> Bool { lock.locked { _readable } }
 
     /// Seeds `keyId` under the current scope, which is what a use case built with the default
     /// scope reads, so tests that do not care about scoping stay unchanged.
@@ -264,6 +268,31 @@ final class AppAttestTests: XCTestCase {
         XCTAssertEqual(platform.generateCalls, 0)
         XCTAssertTrue(backend.calls.isEmpty)
         XCTAssertEqual(log.events, ["skipped:unsupported"])
+    }
+
+    // MARK: Locked device
+
+    func testLockedKeychainDoesNotRegisterAnOrphanKey() async {
+        store.setReadable(false)
+
+        let outcome = await makeUseCase().attestIfNeeded(state: "s")
+
+        XCTAssertEqual(outcome, .storeUnavailable)
+        XCTAssertEqual(platform.generateCalls, 0)
+        XCTAssertTrue(backend.calls.isEmpty)
+        XCTAssertNil(store.keyId())
+        XCTAssertEqual(log.events, ["skipped:store_unavailable"])
+    }
+
+    func testRegistrationProceedsOnceTheKeychainIsReadable() async {
+        let useCase = makeUseCase()
+        store.setReadable(false)
+        _ = await useCase.attestIfNeeded(state: "s")
+        store.setReadable(true)
+
+        let outcome = await useCase.attestIfNeeded(state: "s")
+
+        XCTAssertEqual(outcome, .attested)
     }
 
     // MARK: Backoff

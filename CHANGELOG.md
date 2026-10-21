@@ -3,6 +3,7 @@
 - Apple **App Attest** registration (iOS 14+), controlled by the merchant config. When the config API enables it for your app, the SDK registers a hardware-backed App Attest key with OTPLESS once per install, in the background and after `SDK_READY` — it never delays, blocks or fails an authentication, and any failure is reported as telemetry only. The server verifies the attestation against the transaction `state` as the challenge (`POST /v3/lp/user/device/attestation/{state}`). Nothing changes for apps whose config does not enable it, and no public API was added or changed.
 - Reinstall-safe: a key id left in the Keychain by a previous install is detected (the Keychain survives uninstall, App Attest keys do not) and re-attested. Failed attempts back off (30 s doubling to 1 h) so a broken backend or unsupported device does not cost an Apple round trip on every init.
 - The attestation object is redacted from the SDK's API request logging.
+- A registered key belongs to one backend environment and one merchant app, so it is stored per `environment.appId` instead of once per install. Switching the app ID (or staging/production) now registers a key for the new app instead of reusing one the backend knows only under the old app.
 
 ### Notes
 - **Host-app requirement:** add the `com.apple.developer.devicecheck.appattest-environment` entitlement (`development` / `production`) to your app target. The SDK cannot add it; without it key generation fails and attestation is skipped silently. Unsupported devices and the simulator are skipped cleanly.

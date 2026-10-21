@@ -89,31 +89,46 @@ internal struct LiveAppAttestBackend: AppAttestBackend {
     }
 }
 
+/// Which backend environment and merchant app a registered key belongs to. The backend records
+/// a key against one merchant app (and one environment's database), so a key registered for
+/// app A means nothing under app B, or on production when it was registered on staging.
+/// Reusing it across them skips the registration the new app still needs.
+internal enum AppAttestScope {
+    static func current() -> String {
+        "\(Otpless.shared.environment.rawValue).\(Otpless.shared.merchantAppId)"
+    }
+}
+
 /// Where the confirmed key lives. The key id sits in the Keychain, which **survives an app
 /// reinstall** — but App Attest keys do not. UserDefaults is wiped on uninstall, so a key id
 /// with no install marker means the key it names no longer exists on this device.
+///
+/// Keys are kept per `scope` (see `AppAttestScope`); the install marker is per install.
 internal protocol AppAttestStore: Sendable {
-    func keyId() -> String?
-    func saveKeyId(_ keyId: String)
-    func clearKeyId()
+    func keyId(scope: String) -> String?
+    func saveKeyId(_ keyId: String, scope: String)
+    func clearKeyId(scope: String)
     var hasInstallMarker: Bool { get }
     func setInstallMarker()
 }
 
 internal struct LiveAppAttestStore: AppAttestStore {
-    private static let keyIdKey = "otpless_bm_attest_key_id"
+    private static let keyIdKeyPrefix = "otpless_bm_attest_key_id"
     private static let installMarkerKey = "otpless_bm_attest_install_marker"
 
-    func keyId() -> String? {
-        SecureStorage.shared.retrieve(key: Self.keyIdKey)
+    /// One Keychain item per scope: `otpless_bm_attest_key_id.<environment>.<appId>`.
+    static func keyName(scope: String) -> String { "\(keyIdKeyPrefix).\(scope)" }
+
+    func keyId(scope: String) -> String? {
+        SecureStorage.shared.retrieve(key: Self.keyName(scope: scope))
     }
 
-    func saveKeyId(_ keyId: String) {
-        SecureStorage.shared.save(key: Self.keyIdKey, value: keyId)
+    func saveKeyId(_ keyId: String, scope: String) {
+        SecureStorage.shared.save(key: Self.keyName(scope: scope), value: keyId)
     }
 
-    func clearKeyId() {
-        SecureStorage.shared.delete(key: Self.keyIdKey)
+    func clearKeyId(scope: String) {
+        SecureStorage.shared.delete(key: Self.keyName(scope: scope))
     }
 
     var hasInstallMarker: Bool {
@@ -164,59 +179,74 @@ internal actor AppAttestUseCase {
     private let telemetry: AppAttestTelemetry
     private let now: @Sendable () -> Date
 
-    private var inFlight: Task<Outcome, Never>?
+    private let scope: @Sendable () -> String
+
+    private var inFlight: (scope: String, task: Task<Outcome, Never>)?
     private var consecutiveFailures = 0
     private var nextAttemptAt: Date?
+    private var backoffScope: String?
 
     init(
         platform: AppAttestPlatform = LiveAppAttestPlatform(),
         backend: AppAttestBackend = LiveAppAttestBackend(),
         store: AppAttestStore = LiveAppAttestStore(),
         telemetry: AppAttestTelemetry = .live,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        scope: @escaping @Sendable () -> String = { AppAttestScope.current() }
     ) {
         self.platform = platform
         self.backend = backend
         self.store = store
         self.telemetry = telemetry
         self.now = now
+        self.scope = scope
     }
 
     /// Whether a confirmed key is stored for this install. Intended for the future
     /// assertion work, which builds on the persisted key id.
     func hasAttestedKey() -> Bool {
-        discardStaleKeyIfNeeded()
-        return store.keyId() != nil
+        let scope = scope()
+        discardStaleKeyIfNeeded(scope: scope)
+        return store.keyId(scope: scope) != nil
     }
 
     /// Attests if — and only if — this install has no confirmed key yet. Safe to call on
     /// every init: concurrent callers share one attempt, and repeat calls are cheap.
     @discardableResult
     func attestIfNeeded(state: String) async -> Outcome {
-        if let running = inFlight {
-            return await running.value
+        // Read the scope once, now: the merchant app can change between calls, and the key must
+        // be saved under the scope it was attested for.
+        let scope = scope()
+        if let running = inFlight, running.scope == scope {
+            return await running.task.value
         }
-        let task = Task { await self.attest(state: state) }
-        inFlight = task
+        let task = Task { await self.attest(state: state, scope: scope) }
+        inFlight = (scope, task)
         let outcome = await task.value
-        inFlight = nil
+        if inFlight?.scope == scope { inFlight = nil }
         return outcome
     }
 
     // MARK: - Internals
 
-    private func attest(state: String) async -> Outcome {
+    private func attest(state: String, scope: String) async -> Outcome {
         guard platform.isSupported else {
             DLog("[AppAttest] Not supported on this device — skipping")
             telemetry.skipped("unsupported")
             return .unsupported
         }
 
-        discardStaleKeyIfNeeded()
-        if store.keyId() != nil {
+        discardStaleKeyIfNeeded(scope: scope)
+        if store.keyId(scope: scope) != nil {
             return .alreadyAttested
         }
 
+        // A backoff earned by one merchant app says nothing about another.
+        if backoffScope != scope {
+            backoffScope = scope
+            consecutiveFailures = 0
+            nextAttemptAt = nil
+        }
         if let next = nextAttemptAt, now() < next {
             DLog("[AppAttest] Backing off until \(next)")
             telemetry.skipped("backoff")
@@ -233,7 +263,7 @@ internal actor AppAttestUseCase {
                 // Marker first: a crash between the two writes then leaves a marker with no
                 // key (harmless) rather than a key with no marker (treated as stale).
                 store.setInstallMarker()
-                store.saveKeyId(keyId)
+                store.saveKeyId(keyId, scope: scope)
                 consecutiveFailures = 0
                 nextAttemptAt = nil
                 DLog("[AppAttest] Attested — keyId: \(keyId.prefix(8))…")
@@ -249,10 +279,10 @@ internal actor AppAttestUseCase {
 
     /// A key id in the Keychain with no install marker survived an uninstall; the key it
     /// names does not exist any more, so forget it and re-attest.
-    private func discardStaleKeyIfNeeded() {
-        if store.keyId() != nil && !store.hasInstallMarker {
+    private func discardStaleKeyIfNeeded(scope: String) {
+        if store.keyId(scope: scope) != nil && !store.hasInstallMarker {
             DLog("[AppAttest] Key id predates this install — discarding")
-            store.clearKeyId()
+            store.clearKeyId(scope: scope)
         }
     }
 

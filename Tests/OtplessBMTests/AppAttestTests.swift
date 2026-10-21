@@ -750,6 +750,35 @@ final class AppAttestAssertionTests: XCTestCase {
                        "v1|ch|APP1|TS1|PHONE|MOBILE|919999999999")
     }
 
+    /// E13: `value` is the only free-form member and is last on purpose, so a `|` inside it can
+    /// never shift the fields in front of it. A verifier splitting on the first six separators
+    /// recovers every earlier field and the whole value.
+    func testPipeInsideValueCannotShiftTheEarlierFields() {
+        let tricky = fields.merging(["value": "ab|cd|ef"]) { _, new in new }
+        let canonical = AppAttestInfo.canonicalString(challenge: "ch", fields: tricky)
+
+        XCTAssertEqual(canonical, "v1|ch|APP1|TS1|PHONE|MOBILE|ab|cd|ef")
+        let parts = canonical.split(separator: "|", maxSplits: 6, omittingEmptySubsequences: false).map(String.init)
+        XCTAssertEqual(Array(parts[0...5]), ["v1", "ch", "APP1", "TS1", "PHONE", "MOBILE"])
+        XCTAssertEqual(parts[6], "ab|cd|ef")
+    }
+
+    /// E11: an email intent signs the email as `value`, with that channel's own names.
+    func testEmailIntentCanonicalString() {
+        let email: [String: String] = ["appId": "APP1", "tsId": "TS1", "channel": "EMAIL_INPUT",
+                                       "identifierType": "EMAIL", "value": "user@example.com"]
+        XCTAssertEqual(AppAttestInfo.canonicalString(challenge: "ch", fields: email),
+                       "v1|ch|APP1|TS1|EMAIL_INPUT|EMAIL|user@example.com")
+    }
+
+    /// Non-ASCII values are hashed as UTF-8, the same bytes a server decoding the JSON sees.
+    func testNonAsciiValueIsHashedAsUtf8() async {
+        let f = fields.merging(["value": "ñandú@例え.jp"]) { _, new in new }
+        let h = await signedHash(f)
+        let expected = Data(SHA256.hash(data: Data("v1|ch|APP1|TS1|PHONE|MOBILE|ñandú@例え.jp".utf8)))
+        XCTAssertEqual(h, expected)
+    }
+
     func testMissingFieldsBecomeEmptyStrings() {
         XCTAssertEqual(AppAttestInfo.canonicalString(challenge: "ch", fields: ["appId": "A"]),
                        "v1|ch|A||||")

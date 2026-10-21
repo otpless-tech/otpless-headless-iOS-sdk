@@ -6,9 +6,9 @@
 - A registered key belongs to one backend environment and one merchant app, so it is stored per `environment.appId` instead of once per install. Switching the app ID (or staging/production) now registers a key for the new app instead of reusing one the backend knows only under the old app.
 - Per-request assertion on the intent call, only when attestation is enabled for your app and a key is registered. The intent body gains an `appAttestInfo` object (`status`, `keyId`, `assertion`, `challenge`) so the backend can verify the intent came from the same app install that registered the key. The signed hash is `SHA256("v1|challenge|appId|tsId|channel|identifierType|value")`, which binds the assertion to one app, one session and one OTP destination. If an assertion cannot be produced (unsupported device, no key yet, Apple error, or over a 1 s budget) the intent is sent anyway with `status` saying why, so authentication is never delayed or failed by it. An `invalidKey` response from Apple clears the stored key so the next init re-attests. Apps without attestation enabled send exactly the same body as before. The challenge is the transaction `state` for now, pending a one-time server-issued challenge.
 
+- Registration is skipped while the Keychain is unreadable (locked device, e.g. a background launch) instead of registering a key that could not be saved.
 ### Notes
-- **Host-app requirement:** add the `com.apple.developer.devicecheck.appattest-environment` entitlement (`development` / `production`) to your app target. The SDK cannot add it; without it key generation fails and attestation is skipped silently. Unsupported devices and the simulator are skipped cleanly.
-- Per-request assertions are not part of this change; they need a server contract first.
+- **Host-app setup:** App Attest works without any entitlement; Apple then issues development-environment keys (AAGUID `appattestdevelop`). Add the `com.apple.developer.devicecheck.appattest-environment` entitlement set to `production` for App Store / TestFlight builds so the backend sees production attestations. Unsupported devices and the simulator are skipped cleanly.
 
 ## 3.0.1 (17th September 2026)
 ### Feature

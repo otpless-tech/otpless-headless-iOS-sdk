@@ -598,7 +598,7 @@ final class AppAttestConfigGateTests: XCTestCase {
     // MARK: Endpoint contract (ENG-516)
 
     func testAttestationPathMatchesTheBackendContract() {
-        XCTAssertEqual(ApiManager.POST_DEVICE_ATTESTATION_PATH, "/v3/lp/user/device/attestation/{state}")
+        XCTAssertEqual(ApiManager.POST_DEVICE_ATTESTATION_PATH, "/v3/device/attestation/{state}")
     }
 
     // MARK: Logging
@@ -693,7 +693,7 @@ final class AppAttestRequestShapeTests: XCTestCase {
         XCTAssertEqual(response.status, "SUCCESS")
         let request = try XCTUnwrap(StubURLProtocol.lastRequest)
         XCTAssertEqual(request.httpMethod, "POST")
-        XCTAssertEqual(request.url?.path, "/v3/lp/user/device/attestation/st-123")
+        XCTAssertEqual(request.url?.path, "/v3/device/attestation/st-123")
     }
 
     func testBodyCarriesKeyIdAndAttestationObject() async throws {
@@ -1038,8 +1038,18 @@ final class AppAttestIntentRequestTests: XCTestCase {
 
         XCTAssertEqual(Set(with.keys), Set(without.keys).union([AppAttestInfo.bodyKey]))
         for (key, value) in without {
-            XCTAssertEqual(String(describing: with[key] ?? "<missing>"), String(describing: value), "`\(key)` changed")
+            XCTAssertEqual(comparable(with[key] ?? "<missing>"), comparable(value), "`\(key)` changed")
         }
+    }
+
+    /// A member can be a JSON document in a string (e.g. `metadata`) whose key order is not stable
+    /// from one serialisation to the next; compare those by content, not by text.
+    private func comparable(_ value: Any) -> String {
+        guard let text = value as? String, let data = text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let canonical = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        else { return String(describing: value) }
+        return String(decoding: canonical, as: UTF8.self)
     }
 
     /// Merchants without attestation must send the same body as before. `merchantConfig` is nil

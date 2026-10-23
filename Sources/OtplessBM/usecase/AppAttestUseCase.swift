@@ -3,7 +3,7 @@
 //  OtplessBM
 //
 //  Registers an Apple App Attest key with the backend, once per install, when the merchant
-//  config asks for it. Contract: `POST /v3/lp/user/device/attestation/{state}` — the
+//  config asks for it. Contract: `POST /v3/device/attestation/{state}` — the
 //  transaction `state` is the challenge, so `clientDataHash = SHA256(utf8(state))`.
 //
 //  Design rules, all deliberate:

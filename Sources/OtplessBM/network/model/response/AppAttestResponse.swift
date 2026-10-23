@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// Response of `POST /v3/lp/user/device/attestation/{state}`.
+/// Response of `POST /v3/device/attestation/{state}`.
 struct AppAttestResponse: Decodable {
     let keyId: String?
     /// `SUCCESS` or `FAILED`.

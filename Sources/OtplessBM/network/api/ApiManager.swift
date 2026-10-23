@@ -31,7 +31,7 @@ final class ApiManager: Sendable {
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
     static let MFA_SNA_STATUS_PATH = "/v3/lp/user/transaction/mfa-sna-status/{state}"
-    static let POST_DEVICE_ATTESTATION_PATH = "/v3/lp/user/device/attestation/{state}"
+    static let POST_DEVICE_ATTESTATION_PATH = "/v3/device/attestation/{state}"
 
 
     init(

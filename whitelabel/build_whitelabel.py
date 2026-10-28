@@ -29,8 +29,9 @@ Pipeline
   2. build     xcodebuild archive for iphoneos + iphonesimulator → -create-xcframework (+ dSYMs).
                BUILD_LIBRARY_FOR_DISTRIBUTION=YES, so the module is ABI-stable across Swift versions.
   3. audit     every file in the xcframework (binary, .swiftinterface, headers, plists) is scanned
-               with `strings` for brand tokens; the arm64 .swiftinterface is diffed against the
-               committed golden whitelabel/api/<Module>.swiftinterface.
+               with `strings`, and the binary's symbol table with `nm` + `swift-demangle`, for brand
+               tokens; the arm64 .swiftinterface is diffed against the committed golden
+               whitelabel/api/<Module>.swiftinterface.
   4. package   optional codesign, then zip + SHA-256 (the SPM binaryTarget checksum).
 
 Stdlib only (Python 3.9+). Needs Xcode 16+ (synchronized folder groups in the generated project).
@@ -62,9 +63,9 @@ def log(msg: str) -> None:
     print(f'[whitelabel] {msg}', flush=True)
 
 
-def run(cmd: list, cwd: Path | None = None, capture: bool = False) -> str:
+def run(cmd: list, cwd: Path | None = None, capture: bool = False, input: str | None = None) -> str:
     cmd = [str(c) for c in cmd]
-    proc = subprocess.run(cmd, cwd=cwd, text=True, capture_output=capture)
+    proc = subprocess.run(cmd, cwd=cwd, text=True, capture_output=capture, input=input)
     if proc.returncode != 0:
         # xcodebuild reports compile errors on stdout; keep the tail, where they are
         detail = '\n'.join(f'{proc.stdout or ""}\n{proc.stderr or ""}'.strip().splitlines()[-80:]) if capture else ''
@@ -446,6 +447,13 @@ def audit(m, rw: Rewriter, xcf: Path, update_api: bool) -> None:
         for s in run(['strings', '-n', '4', f], capture=True).splitlines():
             if rw.brand.search(rw.strip_allowed(s)):
                 leaks.append(f'    {f.relative_to(xcf)}: {s.strip()[:160]}')
+    # Symbol table: `strings` never reads it, and Swift mangling compresses repeated words, so the
+    # brand may not appear literally — demangle to the names a decompiler would show, then scan
+    for binary in sorted(xcf.glob(f'*/{m.MODULE}.framework/{m.MODULE}')):
+        symbols = run(['xcrun', 'swift-demangle'], capture=True, input=run(['nm', '-a', binary], capture=True))
+        for s in symbols.splitlines():
+            if rw.brand.search(rw.strip_allowed(s)):
+                leaks.append(f'    {binary.relative_to(xcf)} (symbol): {s.strip()[:160]}')
     if leaks:
         raise WhitelabelError('brand strings leaked into the xcframework:\n' + '\n'.join(sorted(set(leaks))))
     log('brand audit clean')

@@ -15,3 +15,6 @@ xcuserdata/
 
 # Python virtualenv for scripts/
 scripts/env/
+# Whitelabel xcframework output (whitelabel/build_whitelabel.py)
+whitelabel/build/
+__pycache__/

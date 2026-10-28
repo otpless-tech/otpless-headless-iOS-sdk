@@ -9,6 +9,10 @@ no unmapped brand token ships.
     python3 whitelabel/build_whitelabel.py                  # generate → build → audit → package
     python3 whitelabel/build_whitelabel.py --generate-only  # emit rebranded tree + .xcodeproj only
     python3 whitelabel/build_whitelabel.py --update-api     # accept public-API drift into the golden
+    python3 whitelabel/build_whitelabel.py --ref .          # build the working tree instead of `main`
+
+SDK sources are taken from a git ref (default `main`) via `git archive`, so uncommitted or untracked
+work in Sources/ never reaches the deliverable. Only the whitelabel/ tooling runs from the checkout.
 
 Pipeline
   1. generate  Each Swift file is split by a small lexer into code / comment / string-literal
@@ -259,9 +263,31 @@ class Rewriter:
 # Generate
 # ---------------------------------------------------------------------------------------------
 
-def spm_checkout(package: str) -> Path:
-    """Returns the SwiftPM checkout of `package`, pinned to the revision in Package.resolved."""
-    pins = json.loads((REPO / 'Package.resolved').read_text())['pins']
+WORKTREE = '.'
+
+
+def export_ref(m, ref: str, dest: Path) -> tuple[Path, str]:
+    """Snapshots every SDK input (sources, resources, version file, Package.resolved) at `ref`.
+
+    Building from a committed ref keeps uncommitted / untracked work out of the deliverable.
+    `ref == '.'` reads the working tree instead (for trying local changes)."""
+    if ref == WORKTREE:
+        return REPO, 'working tree'
+    sha = run(['git', '-C', REPO, 'rev-parse', '--verify', f'{ref}^{{commit}}'], capture=True).strip()
+    paths = sorted({s['path'] for s in m.SOURCES if 'spm_package' not in s} | set(m.RESOURCES) | {m.VERSION_SOURCE[0], 'Package.resolved'})
+    shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True)
+    # git archive | tar keeps the snapshot byte-identical to the commit
+    archive = subprocess.run(['git', '-C', str(REPO), 'archive', '--format=tar', sha, '--', *paths], capture_output=True)
+    if archive.returncode != 0:
+        raise WhitelabelError(f'git archive {ref} failed: {archive.stderr.decode().strip()}')
+    subprocess.run(['tar', '-x', '-C', str(dest)], input=archive.stdout, check=True)
+    return dest, f'{ref} @ {sha[:9]}'
+
+
+def spm_checkout(package: str, src: Path) -> Path:
+    """Returns the SwiftPM checkout of `package`, pinned to the revision in `src`/Package.resolved."""
+    pins = json.loads((src / 'Package.resolved').read_text())['pins']
     pin = next((p for p in pins if p['identity'] == package), None)
     if pin is None:
         raise WhitelabelError(f'{package} is not pinned in Package.resolved')
@@ -276,19 +302,19 @@ def spm_checkout(package: str) -> Path:
     return checkout
 
 
-def read_version(m) -> str:
+def read_version(m, src: Path) -> str:
     file, pattern = m.VERSION_SOURCE
-    match = re.search(pattern, (REPO / file).read_text())
+    match = re.search(pattern, (src / file).read_text())
     if not match:
         raise WhitelabelError(f'version not found in {file}')
     return match.group(1)
 
 
-def generate(m, rw: Rewriter, mapping_path: Path, root: Path, version: str, static: bool) -> None:
+def generate(m, rw: Rewriter, mapping_path: Path, src: Path, root: Path, version: str, static: bool) -> None:
     shutil.rmtree(root, ignore_errors=True)
     sources, seen = root / 'Sources', {}
     for spec in m.SOURCES:
-        base = (spm_checkout(spec['spm_package']) if 'spm_package' in spec else REPO) / spec['path']
+        base = (spm_checkout(spec['spm_package'], src) if 'spm_package' in spec else src) / spec['path']
         files = sorted(base.rglob('*.swift'))
         log(f'rewriting {len(files)} files from {spec["module"]}{" (vendored)" if spec.get("vendored") else ""}')
         for f in files:
@@ -301,10 +327,10 @@ def generate(m, rw: Rewriter, mapping_path: Path, root: Path, version: str, stat
             out = sources / dest
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(rw.rewrite(f.read_text(), f'{spec["module"]}/{rel}', spec.get('vendored', False)))
-    for src, dest in m.RESOURCES.items():
-        text = (REPO / src).read_text()
+    for resource, dest in m.RESOURCES.items():
+        text = (src / resource).read_text()
         if rw.brand.search(text):
-            raise WhitelabelError(f'resource {src} contains the brand; it is copied verbatim')
+            raise WhitelabelError(f'resource {resource} contains the brand; it is copied verbatim')
         (sources / dest).parent.mkdir(parents=True, exist_ok=True)
         (sources / dest).write_text(text)
     rw.check(mapping_path)
@@ -481,17 +507,19 @@ def main() -> int:
     parser.add_argument('--update-api', action='store_true', help='overwrite the public-API golden with the built interface')
     parser.add_argument('--work-dir', type=Path, help='scratch dir; must not contain the brand (default: $TMPDIR/<flavor>-whitelabel)')
     parser.add_argument('--out', type=Path, default=HERE / 'build', help='where the xcframework + zip land')
+    parser.add_argument('--ref', default='main', help="git ref whose SDK sources are built (default: main); '.' = working tree")
     args = parser.parse_args()
     try:
         m = load_mapping(args.mapping.resolve())
-        rw, version = Rewriter(m), read_version(m)
+        rw = Rewriter(m)
         work = (args.work_dir or Path(tempfile.gettempdir()) / f'{m.FLAVOR}-whitelabel').resolve()
         # Absolute source paths are embedded in the binary — the build dir must be brand-free
         if rw.brand.search(str(work)):
             raise WhitelabelError(f'work dir {work} contains the brand; pass --work-dir elsewhere')
-        root = work / m.MODULE
-        log(f'{m.MODULE} {version} ({"static" if args.static else "dynamic"}) → {root}')
-        generate(m, rw, args.mapping.resolve(), root, version, args.static)
+        src, origin = export_ref(m, args.ref, work / 'ref')
+        version, root = read_version(m, src), work / m.MODULE
+        log(f'{m.MODULE} {version} ({"static" if args.static else "dynamic"}) from {origin} → {root}')
+        generate(m, rw, args.mapping.resolve(), src, root, version, args.static)
         if args.generate_only:
             log(f'generated {root / (m.MODULE + ".xcodeproj")}')
             return 0

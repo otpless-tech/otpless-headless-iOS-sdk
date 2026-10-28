@@ -106,6 +106,10 @@ LITERALS = {
     'OtplessCellularManager':         'AuthIoCellularManager',
     'OtplessGIDSignIn':               'AuthIoGIDSignIn',
     'otplesssdk':                     'authiosdk',                       # User-Agent suffix; Android: ' otplesssdk' → ' authiosdk'
+    "Invalid host — expected 'otpless', got '": "Invalid host — expected the AuthIo login host, got '",  # DLog; host itself stays otpless
+    # Telemetry identifiers — the backend must recognise these AuthIo values (Android still sends the otpless ones)
+    'native_cle_otpless':             'native_cle_authio',               # ProviderType.nativeName
+    'otpless-headless(':              'authio-headless(',                # buildPlatform, e.g. authio-headless(ios)
     # Queue labels, os_log subsystems, keychain service
     'com.otpless':                    'com.authio',
     # UserDefaults / keychain / sqlite names (Android sharedPrefsRenames use the _kss3 suffix)
@@ -123,9 +127,6 @@ LITERALS = {
 # Regexes for brand text that must stay in literals (and may appear in the binary). Reason required.
 PRESERVED_LITERALS = {
     r'(?:[\w-]+\.)*otpless\.(?:app|com|tech)\b': 'OTPLESS backend hosts — AuthIo talks to the same backend',
-    r'native_cle_otpless':                       'ProviderType.nativeName telemetry value — parsed server-side',
-    r'otpless-headless\(':                       'buildPlatform identifier sent in telemetry — identifies the underlying SDK (Android keeps it too)',
     r'OTPlessIntelligence':                      'external OTPlessIntelligence SDK, loaded via NSClassFromString — its class name is fixed',
     r'^otpless\.$|^://otpless$|^otpless$':       'deeplink otpless.<appId>://otpless — loginUri registered with the backend (Android keeps it too)',
-    r"expected 'otpless'":                       'debug log naming the deeplink host above',
 }

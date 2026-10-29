@@ -15,6 +15,6 @@ xcuserdata/
 
 # Python virtualenv for scripts/
 scripts/env/
-# Whitelabel xcframework output (whitelabel/build_whitelabel.py)
+# Whitelabel tool: xcframework output and Xcode package state (swift run --package-path whitelabel whitelabel)
 whitelabel/build/
-__pycache__/
+whitelabel/.swiftpm/

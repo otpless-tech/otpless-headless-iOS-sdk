@@ -102,6 +102,26 @@ public func audit(_ rewriter: Rewriter, xcf: URL, work: URL, updateApi: Bool) th
     log("public API matches golden")
 }
 
+/// Deletes everything a build leaves behind: the deliverables in `out` and the scratch dir (snapshot,
+/// generated module, archives, DerivedData). Missing directories are skipped.
+/// - Parameters:
+///   - out: output directory (default whitelabel/build/).
+///   - work: scratch directory (default $TMPDIR/<flavor>-whitelabel).
+/// - Returns: the directories that existed and were removed.
+/// - Throws: WhitelabelError if a directory exists but can't be removed.
+@discardableResult
+public func clean(out: URL, work: URL) throws -> [URL] {
+    try [out, work].filter(\.exists).map { dir in
+        do {
+            try FileManager.default.removeItem(at: dir)
+        } catch {
+            throw WhitelabelError("cannot remove \(dir.path): \(error.localizedDescription)")
+        }
+        log("removed \(dir.path)")
+        return dir
+    }
+}
+
 /// Produces the deliverable: optionally codesigns the xcframework, copies it to `out`, and writes
 /// <module>-<version>.xcframework.zip plus its .sha256 (the SPM binaryTarget checksum).
 /// - Parameters:

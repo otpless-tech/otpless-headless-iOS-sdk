@@ -71,6 +71,21 @@ func authio() throws -> Rewriter {
 
 }
 
+/// clean() removes the output and scratch dirs and skips missing ones.
+@Suite struct CleanTests {
+    /// Existing dirs are removed and reported; a missing one is skipped without error.
+    @Test func removesExistingDirsAndSkipsMissing() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("clean-test-\(UUID().uuidString)")
+        let out = tmp.appendingPathComponent("build"), work = tmp.appendingPathComponent("work")
+        try writeText("zip", to: out.appendingPathComponent("AuthIoSDK-1.0.xcframework.zip"))
+        defer { remove(tmp) }
+        #expect(try clean(out: out, work: work) == [out])
+        #expect(!out.exists)
+        #expect(try clean(out: out, work: work).isEmpty)
+    }
+
+}
+
 /// Invariants of the shipped mapping file.
 @Suite struct MappingTests {
     /// Rename targets never contain the brand, otherwise the rewrite would reintroduce it.

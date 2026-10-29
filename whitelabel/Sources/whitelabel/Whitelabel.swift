@@ -17,6 +17,7 @@ struct Whitelabel: ParsableCommand {
           swift run --package-path whitelabel whitelabel --generate-only  # emit rebranded tree + .xcodeproj only
           swift run --package-path whitelabel whitelabel --update-api     # accept public-API drift into the golden
           swift run --package-path whitelabel whitelabel --ref .          # build the working tree instead of `main`
+          swift run --package-path whitelabel whitelabel --clean          # delete whitelabel/build/ and the scratch dir
           swift test --package-path whitelabel                            # run the tool's tests
 
         SDK sources are taken from a git ref (default `main`) via `git archive`, so uncommitted or untracked work in \
@@ -69,7 +70,11 @@ struct Whitelabel: ParsableCommand {
     @Option(help: "Git ref whose SDK sources are built; '.' = working tree.")
     var ref = "main"
 
-    /// Runs generate → build → audit → package (stopping after generate with --generate-only). Every
+    @Flag(help: "Delete the build output (--out) and the scratch dir (--work-dir), then exit.")
+    var clean = false
+
+    /// Runs generate → build → audit → package (stopping after generate with --generate-only), or only
+    /// deletes previous build output with --clean. Every
     /// WhitelabelError is printed as one readable message and exits with status 1.
     func run() throws {
         do {
@@ -80,6 +85,11 @@ struct Whitelabel: ParsableCommand {
             // Absolute source paths are embedded in the binary — the build dir must be brand-free
             if rewriter.brand.search(work.path) {
                 throw WhitelabelError("work dir \(work.path) contains the brand; pass --work-dir elsewhere")
+            }
+            let outURL = URL(fileURLWithPath: out).standardizedFileURL
+            if clean {
+                if try WhitelabelKit.clean(out: outURL, work: work).isEmpty { log("nothing to clean") }
+                return
             }
             // Snapshot the SDK inputs at --ref and generate the rebranded project
             let (src, origin) = try exportRef(m, ref: ref, dest: work.appendingPathComponent("ref"))
@@ -93,7 +103,7 @@ struct Whitelabel: ParsableCommand {
             // Build, audit, package
             let xcf = try build(m, root: root, work: work)
             try audit(rewriter, xcf: xcf, work: work, updateApi: updateApi)
-            let archive = try package(m, xcf: xcf, out: URL(fileURLWithPath: out).standardizedFileURL, version: version, sign: sign)
+            let archive = try package(m, xcf: xcf, out: outURL, version: version, sign: sign)
             log("done → \(archive.path)")
             log("sha256 \(try String(contentsOfFile: archive.path + ".sha256", encoding: .utf8).split(separator: " ")[0])")
         } catch let error as WhitelabelError {

@@ -39,6 +39,14 @@ internal class PostIntentUseCase {
             return parseSuccessResponse(success, postIntentRequestBody: requestBody)
         case .failure(let failure):
             log(message: "[Intent] Failed — \(failure.localizedDescription)", type: .API_RESPONSE_FAILURE)
+            // 7005 means the state is invalid: refresh it (succeeds at most once per session) and retry the intent
+            if let apiError = failure as? ApiError, apiError.isStateInvalid {
+                OtplessBMEvents.Init.stateInvalidated()
+                if await Otpless.shared.retryStateLoading() {
+                    log(message: "[Intent] State refreshed, retrying the intent", type: .INTENT)
+                    return await invoke(state: Otpless.shared.state ?? "", withOtplessRequest: otplessRequest, uiId: uiId, uid: uid, webAuthnFallback: webAuthnFallback)
+                }
+            }
             return parseFailureResponse(failure, request: otplessRequest)
         }
     }

@@ -40,7 +40,21 @@ class GetMerchantConfigUseCase {
                 /// todo: send the event here.
                 return (nil, OtplessResponse(responseType: .FAILED, response: response, statusCode: Constants.SSL_ERROR_CODE))
             }
-            if retryCount == 1 {
+            // 7005 means the state is invalid: refresh it (succeeds at most once per session) and retry the config.
+            // If the intent call already refreshed the state, just retry with the new one.
+            if let apiError = failure as? ApiError, apiError.isStateInvalid {
+                OtplessBMEvents.Init.stateInvalidated()
+                let currentState = Otpless.shared.state ?? ""
+                if !currentState.isEmpty && currentState != state {
+                    DLog("[MerchantConfig] State was already refreshed, retrying the config")
+                    return await invoke(state: currentState, queryParams: queryParams, isRetry: false)
+                }
+                if await Otpless.shared.retryStateLoading() {
+                    DLog("[MerchantConfig] State refreshed, retrying the config")
+                    return await invoke(state: Otpless.shared.state ?? "", queryParams: queryParams, isRetry: false)
+                }
+            }
+            if retryCount >= 1 {
                 DLog("[MerchantConfig] Config fetch failed after max retries — returning error response")
                 retryCount = 0
                 return (nil, OtplessResponse.failedToInitializeResponse)

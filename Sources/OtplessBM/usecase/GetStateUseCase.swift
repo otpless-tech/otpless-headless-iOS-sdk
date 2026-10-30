@@ -8,6 +8,47 @@
 class GetStateUseCase {
     
     private var retryCount = 0
+    /// True while the state in use came from the local cache, so a 7005 may refresh it once per session.
+    private(set) var isStateRefreshRequired = false
+
+    /// Returns the cached state, or nil if a remote fetch is needed.
+    func loadCachedState() -> String? {
+        // Keychain survives uninstall but UserDefaults don't: a missing marker means a fresh install, so drop the stale state
+        if !SecureStorage.shared.getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) {
+            log(message: "[State] Fresh install detected — clearing stale keychain state", type: .SDK_STATE_FETCH)
+            SecureStorage.shared.delete(key: Constants.STATE_KEY)
+            SecureStorage.shared.saveToUserDefaults(key: Constants.INSTALL_MARKER_KEY, value: true)
+        }
+        // Use the cached state if present
+        guard let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY), !savedState.isEmpty else {
+            isStateRefreshRequired = false
+            return nil
+        }
+        OtplessBMEvents.Init.stateFromCache()
+        isStateRefreshRequired = true
+        return savedState
+    }
+
+    /// Deletes the cached state and fetches a fresh one after a 7005. Runs at most once per session, and only
+    /// when the state in use was loaded from the local cache.
+    /// - Returns: nil if no refresh was attempted, an empty string if the fetch failed, otherwise the new state.
+    func retryStateLoading(queryParams: [String: String]) async -> String? {
+        guard isStateRefreshRequired else { return nil }
+        isStateRefreshRequired = false
+        SecureStorage.shared.delete(key: Constants.STATE_KEY)
+        log(message: "[State] Retrying state loading from remote", type: .SDK_STATE_FETCH)
+        let (stateResponse, _) = await invoke(queryParams: queryParams, isRetry: false)
+        guard let newState = stateResponse?.state, !newState.isEmpty else {
+            log(message: "[State] State refresh failed", type: .API_RESPONSE_FAILURE)
+            OtplessBMEvents.Init.stateFetchFailed(isRetry: true)
+            return ""
+        }
+        // Persist the refreshed state
+        SecureStorage.shared.save(key: Constants.STATE_KEY, value: newState)
+        log(message: "[State] State refreshed — state: \(newState.prefix(8))…", type: .SDK_STATE_FETCH)
+        OtplessBMEvents.Init.stateReady(isAuthRetry: true)
+        return newState
+    }
 
     func invoke(
         queryParams: [String: String],

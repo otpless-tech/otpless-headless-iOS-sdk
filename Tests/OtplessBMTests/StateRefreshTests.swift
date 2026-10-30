@@ -69,11 +69,12 @@ final class StateRefreshTests: XCTestCase {
 
     // MARK: - SecureStorage.clearStaleDataOnFreshInstall
 
-    func testFreshInstallClearsAllKeychainDataAndSetsMarker() {
+    /// The uid is intentionally kept across reinstalls; state and session must not be.
+    func testFreshInstallClearsStateAndSessionButKeepsUid() {
         seedKeychain()
         storage.clearStaleDataOnFreshInstall()
         XCTAssertNil(storage.retrieve(key: Constants.STATE_KEY))
-        XCTAssertNil(storage.retrieve(key: Constants.UID_KEY))
+        XCTAssertEqual(storage.retrieve(key: Constants.UID_KEY), "cached-uid")
         for key in sessionKeys {
             XCTAssertNil(storage.retrieve(key: key), "\(key) survived a fresh install")
         }

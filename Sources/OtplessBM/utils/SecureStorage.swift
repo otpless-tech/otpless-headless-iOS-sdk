@@ -73,6 +73,15 @@ internal final class SecureStorage: @unchecked Sendable {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Keychain survives uninstall but UserDefaults don't, so a missing marker means a fresh install: drop every
+    /// stale keychain item (state, uid, session, session state). Called from every SDK entry point before any read.
+    func clearStaleDataOnFreshInstall() {
+        guard !getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) else { return }
+        log(message: "[Storage] Fresh install detected — clearing stale keychain data", type: .SDK_STATE_FETCH)
+        clearAll()
+        saveToUserDefaults(key: Constants.INSTALL_MARKER_KEY, value: true)
+    }
+    
     func saveToUserDefaults<T>(key: String, value: T) {
         UserDefaults.standard.set(value, forKey: key)
     }

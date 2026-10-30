@@ -11,16 +11,6 @@ class GetStateUseCase {
     /// True while the state in use came from the local cache, so a 7005 may refresh it once per session.
     private(set) var isStateRefreshRequired = false
 
-    /// Keychain survives uninstall but UserDefaults don't, so a missing marker means a fresh install:
-    /// drop the stale keychain state and uid. Must run before either is read.
-    func clearStaleDataOnFreshInstall() {
-        guard !SecureStorage.shared.getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) else { return }
-        log(message: "[State] Fresh install detected — clearing stale keychain state and uid", type: .SDK_STATE_FETCH)
-        SecureStorage.shared.delete(key: Constants.STATE_KEY)
-        SecureStorage.shared.delete(key: Constants.UID_KEY)
-        SecureStorage.shared.saveToUserDefaults(key: Constants.INSTALL_MARKER_KEY, value: true)
-    }
-
     /// Returns the cached state, or nil if a remote fetch is needed.
     func loadCachedState() -> String? {
         guard let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY), !savedState.isEmpty else {

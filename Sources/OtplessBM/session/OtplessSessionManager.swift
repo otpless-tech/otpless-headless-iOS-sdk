@@ -24,6 +24,7 @@ public actor OtplessSessionManager {
     
     public func initialize(appId: String) {
         guard !isInit else { return }
+        SecureStorage.shared.clearStaleDataOnFreshInstall()
         self.appId = appId
         isInit = true
     }

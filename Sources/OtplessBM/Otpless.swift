@@ -139,7 +139,7 @@ import OtplessEventIO
         self.sdkState = .NOT_READY
         self.merchantAppId = appId
         self.merchantVC = vc
-        getStateUseCase.clearStaleDataOnFreshInstall()
+        SecureStorage.shared.clearStaleDataOnFreshInstall()
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
 

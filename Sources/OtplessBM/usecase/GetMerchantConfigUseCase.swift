@@ -54,7 +54,7 @@ class GetMerchantConfigUseCase {
                     return await invoke(state: Otpless.shared.state ?? "", queryParams: queryParams, isRetry: false)
                 }
             }
-            if retryCount == 1 {
+            if retryCount >= 1 {
                 DLog("[MerchantConfig] Config fetch failed after max retries — returning error response")
                 retryCount = 0
                 return (nil, OtplessResponse.failedToInitializeResponse)

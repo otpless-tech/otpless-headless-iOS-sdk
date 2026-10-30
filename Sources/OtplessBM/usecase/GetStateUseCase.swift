@@ -63,7 +63,7 @@ class GetStateUseCase {
             return (success, nil)
         case .failure(let failure):
             log(message: "[State] State fetch failed — \(failure.localizedDescription)", type: .API_RESPONSE_FAILURE)
-            if retryCount == 1 {
+            if retryCount >= 1 {
                 log(message: "[State] State fetch failed after max retries — returning error response", type: .API_RESPONSE_FAILURE)
                 retryCount = 0
                 return (nil, OtplessResponse.failedToInitializeResponse)

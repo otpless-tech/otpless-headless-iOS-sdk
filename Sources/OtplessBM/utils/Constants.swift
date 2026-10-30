@@ -11,6 +11,7 @@ internal struct Constants {
     static let STATE_KEY = "otpless_bm_state"
     static let INID_KEY = "otpless_bm_inid"
     static let UID_KEY = "otpless_bm_uid"
+    static let INSTALL_MARKER_KEY = "otpless_bm_install_marker"
     
     // MARK: - Transaction Status
     static let SUCCESS = "SUCCESS"

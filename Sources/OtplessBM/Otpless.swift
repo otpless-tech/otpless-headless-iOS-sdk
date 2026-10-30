@@ -24,6 +24,8 @@ import OtplessEventIO
     internal private(set) var merchantAppId: String = ""
     internal private(set) var merchantOtplessRequest: OtplessRequest?
     internal private(set) var state: String?
+    /// True while the state in use came from the local cache, so a 7005 may refresh it once per session.
+    private var isStateRefreshRequired = false
     internal private(set) var hasMerchantSelectedExternalSDK: Bool = false
     internal private(set) var phoneIntentChannel: String = ""
     internal private(set) var emailIntentChannel: String = ""
@@ -444,6 +446,28 @@ import OtplessEventIO
 }
 
 internal extension Otpless {
+    /// Deletes the cached state and fetches a fresh one. Succeeds at most once per session, and only
+    /// when the state in use was loaded from the local cache.
+    func retryStateLoading() async -> Bool {
+        guard isStateRefreshRequired else { return false }
+        isStateRefreshRequired = false
+        SecureStorage.shared.delete(key: Constants.STATE_KEY)
+        log(message: "[State] Retrying state loading from remote", type: .SDK_STATE_FETCH)
+        let (stateResponse, _) = await getStateUseCase.invoke(queryParams: getMerchantConfigQueryParams(), isRetry: false)
+        let newState = stateResponse?.state ?? ""
+        // Publish the refreshed state (or clear it on failure)
+        await MainActor.run { self.state = newState }
+        guard !newState.isEmpty else {
+            log(message: "[State] State refresh failed", type: .API_RESPONSE_FAILURE)
+            OtplessBMEvents.Init.stateFetchFailed(isRetry: true)
+            return false
+        }
+        SecureStorage.shared.save(key: Constants.STATE_KEY, value: newState)
+        log(message: "[State] State refreshed — state: \(newState.prefix(8))…", type: .SDK_STATE_FETCH)
+        OtplessBMEvents.Init.stateReady(isAuthRetry: true)
+        return true
+    }
+
     func onAuthTypeChange(newAuthType: String) {
         self.authType = newAuthType
     }
@@ -549,11 +573,19 @@ private extension Otpless {
     }
     
     func requestStateForDeviceIfNil(onFetch: @escaping @Sendable (String?) -> Void) {
+        // Keychain survives uninstall but UserDefaults don't: a missing marker means a fresh install, so drop the stale state
+        if !SecureStorage.shared.getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) {
+            log(message: "[State] Fresh install detected — clearing stale keychain state", type: .SDK_STATE_FETCH)
+            SecureStorage.shared.delete(key: Constants.STATE_KEY)
+            SecureStorage.shared.saveToUserDefaults(key: Constants.INSTALL_MARKER_KEY, value: true)
+        }
         if let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY),
            !savedState.isEmpty {
             OtplessBMEvents.Init.stateFromCache()
+            isStateRefreshRequired = true
             onFetch(savedState)
         } else {
+            isStateRefreshRequired = false
             Task(priority: .medium) { [weak self] in
                 let stateResponse = await self?.getStateUseCase
                     .invoke(queryParams: self?.getMerchantConfigQueryParams() ?? [:], isRetry: false)

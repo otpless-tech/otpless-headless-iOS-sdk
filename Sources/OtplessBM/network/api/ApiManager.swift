@@ -18,6 +18,10 @@ final class ApiManager: Sendable {
         return Otpless.shared.environment.userAuthBaseURL
     }
     
+    /// Adds members to a POST body that bind to some of its own fields. It receives only the
+    /// string-valued members of the final body and returns extra top-level members to add.
+    typealias BodySigner = @Sendable ([String: String]) async -> [String: [String: String]]
+
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"
     static let POST_INTENT_PATH = "/v3/lp/user/transaction/intent/{state}"
@@ -27,6 +31,7 @@ final class ApiManager: Sendable {
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
     static let MFA_SNA_STATUS_PATH = "/v3/lp/user/transaction/mfa-sna-status/{state}"
+    static let POST_DEVICE_ATTESTATION_PATH = "/v3/device/attestation/{state}"
 
 
     init(
@@ -48,7 +53,8 @@ final class ApiManager: Sendable {
         method: String,
         body: [String: Any]? = nil,
         shoudlAppendBasicParams: Bool = true,
-        queryParameters: [String: Any]? = nil
+        queryParameters: [String: Any]? = nil,
+        bodySigner: BodySigner? = nil
     ) async throws -> Data {
         var newPath = path
         if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
@@ -59,7 +65,17 @@ final class ApiManager: Sendable {
         request.timeoutInterval = userAuthTimeout
         
         if method.uppercased() == "POST" {
-            let newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
+            var newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
+
+            // The signer reads the finished body and returns members to add. Those are added only
+            // after it has read, so a member it adds can never be part of what it signed.
+            if let bodySigner {
+                let stringFields = newBody.compactMapValues { $0 as? String }
+                for (name, member) in await bodySigner(stringFields) {
+                    newBody[name] = member
+                }
+            }
+
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
@@ -262,12 +278,22 @@ final class ApiManager: Sendable {
         return urlComponents.url!
     }
     
+    /// The App Attest object is several KB of certificate chain and receipt; it is never
+    /// useful in a log and must not reach a merchant-supplied log delegate.
+    static func redactedForLogging(_ body: [String: Any]) -> [String: Any] {
+        var redacted = body
+        if let blob = redacted["attestationObject"] as? String {
+            redacted["attestationObject"] = "<redacted \(blob.count) chars>"
+        }
+        return redacted
+    }
+
     private func logRequestAndResponse(_ request: URLRequest, body: [String: Any]?, _ response: URLResponse?, data: Data) {
         let urlStr = request.url?.absoluteString
         let method = request.httpMethod
         var logBody: [String: Any] = [:]
         if let body = body {
-            logBody = body
+            logBody = ApiManager.redactedForLogging(body)
         }
         
         var statusCode = -1

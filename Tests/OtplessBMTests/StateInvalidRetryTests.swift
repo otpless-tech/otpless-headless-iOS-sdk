@@ -85,6 +85,7 @@ private final class InMemoryKeychainStore: KeychainStore {
     func retrieve(key: String) -> String? { lock.lock(); defer { lock.unlock() }; return items[key] }
     func delete(key: String) { lock.lock(); items[key] = nil; lock.unlock() }
     func clearAll() { lock.lock(); items.removeAll(); lock.unlock() }
+    func isReadable(key: String) -> Bool { true }
 }
 
 final class StateInvalidRetryTests: XCTestCase {

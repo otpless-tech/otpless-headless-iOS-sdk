@@ -17,6 +17,7 @@ private final class InMemoryKeychainStore: KeychainStore {
     func retrieve(key: String) -> String? { items[key] }
     func delete(key: String) { items[key] = nil }
     func clearAll() { items.removeAll() }
+    func isReadable(key: String) -> Bool { true }
 }
 
 final class StateRefreshTests: XCTestCase {

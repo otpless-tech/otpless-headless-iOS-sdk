@@ -1,4 +1,4 @@
-## Unreleased
+## 3.1.0 (2nd November 2026)Unreleased
 ### Feature
 - Apple **App Attest** registration (iOS 14+), controlled by the merchant config. When the config API enables it for your app, the SDK registers a hardware-backed App Attest key with OTPLESS once per install, in the background and after `SDK_READY` — it never delays, blocks or fails an authentication, and any failure is reported as telemetry only. The server verifies the attestation against the transaction `state` as the challenge (`POST /v3/device/attestation/{state}`). Nothing changes for apps whose config does not enable it, and no public API was added or changed.
 - Reinstall-safe: a key id left in the Keychain by a previous install is detected (the Keychain survives uninstall, App Attest keys do not) and re-attested. Failed attempts back off (30 s doubling to 1 h) so a broken backend or unsupported device does not cost an Apple round trip on every init.
@@ -9,6 +9,11 @@
 - Registration is skipped while the Keychain is unreadable (locked device, e.g. a background launch) instead of registering a key that could not be saved.
 ### Notes
 - **Host-app setup:** App Attest works without any entitlement; Apple then issues development-environment keys (AAGUID `appattestdevelop`). Add the `com.apple.developer.devicecheck.appattest-environment` entitlement set to `production` for App Store / TestFlight builds so the backend sees production attestations. Unsupported devices and the simulator are skipped cleanly.
+
+## Unreleased
+### Fixes
+- Invalid state (`7005`) on the intent or merchant config API now refreshes the cached state and retries the call once per session — Android parity.
+- Stale state and session data left in the Keychain after an app reinstall are now cleared on the first launch. The uid is kept.
 
 ## 3.0.1 (17th September 2026)
 ### Feature

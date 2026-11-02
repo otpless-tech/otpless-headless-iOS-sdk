@@ -45,6 +45,8 @@ internal enum OtplessBMEvents {
         private static let STATE_FROM_CACHE = "sdk_init_state_from_cache"
         private static let STATE_READY = "sdk_init_state_ready"
         private static let STATE_FAILED = "sdk_init_state_failed"
+        private static let STATE_FETCH_FAILED = "sdk_init_state_fetch_failed"
+        private static let STATE_INVALIDATED = "sdk_init_state_invalidated"
         private static let WAIT_COMPLETED = "sdk_init_wait_completed"
         private static let CLEANUP_CALLED = "sdk_cleanup_called"
 
@@ -83,6 +85,21 @@ internal enum OtplessBMEvents {
                 data: isAuthRetry ? ["isAuthRetry": true] : nil,
                 errorCode: "5003"
             )
+        }
+
+        // SDK — remote state fetch failed while refreshing after a 7005/invalid-state signal
+        static func stateFetchFailed(isRetry: Bool = false) {
+            trackEvent(
+                name: STATE_FETCH_FAILED,
+                type: .SDK,
+                action: .RESPONSE,
+                data: isRetry ? ["isRetry": true] : nil
+            )
+        }
+
+        // SDK — server returned 7005 on intent/merchant config, triggering state re-fetch
+        static func stateInvalidated() {
+            trackEvent(name: STATE_INVALIDATED, type: .SDK, action: .RESPONSE)
         }
 
         static func waitCompleted(durationMs: UInt64, initSuccess: Bool) {

@@ -1,0 +1,275 @@
+import AuthenticationServices
+import CommonCrypto
+import CryptoKit
+import Foundation
+import LocalAuthentication
+import Network
+import OSLog
+import SQLite3
+import Security
+import Swift
+import SystemConfiguration
+import UIKit
+import WebKit
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+import os.log
+import os
+@objc public enum AuthEvent : Swift::Int {
+  case AUTH_INITIATED = 0
+  case AUTH_SUCCESS = 1
+  case AUTH_FAILED = 2
+  public init?(rawValue: Swift::Int)
+  public typealias RawValue = Swift::Int
+  public var rawValue: Swift::Int {
+    get
+  }
+}
+public enum AuthIoChannelType : Swift::String, Swift::CaseIterable {
+  case WHATSAPP
+  case GOOGLE_SDK
+  case FACEBOOK_SDK
+  case APPLE_SDK
+  case APPLE
+  case GMAIL
+  case TWITTER
+  case DISCORD
+  case SLACK
+  case FACEBOOK
+  case LINKEDIN
+  case MICROSOFT
+  case LINE
+  case LINEAR
+  case NOTION
+  case TWITCH
+  case GITHUB
+  case BITBUCKET
+  case ATLASSIAN
+  case GITLAB
+  case TRUE_CALLER
+  public static func fromString(_ value: Swift::String) -> AuthIoSDK::AuthIoChannelType
+  public init?(rawValue: Swift::String)
+  public typealias AllCases = [AuthIoSDK::AuthIoChannelType]
+  public typealias RawValue = Swift::String
+  nonisolated public static var allCases: [AuthIoSDK::AuthIoChannelType] {
+    get
+  }
+  public var rawValue: Swift::String {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc public class AuthIoChannelTypeObjC : ObjectiveC::NSObject {
+  @objc public static let WHATSAPP: Swift::String
+  @objc public static let GOOGLE_SDK: Swift::String
+  @objc public static let FACEBOOK_SDK: Swift::String
+  @objc public static let APPLE_SDK: Swift::String
+  @objc public static let APPLE: Swift::String
+  @objc public static let GMAIL: Swift::String
+  @objc public static let TWITTER: Swift::String
+  @objc public static let DISCORD: Swift::String
+  @objc public static let SLACK: Swift::String
+  @objc public static let FACEBOOK: Swift::String
+  @objc public static let LINKEDIN: Swift::String
+  @objc public static let MICROSOFT: Swift::String
+  @objc public static let LINE: Swift::String
+  @objc public static let LINEAR: Swift::String
+  @objc public static let NOTION: Swift::String
+  @objc public static let TWITCH: Swift::String
+  @objc public static let GITHUB: Swift::String
+  @objc public static let BITBUCKET: Swift::String
+  @objc public static let ATLASSIAN: Swift::String
+  @objc public static let GITLAB: Swift::String
+  @objc public static let TRUE_CALLER: Swift::String
+  @objc override dynamic public init()
+  @objc deinit
+}
+@objc public enum AuthIoEnvironment : Swift::Int {
+  case PRODUCTION = 0
+  public init?(rawValue: Swift::Int)
+  public typealias RawValue = Swift::Int
+  public var rawValue: Swift::Int {
+    get
+  }
+}
+@objc public enum DeviceFingerprintMode : Swift::Int {
+  case NONE = 0
+  case ASYNC = 1
+  case SYNC = 2
+  public init?(rawValue: Swift::Int)
+  public typealias RawValue = Swift::Int
+  public var rawValue: Swift::Int {
+    get
+  }
+}
+@_inheritsConvenienceInitializers @objc public class AuthIoRequest : ObjectiveC::NSObject, @unchecked Swift::Sendable {
+  @objc public func set(phoneNumber: Swift::String, withCountryCode countryCode: Swift::String)
+  @objc public func set(email: Swift::String)
+  public func set(channelType: AuthIoSDK::AuthIoChannelType)
+  @objc public func set(objcChannelType: Swift::String)
+  @objc public func set(requestIdForWebAuthn requestId: Swift::String)
+  @objc public func set(fromBackend requestId: Swift::String)
+  @objc public func set(otp: Swift::String)
+  @objc public func set(otpExpiry: Swift::String)
+  @objc public func set(otpLength: Swift::String)
+  @objc public func set(deliveryChannelForTransaction deliveryChannel: Swift::String)
+  @objc public func set(locale: Swift::String)
+  @objc public func set(code: Swift::String)
+  @objc public func set(extras: [Swift::String : Swift::String])
+  @objc public func set(tid: Swift::String)
+  @objc public func set(deviceFingerprintMode: AuthIoSDK::DeviceFingerprintMode)
+  @objc public func getRequestId() -> Swift::String
+  @objc override dynamic public init()
+  @objc deinit
+}
+public struct AuthIoAuthCofig : Swift::Sendable {
+  public init(isForeground: Swift::Bool, otp: Swift::String?, tid: Swift::String?)
+}
+public struct AuthIoResponse : @unchecked Swift::Sendable {
+  public let responseType: AuthIoSDK::ResponseTypes
+  public let response: [Swift::String : Any]?
+  public let statusCode: Swift::Int
+  public init(responseType: AuthIoSDK::ResponseTypes, response: [Swift::String : Any]?, statusCode: Swift::Int)
+  public func toString() -> Swift::String
+}
+public enum AuthIoSslKind : Swift::Sendable {
+  case sslDisabled
+  case sslEnabled
+  public static func == (a: AuthIoSDK::AuthIoSslKind, b: AuthIoSDK::AuthIoSslKind) -> Swift::Bool
+  public func hash(into hasher: inout Swift::Hasher)
+  public var hashValue: Swift::Int {
+    get
+  }
+}
+@objc public enum ProviderType : Swift::Int {
+  case CLIENT = 0
+  case AUTHIO = 1
+  public init?(rawValue: Swift::Int)
+  public typealias RawValue = Swift::Int
+  public var rawValue: Swift::Int {
+    get
+  }
+}
+public enum ResponseTypes : Swift::String {
+  case INITIATE, VERIFY, ONETAP, FALLBACK_TRIGGERED, FAILED, SDK_READY, DELIVERY_STATUS, AUTH_TERMINATED, MFA_FACTOR_COMPLETED
+  public init?(rawValue: Swift::String)
+  public typealias RawValue = Swift::String
+  public var rawValue: Swift::String {
+    get
+  }
+}
+public enum SdkState : Swift::String {
+  case READY, NOT_READY
+  public init?(rawValue: Swift::String)
+  public typealias RawValue = Swift::String
+  public var rawValue: Swift::String {
+    get
+  }
+}
+@_hasMissingDesignatedInitializers public actor AuthIoSessionManager {
+  public static let shared: AuthIoSDK::AuthIoSessionManager
+  public func initialize(appId: Swift::String)
+  public func getActiveSession() async -> AuthIoSDK::AuthIoSessionState
+  public func logout() async
+  @objc deinit
+  @_semantics("defaultActor") nonisolated final public var unownedExecutor: _Concurrency::UnownedSerialExecutor {
+    get
+  }
+}
+public enum AuthIoSessionState : Swift::Equatable, Swift::Sendable {
+  case active(Swift::String)
+  case inactive
+  public static func == (a: AuthIoSDK::AuthIoSessionState, b: AuthIoSDK::AuthIoSessionState) -> Swift::Bool
+}
+public enum LogType : Swift::String, @unchecked Swift::Sendable {
+  case API_RESPONSE_FAILURE
+  case CLASS_DEALLOC_IN_CLOSURE
+  case API_REQUEST_AND_RESPONSE
+  case IS_PASSKEY_SUPPORTED
+  case POLLING_STOPPED
+  case POLLING_STARTED
+  case POLLING_RESPONSE
+  case SNA_RESPONSE
+  case EVENT_API_ERROR
+  case EVENT_CREATING_FAILED
+  case SDK_STATE_FETCH
+  case TRANSACTION_START
+  case TRANSACTION_VALIDATION
+  case INTENT
+  case VERIFY
+  case DEVICE_INTELLIGENCE
+  case ONETAP
+  case RESPONSE_RELAY
+  public static func < (lhs: AuthIoSDK::LogType, rhs: AuthIoSDK::LogType) -> Swift::Bool
+  public init?(rawValue: Swift::String)
+  public typealias RawValue = Swift::String
+  public var rawValue: Swift::String {
+    get
+  }
+}
+@_Concurrency::MainActor public protocol AuthIoLoggerDelegate : ObjectiveC::NSObjectProtocol {
+  @_Concurrency::MainActor func log(message: Swift::String, type: AuthIoSDK::LogType)
+}
+@_inheritsConvenienceInitializers @objc final public class AuthIo : ObjectiveC::NSObject, @unchecked Swift::Sendable {
+  @objc public static let shared: AuthIoSDK::AuthIo
+  @objc final public func initialise(withAppId appId: Swift::String, loginUri: Swift::String? = nil, vc: UIKit::UIViewController)
+  final public func initialise(withAppId appId: Swift::String, loginUri: Swift::String? = nil, vc: UIKit::UIViewController, sslKind: AuthIoSDK::AuthIoSslKind)
+  @objc final public func isAuthIoDeeplink(url: Foundation::URL) -> Swift::Bool
+  @objc final public func start(withRequest authIoRequest: AuthIoSDK::AuthIoRequest) async
+  final public func startAuth(parent vc: UIKit::UIViewController, config authConfig: AuthIoSDK::AuthIoAuthCofig) async -> Swift::Bool
+  @objc final public func authorizeViaPasskey(withRequest authIoRequest: AuthIoSDK::AuthIoRequest, windowScene: UIKit::UIWindowScene) async
+  @objc final public func handleDeeplink(_ url: Foundation::URL) async
+  @_Concurrency::MainActor @objc final public func registerFBApp(_ application: UIKit::UIApplication, didFinishLaunchingWithOptions launchOptions: [UIKit::UIApplication.UIKit::LaunchOptionsKey : Any]?)
+  @_Concurrency::MainActor @objc final public func registerFBApp(_ app: UIKit::UIApplication, open url: Foundation::URL, options: [UIKit::UIApplication.UIKit::OpenURLOptionsKey : Any] = [:])
+  @available(iOS 13.0, *)
+  @_Concurrency::MainActor @objc final public func registerFBApp(openURLContexts URLContexts: Swift::Set<UIKit::UIOpenURLContext>) async
+  final public func commitAuthIoResponse(_ authIoResponse: AuthIoSDK::AuthIoResponse)
+  @objc final public func cleanup()
+  @objc final public func isSdkReady() -> Swift::Bool
+  @objc final public func objcCommit(_ authIoResponse: Swift::String?)
+  @objc final public func gettsID() -> Swift::String
+  @objc override dynamic public init()
+  @objc deinit
+}
+extension AuthIoSDK::AuthIo {
+  final public func setResponseDelegate(_ authIoResponseDelegate: any AuthIoSDK::AuthIoResponseDelegate)
+  @objc final public func setMfaEnabled(_ enabled: Swift::Bool)
+  @objc final public func setBuildPlatform(_ platform: Swift::String)
+  @objc final public var buildPlatform: Swift::String {
+    @objc get
+  }
+  final public func userAuthEvent(event: AuthIoSDK::AuthEvent, fallback: Swift::Bool, providerType: AuthIoSDK::ProviderType, providerInfo: [Swift::String : Swift::String])
+  @objc final public func setAuthIoObjcResponseDelegate(_ authIoResponseDelegate: @escaping (Swift::String) -> Swift::Void)
+  final public func setLoggerDelegate(_ authIoLoggerDelegate: any AuthIoSDK::AuthIoLoggerDelegate)
+  @objc final public func setDeviceFingerprintMode(_ mode: AuthIoSDK::DeviceFingerprintMode)
+  final public func clearAll()
+}
+@_Concurrency::MainActor public protocol AuthIoResponseDelegate : ObjectiveC::NSObjectProtocol {
+  @_Concurrency::MainActor func onResponse(_ response: AuthIoSDK::AuthIoResponse)
+}
+extension AuthIoSDK::AuthEvent : Swift::Equatable {}
+extension AuthIoSDK::AuthEvent : Swift::Hashable {}
+extension AuthIoSDK::AuthEvent : Swift::RawRepresentable {}
+extension AuthIoSDK::AuthIoChannelType : Swift::Equatable {}
+extension AuthIoSDK::AuthIoChannelType : Swift::Hashable {}
+extension AuthIoSDK::AuthIoChannelType : Swift::RawRepresentable {}
+extension AuthIoSDK::AuthIoEnvironment : Swift::Equatable {}
+extension AuthIoSDK::AuthIoEnvironment : Swift::Hashable {}
+extension AuthIoSDK::AuthIoEnvironment : Swift::RawRepresentable {}
+extension AuthIoSDK::DeviceFingerprintMode : Swift::Equatable {}
+extension AuthIoSDK::DeviceFingerprintMode : Swift::Hashable {}
+extension AuthIoSDK::DeviceFingerprintMode : Swift::RawRepresentable {}
+extension AuthIoSDK::AuthIoSslKind : Swift::Equatable {}
+extension AuthIoSDK::AuthIoSslKind : Swift::Hashable {}
+extension AuthIoSDK::ProviderType : Swift::Equatable {}
+extension AuthIoSDK::ProviderType : Swift::Hashable {}
+extension AuthIoSDK::ProviderType : Swift::RawRepresentable {}
+extension AuthIoSDK::ResponseTypes : Swift::Equatable {}
+extension AuthIoSDK::ResponseTypes : Swift::Hashable {}
+extension AuthIoSDK::ResponseTypes : Swift::RawRepresentable {}
+extension AuthIoSDK::SdkState : Swift::Equatable {}
+extension AuthIoSDK::SdkState : Swift::Hashable {}
+extension AuthIoSDK::SdkState : Swift::RawRepresentable {}
+extension AuthIoSDK::LogType : Swift::Equatable {}
+extension AuthIoSDK::LogType : Swift::Hashable {}
+extension AuthIoSDK::LogType : Swift::RawRepresentable {}

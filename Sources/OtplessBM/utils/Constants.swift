@@ -11,13 +11,14 @@ internal struct Constants {
     static let STATE_KEY = "otpless_bm_state"
     static let INID_KEY = "otpless_bm_inid"
     static let UID_KEY = "otpless_bm_uid"
+    static let INSTALL_MARKER_KEY = "otpless_bm_install_marker"
     
     // MARK: - Transaction Status
     static let SUCCESS = "SUCCESS"
     static let PENDING = "PENDING"
     static let FAILED = "FAILED"
     
-    static let SDK_VERSION = "3.0.2"
+    static let SDK_VERSION = "3.1.0"
 
     // MARK: - Build platform (wrapper attribution)
     /// Default platform reported in the device event when no wrapper declares itself.

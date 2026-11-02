@@ -1,3 +1,8 @@
+## 3.1.0 (30th October 2026)
+### Fixes
+- Invalid state (`7005`) on the intent or merchant config API now refreshes the cached state and retries the call once per session — Android parity.
+- Stale state and session data left in the Keychain after an app reinstall are now cleared on the first launch. The uid is kept.
+
 ## 3.0.1 (17th September 2026)
 ### Feature
 - Added `setBuildPlatform(_:)` on `Otpless` so cross-platform wrappers (Flutter, React Native) can attribute telemetry to the framework they run under — mirrors Android's `OtplessSDK.buildPlatform`. The device event's platform field becomes `otpless-headless(<platform>)`; it defaults to `otpless-headless(ios)`, so behaviour for native integrations is unchanged. Additive and non-breaking — no existing API, request body or query parameter changed.

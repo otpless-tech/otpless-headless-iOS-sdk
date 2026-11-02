@@ -9,8 +9,15 @@
 import Foundation
 import Security
 
-internal final class SecureStorage: @unchecked Sendable {
-    static let shared = SecureStorage()
+/// Keychain operations behind SecureStorage, so tests (which run without a keychain entitlement) can swap in memory.
+internal protocol KeychainStore: AnyObject {
+    func save(key: String, value: String)
+    func retrieve(key: String) -> String?
+    func delete(key: String)
+    func clearAll()
+}
+
+private final class SystemKeychainStore: KeychainStore {
     private let service = "com.otpless.bmum.secure"
     
     func save(key: String, value: String) {
@@ -71,6 +78,43 @@ internal final class SecureStorage: @unchecked Sendable {
             kSecAttrService as String: service
         ]
         SecItemDelete(query as CFDictionary)
+    }
+}
+
+internal final class SecureStorage: @unchecked Sendable {
+    static let shared = SecureStorage()
+    
+    private init() {}
+    /// Replaced only by tests.
+    var keychain: KeychainStore = SystemKeychainStore()
+    
+    func save(key: String, value: String) {
+        keychain.save(key: key, value: value)
+    }
+    
+    func retrieve(key: String) -> String? {
+        keychain.retrieve(key: key)
+    }
+    
+    func delete(key: String) {
+        keychain.delete(key: key)
+    }
+    
+    func clearAll() {
+        keychain.clearAll()
+    }
+
+    /// Keychain survives uninstall but UserDefaults don't, so a missing marker means a fresh install: drop the stale
+    /// state, session and session state. The uid is kept across reinstalls on purpose. Called from every SDK entry
+    /// point before any read.
+    func clearStaleDataOnFreshInstall() {
+        guard !getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) else { return }
+        log(message: "[Storage] Fresh install detected — clearing stale keychain data", type: .SDK_STATE_FETCH)
+        let keychainToDelete = [Constants.STATE_KEY, SessionStorageKeys.state, SessionStorageKeys.session]
+        for each in keychainToDelete {
+            delete(key: each)
+        }
+        saveToUserDefaults(key: Constants.INSTALL_MARKER_KEY, value: true)
     }
     
     func saveToUserDefaults<T>(key: String, value: T) {

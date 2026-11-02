@@ -28,6 +28,12 @@ internal final class ApiError: Error, @unchecked Sendable {
         return "message: \(message)\nstatusCode: \(statusCode)\(responseJson != nil ? "\n\(responseJson!)" : "")"
     }
     
+    /// Server signals that the (locally cached) state is invalid and must be refreshed.
+    var isStateInvalid: Bool {
+        guard let errorCode = responseJson?["errorCode"] else { return false }
+        return "\(errorCode)" == "7005"
+    }
+
     func getResponse() -> [String: Any] {
         let errorCode = responseJson?["errorCode"] as? String ?? String(statusCode)
         var finalResponse: [String: Any] = [

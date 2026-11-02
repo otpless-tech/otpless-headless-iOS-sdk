@@ -139,6 +139,7 @@ import OtplessEventIO
         self.sdkState = .NOT_READY
         self.merchantAppId = appId
         self.merchantVC = vc
+        SecureStorage.shared.clearStaleDataOnFreshInstall()
         self.uid = SecureStorage.shared.retrieve(key: Constants.UID_KEY) ?? ""
         self.merchantLoginUri = loginUri ?? "otpless.\(appId.lowercased())://otpless"
 
@@ -444,6 +445,13 @@ import OtplessEventIO
 }
 
 internal extension Otpless {
+    /// Refreshes the state after a 7005 via GetStateUseCase and publishes it. Returns true if a new state is in use.
+    func retryStateLoading() async -> Bool {
+        guard let newState = await getStateUseCase.retryStateLoading(queryParams: getMerchantConfigQueryParams()) else { return false }
+        await MainActor.run { self.state = newState }
+        return !newState.isEmpty
+    }
+
     func onAuthTypeChange(newAuthType: String) {
         self.authType = newAuthType
     }
@@ -549,9 +557,7 @@ private extension Otpless {
     }
     
     func requestStateForDeviceIfNil(onFetch: @escaping @Sendable (String?) -> Void) {
-        if let savedState = SecureStorage.shared.retrieve(key: Constants.STATE_KEY),
-           !savedState.isEmpty {
-            OtplessBMEvents.Init.stateFromCache()
+        if let savedState = getStateUseCase.loadCachedState() {
             onFetch(savedState)
         } else {
             Task(priority: .medium) { [weak self] in

@@ -18,10 +18,6 @@ final class ApiManager: Sendable {
         return Otpless.shared.environment.userAuthBaseURL
     }
     
-    /// Adds members to a POST body that bind to some of its own fields. It receives only the
-    /// string-valued members of the final body and returns extra top-level members to add.
-    typealias BodySigner = @Sendable ([String: String]) async -> [String: [String: String]]
-
     // MARK: Paths for APIs
     static let GET_STATE_PATH = "/v2/state"
     static let POST_INTENT_PATH = "/v3/lp/user/transaction/intent/{state}"
@@ -53,8 +49,7 @@ final class ApiManager: Sendable {
         method: String,
         body: [String: Any]? = nil,
         shoudlAppendBasicParams: Bool = true,
-        queryParameters: [String: Any]? = nil,
-        bodySigner: BodySigner? = nil
+        queryParameters: [String: Any]? = nil
     ) async throws -> Data {
         var newPath = path
         if let state = state { newPath = path.replacingOccurrences(of: "{state}", with: state) }
@@ -65,17 +60,7 @@ final class ApiManager: Sendable {
         request.timeoutInterval = userAuthTimeout
         
         if method.uppercased() == "POST" {
-            var newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
-
-            // The signer reads the finished body and returns members to add. Those are added only
-            // after it has read, so a member it adds can never be part of what it signed.
-            if let bodySigner {
-                let stringFields = newBody.compactMapValues { $0 as? String }
-                for (name, member) in await bodySigner(stringFields) {
-                    newBody[name] = member
-                }
-            }
-
+            let newBody = getBody(withExistingBody: body, shouldAppendBasicParameters: shoudlAppendBasicParams)
             request.httpBody = try? JSONSerialization.data(withJSONObject: newBody, options: [])
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }

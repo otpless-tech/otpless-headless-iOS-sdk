@@ -57,6 +57,9 @@ import OtplessEventIO
     
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
+    /// A `let`, not `lazy`: the background attempt and the intent requests reach it from
+    /// different threads, and a racing lazy init would split its in-flight and backoff state.
+    internal let appAttestUseCase = AppAttestUseCase()
     
     internal private(set) var merchantConfig: MerchantConfigResponse? = nil
     
@@ -592,7 +595,7 @@ private extension Otpless {
             return
         }
         Task(priority: .utility) {
-            await AppAttestUseCase.shared.attestIfNeeded(state: state)
+            await self.appAttestUseCase.attestIfNeeded(state: state)
         }
     }
 
@@ -906,7 +909,7 @@ private extension Otpless {
     internal func refreshIsMobileDataEnabled(timeout: TimeInterval = 0.3) async -> Bool {
         let monitor = NWPathMonitor(requiredInterfaceType: .cellular)
         let queue = DispatchQueue(label: "com.otpless.cellular.refresh")
-        let resumeOnce = CellularRefreshResumeFlag()
+        let resumeOnce = ResumeOnce()
         let probed: Bool? = await withCheckedContinuation { (continuation: CheckedContinuation<Bool?, Never>) in
             monitor.pathUpdateHandler = { path in
                 guard resumeOnce.claim() else { return }
@@ -938,19 +941,6 @@ private extension Otpless {
 
 // Lock-backed one-shot flag used by `refreshIsMobileDataEnabled` to ensure exactly one
 // of the probe-success / timeout branches resumes the continuation.
-fileprivate final class CellularRefreshResumeFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if claimed { return false }
-        claimed = true
-        return true
-    }
-}
-
 extension Otpless {
     func resetStates() {
         isOneTapUIDismissed = false // reset it's state so that onetap ui is shown for a new request.

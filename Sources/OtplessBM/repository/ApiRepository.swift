@@ -102,30 +102,22 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    /// The body signer for `state`, or nil when attestation is not enabled for this merchant
-    /// (so the request is byte-for-byte what it was before attestation existed). The challenge
-    /// is `state` for now: the value the key was attested with, which the server already has
-    /// from the URL. It is a placeholder for a one-time server-issued challenge.
-    static func defaultAppAttestSigner(state: String) -> ApiManager.BodySigner? {
-        guard Otpless.shared.isAppAttestRequested, #available(iOS 14.0, *) else { return nil }
-        return { fields in
-            [AppAttestInfo.bodyKey: await AppAttestUseCase.shared.assertionInfo(forFields: fields, challenge: state)]
-        }
-    }
-
+    /// `appAttestInfo` is added to the body as the `appAttestInfo` member; nil leaves the body
+    /// exactly as it was before attestation existed.
     func postIntent(
         state: String,
         body: PostIntentRequestBody,
-        bodySigner: ApiManager.BodySigner? = nil
+        appAttestInfo: [String: String]? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
+        var requestBody = body.toDict()
+        if let appAttestInfo { requestBody["appAttestInfo"] = appAttestInfo }
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.POST_INTENT_PATH,
                 method: "POST",
-                body: body.toDict(),
-                bodySigner: bodySigner ?? Self.defaultAppAttestSigner(state: state)
+                body: requestBody
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(IntentResponse.self, from: data))

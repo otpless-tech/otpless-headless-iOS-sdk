@@ -27,6 +27,7 @@ final class ApiManager: Sendable {
     static let SNA_TRANSACTION_STATUS_PATH = "/v3/lp/user/transaction/silent-auth-status/{state}"
     static let OTP_VERIFICATION_PATH = "/v3/lp/user/transaction/otp/{state}"
     static let MFA_SNA_STATUS_PATH = "/v3/lp/user/transaction/mfa-sna-status/{state}"
+    static let POST_DEVICE_ATTESTATION_PATH = "/v3/device/attestation/{state}"
 
 
     init(
@@ -67,7 +68,6 @@ final class ApiManager: Sendable {
         var xRequestId: String? = nil
 
         // NEW: stash for catch to use
-        var pendingErrorData: Data? = nil
         var pendingStatusCode: Int? = nil
 
             OtplessBMEvents.Api.request(path: newPath, data: nil)
@@ -94,7 +94,6 @@ final class ApiManager: Sendable {
 
             if !(200..<300).contains(http.statusCode) {
                 // just stash and throw; don't emit here
-                pendingErrorData = data
                 pendingStatusCode = http.statusCode
 
                 let errorBody = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
@@ -104,9 +103,7 @@ final class ApiManager: Sendable {
                     responseJson: errorBody
                 )
             }
-
-             OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
-
+            OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
             return data
         } catch {
             // normalizing ssl error
@@ -262,12 +259,22 @@ final class ApiManager: Sendable {
         return urlComponents.url!
     }
     
+    /// The App Attest object is several KB of certificate chain and receipt; it is never
+    /// useful in a log and must not reach a merchant-supplied log delegate.
+    static func redactedForLogging(_ body: [String: Any]) -> [String: Any] {
+        var redacted = body
+        if let blob = redacted["attestationObject"] as? String {
+            redacted["attestationObject"] = "<redacted \(blob.count) chars>"
+        }
+        return redacted
+    }
+
     private func logRequestAndResponse(_ request: URLRequest, body: [String: Any]?, _ response: URLResponse?, data: Data) {
         let urlStr = request.url?.absoluteString
         let method = request.httpMethod
         var logBody: [String: Any] = [:]
         if let body = body {
-            logBody = body
+            logBody = ApiManager.redactedForLogging(body)
         }
         
         var statusCode = -1

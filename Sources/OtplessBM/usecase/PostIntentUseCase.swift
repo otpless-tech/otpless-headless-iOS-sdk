@@ -30,8 +30,9 @@ internal class PostIntentUseCase {
 
         log(message: "[Intent] Calling intent API — channel: \(requestBody.channel), identifierType: \(requestBody.identifierType), silentAuthEnabled: \(requestBody.silentAuthEnabled), triggerWebauthn: \(requestBody.triggerWebauthn), rsId: \(Otpless.shared.rsId.isEmpty ? "<none>" : Otpless.shared.rsId)", type: .INTENT)
 
+        let appAttestInfo = await getAppAttestInfo(requestBody, state: state)
         let response = await Otpless.shared.apiRepository
-            .postIntent(state: state, body: requestBody)
+            .postIntent(state: state, body: requestBody, appAttestInfo: appAttestInfo)
 
         switch response {
         case .success(let success):
@@ -51,6 +52,23 @@ internal class PostIntentUseCase {
         }
     }
     
+    /// The App Attest assertion for this intent, or nil when attestation is not enabled for the
+    /// merchant.
+    private func getAppAttestInfo(_ requestBody: PostIntentRequestBody, state: String) async -> [String: String]? {
+        guard Otpless.shared.isAppAttestRequested, #available(iOS 14.0, *) else { return nil }
+        let challenge = Self.appAttestChallenge(challenge: state, tsId: Otpless.shared.tsid, requestBody: requestBody)
+        return await Otpless.shared.appAttestUseCase.assertionInfo(challenge: challenge, state: state)
+    }
+
+    /// The string the assertion signs, `v1|challenge|appId|tsId|channel|identifierType|value`, where
+    /// the challenge is the transaction state; the backend rebuilds it from the request to verify the
+    /// assertion. `appId` and `tsId` are the ones `ApiManager` adds to the body. `value` is the phone
+    /// number or email, empty for SSO (whose provider is the channel), and is last so a `|` inside it
+    /// cannot shift the fields in front of it.
+    static func appAttestChallenge(challenge: String, tsId: String, requestBody: PostIntentRequestBody) -> String {
+        ["v1", challenge, Otpless.shared.merchantAppId, tsId, requestBody.channel, requestBody.identifierType, requestBody.value ?? ""].joined(separator: "|")
+    }
+
     private func flushExistingAuthTypeAndDeliveryChannel() {
         Otpless.shared.onCommunicationModeChange("NA")
         Otpless.shared.onAuthTypeChange(newAuthType: "")

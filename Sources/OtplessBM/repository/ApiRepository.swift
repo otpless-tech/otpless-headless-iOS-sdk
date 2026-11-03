@@ -18,6 +18,14 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// Test seam: lets a test supply an `ApiManager` built on a stubbed `URLSession`.
+    init(apiManager: ApiManager) {
+        self.apiManager = apiManager
+        if #available(iOS 12.0, *) {
+            self.otplessCellularNetwork = CellularConnectionManager()
+        }
+    }
+
     private func sendApiResponse(apiName: String, data: Data?, statusCode: Int, error: Error? = nil) {
         var responseDict: [String: Any] = ["apiName": apiName]
         
@@ -94,17 +102,22 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// `appAttestInfo` is added to the body as the `appAttestInfo` member; nil leaves the body
+    /// exactly as it was before attestation existed.
     func postIntent(
         state: String,
-        body: PostIntentRequestBody
+        body: PostIntentRequestBody,
+        appAttestInfo: [String: String]? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
+        var requestBody = body.toDict()
+        if let appAttestInfo { requestBody["appAttestInfo"] = appAttestInfo }
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.POST_INTENT_PATH,
                 method: "POST",
-                body: body.toDict()
+                body: requestBody
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(IntentResponse.self, from: data))
@@ -116,6 +129,33 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// Registers an App Attest key. Like every other POST, the body keeps the standard
+    /// parameters (`appId`, `loginUri`, `packageName`, ...): the backend's state interceptor
+    /// builds its `AuthDTO` from the POST body and resolves the merchant app from `appId`, so
+    /// a bare `{keyId, attestationObject}` is rejected before it reaches the controller.
+    /// `state` is the attestation challenge.
+    func postDeviceAttestation(
+        state: String,
+        keyId: String,
+        attestationObject: String
+    ) async -> Result<AppAttestResponse, Error> {
+        let apiName = "postDeviceAttestation"
+        do {
+            let data = try await self.apiManager.performUserAuthRequest(
+                state: state,
+                path: ApiManager.POST_DEVICE_ATTESTATION_PATH,
+                method: "POST",
+                body: ["keyId": keyId, "attestationObject": attestationObject]
+            )
+            sendApiResponse(apiName: apiName, data: data, statusCode: 200)
+            return try Result.success(JSONDecoder().decode(AppAttestResponse.self, from: data))
+        } catch {
+            let statusCode = (error as? ApiError)?.statusCode ?? 500
+            sendApiResponse(apiName: apiName, data: nil, statusCode: statusCode, error: error)
+            return Result.failure(error)
+        }
+    }
+
     func verifySSOCode(queryParams: [String: Any], state: String) async -> Result<TransactionStatusResponse, Error> {
         let apiName = "verifySSOCode"
         do {

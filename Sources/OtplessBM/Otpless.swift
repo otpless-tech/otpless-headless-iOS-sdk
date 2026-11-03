@@ -57,6 +57,9 @@ import OtplessEventIO
     
     
     internal let apiRepository = ApiRepository(userAuthApiTimeout: 30, snaTimeout: 5, enableLogging: true)
+    /// A `let`, not `lazy`: the background attempt and the intent requests reach it from
+    /// different threads, and a racing lazy init would split its in-flight and backoff state.
+    internal let appAttestUseCase = AppAttestUseCase()
     
     internal private(set) var merchantConfig: MerchantConfigResponse? = nil
     
@@ -538,6 +541,14 @@ extension Otpless {
     
 }
 
+extension Otpless {
+    /// Whether the merchant config asks this install to use App Attest at all. The single gate
+    /// for both key registration and per-request assertions.
+    internal var isAppAttestRequested: Bool {
+        merchantConfig?.isAppAttestEnabled == true
+    }
+}
+
 private extension Otpless {
     func fetchStateAndMerchantConfig(onlyState:Bool) {
         log(message: "[Init] Fetching device state — onlyState: \(onlyState)", type: .SDK_STATE_FETCH)
@@ -574,6 +585,20 @@ private extension Otpless {
         }
     }
     
+    /// Registers an App Attest key in the background when — and only when — the merchant
+    /// config enables it. Deliberately after `SDK_READY` and fire-and-forget: attestation can
+    /// never delay or fail the merchant's flow, and a config without the flag does nothing.
+    func startAppAttestIfEnabled(state: String) {
+        guard isAppAttestRequested else { return }
+        guard #available(iOS 14.0, *) else {
+            DLog("[AppAttest] Enabled by config but App Attest needs iOS 14 — skipping")
+            return
+        }
+        Task(priority: .utility) {
+            await self.appAttestUseCase.attestIfNeeded(state: state)
+        }
+    }
+
     func fetchMerchantConfig() {
         guard let state = self.state else { return }
 
@@ -617,6 +642,7 @@ private extension Otpless {
                     OtplessBMEvents.Init.stateReady()
                     self.invokeResponse(OtplessResponse.sdkReady)
                     self.resolveInit(success: true)
+                    self.startAppAttestIfEnabled(state: state)
                 }
             }
 
@@ -883,7 +909,7 @@ private extension Otpless {
     internal func refreshIsMobileDataEnabled(timeout: TimeInterval = 0.3) async -> Bool {
         let monitor = NWPathMonitor(requiredInterfaceType: .cellular)
         let queue = DispatchQueue(label: "com.otpless.cellular.refresh")
-        let resumeOnce = CellularRefreshResumeFlag()
+        let resumeOnce = ResumeOnce()
         let probed: Bool? = await withCheckedContinuation { (continuation: CheckedContinuation<Bool?, Never>) in
             monitor.pathUpdateHandler = { path in
                 guard resumeOnce.claim() else { return }
@@ -915,19 +941,6 @@ private extension Otpless {
 
 // Lock-backed one-shot flag used by `refreshIsMobileDataEnabled` to ensure exactly one
 // of the probe-success / timeout branches resumes the continuation.
-fileprivate final class CellularRefreshResumeFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if claimed { return false }
-        claimed = true
-        return true
-    }
-}
-
 extension Otpless {
     func resetStates() {
         isOneTapUIDismissed = false // reset it's state so that onetap ui is shown for a new request.

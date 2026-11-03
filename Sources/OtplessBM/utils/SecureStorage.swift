@@ -15,6 +15,7 @@ internal protocol KeychainStore: AnyObject {
     func retrieve(key: String) -> String?
     func delete(key: String)
     func clearAll()
+    func isReadable(key: String) -> Bool
 }
 
 private final class SystemKeychainStore: KeychainStore {
@@ -59,6 +60,17 @@ private final class SystemKeychainStore: KeychainStore {
         return value
     }
     
+    /// False while the Keychain cannot be read at all (device locked, first unlock pending).
+    /// A failed read then looks exactly like "no item", so callers must tell the two apart.
+    func isReadable(key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        return SecItemCopyMatching(query as CFDictionary, nil) != errSecInteractionNotAllowed
+    }
+
     func delete(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -103,7 +115,7 @@ internal final class SecureStorage: @unchecked Sendable {
     func clearAll() {
         keychain.clearAll()
     }
-
+    
     /// Keychain survives uninstall but UserDefaults don't, so a missing marker means a fresh install: drop the stale
     /// state, session and session state. The uid is kept across reinstalls on purpose. Called from every SDK entry
     /// point before any read.
@@ -123,5 +135,9 @@ internal final class SecureStorage: @unchecked Sendable {
     
     func getFromUserDefaults<T>(key: String, defaultValue: T) -> T {
         return UserDefaults.standard.object(forKey: key) as? T ?? defaultValue
+    }
+    
+    func isReadable(key: String) -> Bool {
+        return keychain.isReadable(key: key)
     }
 }

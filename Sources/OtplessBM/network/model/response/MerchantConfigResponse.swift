@@ -15,6 +15,13 @@ struct MerchantConfigResponse: Codable {
     let uiConfig: UiConfig?
     let userDetails: UserDetails?
     let metaData: MetaData?
+
+    /// Whether the merchant config asks this install to register an App Attest key, from
+    /// `merchant.config.isAttestationEnabled`. A missing or false flag means "off", so a backend
+    /// that does not send the field yet leaves every existing integration untouched.
+    var isAppAttestEnabled: Bool {
+        merchant?.config?.isAttestationEnabled == true
+    }
 }
 
 struct MetaData: Codable {
@@ -147,6 +154,7 @@ struct Config: Codable {
     let isWebauthnEnabled: Bool?
     let isWebauthnRegistered: Bool?
     let lang: String?
+    let isAttestationEnabled: Bool?
 }
 
 struct ChannelConfig: Codable {

@@ -68,7 +68,6 @@ final class ApiManager: Sendable {
         var xRequestId: String? = nil
 
         // NEW: stash for catch to use
-        var pendingErrorData: Data? = nil
         var pendingStatusCode: Int? = nil
 
             OtplessBMEvents.Api.request(path: newPath, data: nil)
@@ -95,7 +94,6 @@ final class ApiManager: Sendable {
 
             if !(200..<300).contains(http.statusCode) {
                 // just stash and throw; don't emit here
-                pendingErrorData = data
                 pendingStatusCode = http.statusCode
 
                 let errorBody = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
@@ -105,9 +103,7 @@ final class ApiManager: Sendable {
                     responseJson: errorBody
                 )
             }
-
-             OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
-
+            OtplessBMEvents.Api.response(path: newPath, statusCode: http.statusCode, errorCode: nil, data: nil, xRequestId: xRequestId)
             return data
         } catch {
             // normalizing ssl error

@@ -56,7 +56,7 @@ internal class PostIntentUseCase {
     /// merchant.
     private func getAppAttestInfo(_ requestBody: PostIntentRequestBody, state: String) async -> [String: String]? {
         guard Otpless.shared.isAppAttestRequested, #available(iOS 14.0, *) else { return nil }
-        let challenge = Self.appAttestChallenge(state: state, tsId: Otpless.shared.tsid, requestBody: requestBody)
+        let challenge = Self.appAttestChallenge(challenge: state, tsId: Otpless.shared.tsid, requestBody: requestBody)
         return await Otpless.shared.appAttestUseCase.assertionInfo(challenge: challenge, state: state)
     }
 
@@ -64,8 +64,8 @@ internal class PostIntentUseCase {
     /// request to verify the assertion. `tsId` is the one `ApiManager` adds to the body. `value`
     /// is the phone number or email, empty for SSO (whose provider is the channel), and is last
     /// so a `|` inside it cannot shift the fields in front of it.
-    static func appAttestChallenge(state: String, tsId: String, requestBody: PostIntentRequestBody) -> String {
-        ["v1", state, tsId, requestBody.channel, requestBody.value ?? ""].joined(separator: "|")
+    static func appAttestChallenge(challenge: String, tsId: String, requestBody: PostIntentRequestBody) -> String {
+        ["v1", challenge, Otpless.shared.merchantAppId ,tsId, requestBody.channel, requestBody.identifierType ,requestBody.value ?? ""].joined(separator: "|")
     }
 
     private func flushExistingAuthTypeAndDeliveryChannel() {

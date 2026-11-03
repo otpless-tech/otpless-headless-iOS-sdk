@@ -180,7 +180,7 @@ internal final class AppAttestUseCase: @unchecked Sendable {
                 "status": "ok",
                 "keyId": keyId,
                 "assertion": assertion.base64EncodedString(),
-                "challenge": challenge
+                "challenge": state
             ]
         } catch is TimeoutError {
             OtplessBMEvents.AppAttest.assertionFailure(reason: "timeout")

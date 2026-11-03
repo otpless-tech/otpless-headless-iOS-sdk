@@ -142,19 +142,19 @@ final class AppAttestConfigGateTests: XCTestCase {
     }
 
     func testEmptyOrNullConfigObjectMeansDisabled() throws {
-        XCTAssertFalse(try decode(#"{"appAttestConfig":{}}"#).isAppAttestEnabled)
-        XCTAssertFalse(try decode(#"{"appAttestConfig":null}"#).isAppAttestEnabled)
-        XCTAssertFalse(try decode(#"{"appAttestConfig":{"isAppAttestEnabled":null}}"#).isAppAttestEnabled)
+        XCTAssertFalse(try decode(#"{"merchant":{}}"#).isAppAttestEnabled)
+        XCTAssertFalse(try decode(#"{"merchant":{"config":null}}"#).isAppAttestEnabled)
+        XCTAssertFalse(try decode(#"{"merchant":{"config":{"isAttestationEnabled":null}}}"#).isAppAttestEnabled)
     }
 
     func testFalseMeansDisabledAndTrueMeansEnabled() throws {
-        XCTAssertFalse(try decode(#"{"appAttestConfig":{"isAppAttestEnabled":false}}"#).isAppAttestEnabled)
-        XCTAssertTrue(try decode(#"{"appAttestConfig":{"isAppAttestEnabled":true}}"#).isAppAttestEnabled)
+        XCTAssertFalse(try decode(#"{"merchant":{"config":{"isAttestationEnabled":false}}}"#).isAppAttestEnabled)
+        XCTAssertTrue(try decode(#"{"merchant":{"config":{"isAttestationEnabled":true}}}"#).isAppAttestEnabled)
     }
 
     /// The flag must not be disturbed by neighbouring fields, in either direction.
     func testUnrelatedFieldsDoNotAffectTheFlag() throws {
-        let on = try decode(#"{"isMFAEnabled":true,"appAttestConfig":{"isAppAttestEnabled":true,"future":1},"x":2}"#)
+        let on = try decode(#"{"isMFAEnabled":true,"merchant":{"config":{"isAttestationEnabled":true,"lang":"en","future":1}},"x":2}"#)
         XCTAssertTrue(on.isAppAttestEnabled)
         XCTAssertEqual(on.isMFAEnabled, true)
 
@@ -305,7 +305,7 @@ final class AppAttestAssertionTests: XCTestCase {
         XCTAssertEqual(info["status"], "ok")
         XCTAssertEqual(info["keyId"], "registered-key")
         XCTAssertEqual(info["assertion"], Data("sig".utf8).base64EncodedString())
-        XCTAssertEqual(info["challenge"], "ch-1")
+        XCTAssertEqual(info["challenge"], "st")
         XCTAssertEqual(info.count, 4)
     }
 
@@ -424,28 +424,30 @@ final class AppAttestChallengeTests: XCTestCase {
     }
 
     private func challenge(channel: String, value: String?) -> String {
-        PostIntentUseCase.appAttestChallenge(state: "st", tsId: "TS1", requestBody: body(channel: channel, value: value))
+        PostIntentUseCase.appAttestChallenge(challenge: "st", tsId: "TS1", requestBody: body(channel: channel, value: value))
     }
+
+    private var appId: String { Otpless.shared.merchantAppId }
 
     /// Pinned literally: the backend rebuilds exactly this string.
     func testPhoneChallenge() {
-        XCTAssertEqual(challenge(channel: "PHONE", value: "919999999999"), "v1|st|TS1|PHONE|919999999999")
+        XCTAssertEqual(challenge(channel: "PHONE", value: "919999999999"), "v1|st|\(appId)|TS1|PHONE|MOBILE|919999999999")
     }
 
     func testEmailChallenge() {
-        XCTAssertEqual(challenge(channel: "EMAIL", value: "user@example.com"), "v1|st|TS1|EMAIL|user@example.com")
+        XCTAssertEqual(challenge(channel: "EMAIL", value: "user@example.com"), "v1|st|\(appId)|TS1|EMAIL|MOBILE|user@example.com")
     }
 
     /// An SSO intent sends an empty `value`; the provider is the channel.
     func testSsoChallengeHasAnEmptyValue() {
-        XCTAssertEqual(challenge(channel: "GMAIL", value: ""), "v1|st|TS1|GMAIL|")
-        XCTAssertEqual(challenge(channel: "GMAIL", value: nil), "v1|st|TS1|GMAIL|")
+        XCTAssertEqual(challenge(channel: "GMAIL", value: ""), "v1|st|\(appId)|TS1|GMAIL|MOBILE|")
+        XCTAssertEqual(challenge(channel: "GMAIL", value: nil), "v1|st|\(appId)|TS1|GMAIL|MOBILE|")
     }
 
     /// `value` is last, so a `|` inside it cannot shift the fields in front of it.
     func testPipeInsideValueCannotShiftTheEarlierFields() {
-        let parts = challenge(channel: "PHONE", value: "ab|cd").split(separator: "|", maxSplits: 4).map(String.init)
-        XCTAssertEqual(parts, ["v1", "st", "TS1", "PHONE", "ab|cd"])
+        let parts = challenge(channel: "PHONE", value: "ab|cd").split(separator: "|", maxSplits: 6, omittingEmptySubsequences: false).map(String.init)
+        XCTAssertEqual(parts, ["v1", "st", appId, "TS1", "PHONE", "MOBILE", "ab|cd"])
     }
 }
 
@@ -484,7 +486,7 @@ final class AppAttestIntentRequestTests: XCTestCase {
 
     /// What `PostIntentUseCase` attaches when attestation is enabled.
     private func appAttestInfo(state: String) async -> [String: String] {
-        let challenge = PostIntentUseCase.appAttestChallenge(state: state, tsId: Otpless.shared.tsid, requestBody: makeBody())
+        let challenge = PostIntentUseCase.appAttestChallenge(challenge: state, tsId: Otpless.shared.tsid, requestBody: makeBody())
         return await AppAttestUseCase(platform: platform, store: store).assertionInfo(challenge: challenge, state: state)
     }
 
@@ -501,12 +503,13 @@ final class AppAttestIntentRequestTests: XCTestCase {
         _ = await makeRepository().postIntent(state: "st-123", body: makeBody(), appAttestInfo: await appAttestInfo(state: "st-123"))
 
         let json = try sentJSON()
-        let rebuilt = ["v1", "st-123", json["tsId"] as? String ?? "", json["channel"] as? String ?? "",
+        let rebuilt = ["v1", "st-123", json["appId"] as? String ?? "", json["tsId"] as? String ?? "",
+                       json["channel"] as? String ?? "", json["identifierType"] as? String ?? "",
                        json["value"] as? String ?? ""].joined(separator: "|")
         XCTAssertEqual(try XCTUnwrap(platform.assertionCalls.first?.hash),
                        Data(SHA256.hash(data: Data(rebuilt.utf8))),
                        "the signed hash must equal SHA256 of the challenge rebuilt from the received body")
-        XCTAssertTrue(rebuilt.hasSuffix("|PHONE|919999999999"), rebuilt)
+        XCTAssertTrue(rebuilt.hasSuffix("|PHONE|MOBILE|919999999999"), rebuilt)
     }
 
     func testIntentBodyCarriesTheInfoObject() async throws {
@@ -519,7 +522,7 @@ final class AppAttestIntentRequestTests: XCTestCase {
         XCTAssertEqual(info["status"], "ok")
         XCTAssertEqual(info["keyId"], "registered-key")
         XCTAssertEqual(info["assertion"], Data("the-assertion".utf8).base64EncodedString())
-        XCTAssertEqual(info["challenge"], PostIntentUseCase.appAttestChallenge(state: "st-9", tsId: Otpless.shared.tsid, requestBody: makeBody()))
+        XCTAssertEqual(info["challenge"], "st-9")
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/v3/lp/user/transaction/intent/st-9")
     }
 

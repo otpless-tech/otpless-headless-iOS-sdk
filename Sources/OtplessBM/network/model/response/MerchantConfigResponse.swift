@@ -16,9 +16,9 @@ struct MerchantConfigResponse: Codable {
     let userDetails: UserDetails?
     let metaData: MetaData?
 
-    /// Whether the merchant config asks this install to register an App Attest key.
-    /// A missing object or a missing/false flag both mean "off", so a backend that does
-    /// not send the field yet leaves every existing integration untouched.
+    /// Whether the merchant config asks this install to register an App Attest key, from
+    /// `merchant.config.isAttestationEnabled`. A missing or false flag means "off", so a backend
+    /// that does not send the field yet leaves every existing integration untouched.
     var isAppAttestEnabled: Bool {
         merchant?.config?.isAttestationEnabled == true
     }

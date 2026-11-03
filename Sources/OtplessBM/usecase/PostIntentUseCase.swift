@@ -60,12 +60,13 @@ internal class PostIntentUseCase {
         return await Otpless.shared.appAttestUseCase.assertionInfo(challenge: challenge, state: state)
     }
 
-    /// The assertion challenge, `v1|state|tsId|channel|value`; the backend rebuilds it from the
-    /// request to verify the assertion. `tsId` is the one `ApiManager` adds to the body. `value`
-    /// is the phone number or email, empty for SSO (whose provider is the channel), and is last
-    /// so a `|` inside it cannot shift the fields in front of it.
+    /// The string the assertion signs, `v1|challenge|appId|tsId|channel|identifierType|value`, where
+    /// the challenge is the transaction state; the backend rebuilds it from the request to verify the
+    /// assertion. `appId` and `tsId` are the ones `ApiManager` adds to the body. `value` is the phone
+    /// number or email, empty for SSO (whose provider is the channel), and is last so a `|` inside it
+    /// cannot shift the fields in front of it.
     static func appAttestChallenge(challenge: String, tsId: String, requestBody: PostIntentRequestBody) -> String {
-        ["v1", challenge, Otpless.shared.merchantAppId ,tsId, requestBody.channel, requestBody.identifierType ,requestBody.value ?? ""].joined(separator: "|")
+        ["v1", challenge, Otpless.shared.merchantAppId, tsId, requestBody.channel, requestBody.identifierType, requestBody.value ?? ""].joined(separator: "|")
     }
 
     private func flushExistingAuthTypeAndDeliveryChannel() {

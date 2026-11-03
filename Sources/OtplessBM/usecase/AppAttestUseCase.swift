@@ -148,12 +148,12 @@ internal final class AppAttestUseCase: @unchecked Sendable {
     }
 
     /// Signs `SHA256(challenge)` with the registered key: proof that the request comes from the
-    /// app install that registered it. The caller builds the challenge; `state` is only used to
-    /// register a key when there is none yet. Never throws and never
-    /// blocks the request for long; if no assertion can be produced, `status` says why and the
-    /// caller sends the request anyway (fail open).
+    /// app install that registered it. The caller builds the signed string; `state` is the
+    /// challenge, sent back as `challenge`, and registers a key when there is none yet. Never
+    /// throws and never blocks the request for long; if no assertion can be produced, `status`
+    /// says why and the caller sends the request anyway (fail open).
     ///
-    ///     "appAttestInfo": { "status": "ok", "keyId": "...", "assertion": "...", "challenge": "..." }
+    ///     "appAttestInfo": { "status": "ok", "keyId": "...", "assertion": "...", "challenge": "<state>" }
     ///
     /// `status` is `ok`, or the reason no assertion was produced (`unsupported`, `no_key`,
     /// `invalid_key`, `timeout`, `error`, `dcerror_N`); the other three appear only with `ok`.

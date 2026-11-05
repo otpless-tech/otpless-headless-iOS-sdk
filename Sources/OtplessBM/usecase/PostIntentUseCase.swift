@@ -101,7 +101,7 @@ internal class PostIntentUseCase {
             requestId: requestDict[RequestKeys.requestIdKey] as? String,
             clientMetaData: getJSONClientMetaDataAsString(request: otplessRequest),
             asId: Otpless.shared.asId,
-            isAutoIntent: requestDict["isAutoIntent"]?.flatMap(Bool.init)
+            isAutoIntent: isAutoIntent(requestId: requestDict[RequestKeys.requestIdKey] ?? nil, otplessRequest: otplessRequest)
         )
     }
     
@@ -119,6 +119,12 @@ internal class PostIntentUseCase {
         }
         
         return channel
+    }
+    
+    /// A backend-generated request id in the body marks an auto intent. WebAuthn request ids are passkey request ids, not auto intents
+    private func isAutoIntent(requestId: String?, otplessRequest: OtplessRequest) -> Bool? {
+        guard !(requestId?.isEmpty ?? true), otplessRequest.getAuthenticationMedium() != .WEB_AUTHN else { return nil }
+        return true
     }
     
     private func getJSONClientMetaDataAsString(request: OtplessRequest) -> String? {

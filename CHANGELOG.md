@@ -1,6 +1,6 @@
 ## 3.1.1 (5th November 2026)
 ### Fixes
-- Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. The intent now carries the `requestId` with `isAutoIntent: true`, so the backend resolves the channel from the request id. Silent auth (SNA) is not requested for these intents.
+- Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.
 - Removed the always-true `isViSnaWhitelisted` and `isAirtelSnaWhitelisted` fields from the intent request body.
 
 ## 3.1.0 (3rd November 2026)

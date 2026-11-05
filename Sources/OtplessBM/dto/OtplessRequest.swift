@@ -171,7 +171,6 @@ internal extension OtplessRequest {
         case nil:
             if let rq = self.requestId {
                 requestDict[RequestKeys.requestIdKey] = rq
-                requestDict["isAutoIntent"] = "true"
             }
             break
         }

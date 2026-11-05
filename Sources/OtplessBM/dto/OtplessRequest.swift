@@ -131,48 +131,46 @@ internal extension OtplessRequest {
         }
         
         var requestDict: [String: String?] = [:]
-        
-        switch authenticationMedium {
-        case .PHONE:
-            requestDict[RequestKeys.valueKey] = self.phoneNumber
-            requestDict[RequestKeys.countryCodeKey] = self.countryCode
-            requestDict[RequestKeys.mobileKey] = (countryCode?.trimmingCharacters(in: .init(charactersIn: "+")) ?? "") + (self.phoneNumber ?? "")
-            requestDict[RequestKeys.identifierTypeKey] = RequestKeys.mobileValue
-            requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
-            requestDict[RequestKeys.channelKey] = Otpless.shared.phoneIntentChannel
-            if let rq = self.requestId {
-                requestDict[RequestKeys.requestIdKey] = rq
-            }
-            break
-        case .EMAIL:
-            requestDict[RequestKeys.emailKey] = self.email
-            requestDict[RequestKeys.valueKey] = self.email
-            
-            requestDict[RequestKeys.identifierTypeKey] = RequestKeys.emailValue
-            requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
-            requestDict[RequestKeys.channelKey] = Otpless.shared.emailIntentChannel
-            break
-        case .OAUTH:
-            requestDict[RequestKeys.channelKey] = self.channelType?.rawValue
-            requestDict[RequestKeys.typeKey] = RequestKeys.buttonValue
-            requestDict[RequestKeys.valueKey] = ""
-            
-            if self.channelType == .WHATSAPP || self.channelType == .TRUE_CALLER{
+        // Backend request id (auto intent) replaces the identifier; WebAuthn request ids still need the DEVICE channel below
+        if let rq = self.requestId, !rq.isEmpty, authenticationMedium != .WEB_AUTHN {
+            requestDict[RequestKeys.requestIdKey] = rq
+        } else {
+            switch authenticationMedium {
+            case .PHONE:
+                requestDict[RequestKeys.valueKey] = self.phoneNumber
+                requestDict[RequestKeys.countryCodeKey] = self.countryCode
+                requestDict[RequestKeys.mobileKey] = (countryCode?.trimmingCharacters(in: .init(charactersIn: "+")) ?? "") + (self.phoneNumber ?? "")
                 requestDict[RequestKeys.identifierTypeKey] = RequestKeys.mobileValue
-            } else {
+                requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
+                requestDict[RequestKeys.channelKey] = Otpless.shared.phoneIntentChannel
+                break
+            case .EMAIL:
+                requestDict[RequestKeys.emailKey] = self.email
+                requestDict[RequestKeys.valueKey] = self.email
+                
                 requestDict[RequestKeys.identifierTypeKey] = RequestKeys.emailValue
+                requestDict[RequestKeys.typeKey] = RequestKeys.inputValue
+                requestDict[RequestKeys.channelKey] = Otpless.shared.emailIntentChannel
+                break
+            case .OAUTH:
+                requestDict[RequestKeys.channelKey] = self.channelType?.rawValue
+                requestDict[RequestKeys.typeKey] = RequestKeys.buttonValue
+                requestDict[RequestKeys.valueKey] = ""
+                
+                if self.channelType == .WHATSAPP || self.channelType == .TRUE_CALLER{
+                    requestDict[RequestKeys.identifierTypeKey] = RequestKeys.mobileValue
+                } else {
+                    requestDict[RequestKeys.identifierTypeKey] = RequestKeys.emailValue
+                }
+                break
+            case .WEB_AUTHN:
+                requestDict[RequestKeys.requestIdKey] = self.requestId
+                requestDict[RequestKeys.channelKey] = RequestKeys.deviceValue
+                requestDict[RequestKeys.typeKey] = RequestKeys.buttonValue
+                break
+            case nil:
+                break
             }
-            break
-        case .WEB_AUTHN:
-            requestDict[RequestKeys.requestIdKey] = self.requestId
-            requestDict[RequestKeys.channelKey] = RequestKeys.deviceValue
-            requestDict[RequestKeys.typeKey] = RequestKeys.buttonValue
-            break
-        case nil:
-            if let rq = self.requestId {
-                requestDict[RequestKeys.requestIdKey] = rq
-            }
-            break
         }
         
         if let otp = otp {

@@ -1,3 +1,8 @@
+## 3.1.1 (5th November 2026)
+### Fixes
+- Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.
+- Removed the always-true `isViSnaWhitelisted` and `isAirtelSnaWhitelisted` fields from the intent request body.
+
 ## 3.1.0 (3rd November 2026)
 ### Feature
 - Apple **App Attest** registration (iOS 14+), controlled by the merchant config. When the config API enables it for your app, the SDK registers a hardware-backed App Attest key with OTPLESS once per install, in the background and after `SDK_READY` — it never delays, blocks or fails an authentication, and any failure is reported as telemetry only. The server verifies the attestation against the transaction `state` as the challenge (`POST /v3/device/attestation/{state}`). Nothing changes for apps whose config does not enable it, and no public API was added or changed.

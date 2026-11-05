@@ -68,7 +68,7 @@ import Foundation
     
     @objc public func set(fromBackend requestId: String) {
         self.requestId = requestId
-        self.authenticationMedium = .PHONE
+        self.authenticationMedium = nil
     }
     
     @objc public func set(otp: String) {
@@ -169,6 +169,10 @@ internal extension OtplessRequest {
             requestDict[RequestKeys.typeKey] = RequestKeys.buttonValue
             break
         case nil:
+            if let rq = self.requestId {
+                requestDict[RequestKeys.requestIdKey] = rq
+                requestDict["isAutoIntent"] = "true"
+            }
             break
         }
         

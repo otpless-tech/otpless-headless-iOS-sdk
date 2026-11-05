@@ -29,8 +29,7 @@ struct PostIntentRequestBody: DictionaryConvertible {
     let requestId: String?
     let clientMetaData: String? // Must a dictionary converted to String
     let asId: String?
-    let isViSnaWhitelisted = true
-    let isAirtelSnaWhitelisted = true
+    let isAutoIntent: Bool?
     
     init(
         channel: String,
@@ -51,7 +50,8 @@ struct PostIntentRequestBody: DictionaryConvertible {
         fireIntent: Bool?,
         requestId: String?,
         clientMetaData: String?,
-        asId: String?
+        asId: String?,
+        isAutoIntent: Bool? = nil
     ) {
         self.channel = channel
         self.email = email
@@ -78,6 +78,7 @@ struct PostIntentRequestBody: DictionaryConvertible {
         self.requestId = requestId
         self.clientMetaData = clientMetaData
         self.asId = asId
+        self.isAutoIntent = isAutoIntent
     }
     
     internal mutating func setWebAuthnFallback(is fallback: Bool) {

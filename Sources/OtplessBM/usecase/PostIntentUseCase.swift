@@ -100,7 +100,8 @@ internal class PostIntentUseCase {
             fireIntent: (requestDict[RequestKeys.valueKey] as? String ?? "").isEmpty,
             requestId: requestDict[RequestKeys.requestIdKey] as? String,
             clientMetaData: getJSONClientMetaDataAsString(request: otplessRequest),
-            asId: Otpless.shared.asId
+            asId: Otpless.shared.asId,
+            isAutoIntent: requestDict["isAutoIntent"]?.flatMap(Bool.init)
         )
     }
     

@@ -1,0 +1,250 @@
+import Foundation
+
+internal enum SmsBindingOutcome: Equatable, Sendable {
+    case verified(bindingId: String?)
+    case failed(SmsBindingFailure)
+}
+
+/// One outbound SMS binding attempt on iOS (PRD sections 11 and 13).
+///
+/// Order: fetch the client's effective rules, run the device rules, ask the backend for a token
+/// and VMN, show the composer, apply the rules that depend on how the user sent it (R19, R20,
+/// R21), report what the device saw, then wait for the backend's verdict. Every decision comes
+/// from the rules; nothing here knows which template a client was onboarded with.
+internal final class SmsBindingUseCase: @unchecked Sendable {
+
+    /// R21: the ICCID token must be requested within this long of sending.
+    static let iccidWindow: TimeInterval = 30
+    /// How long one verdict long-poll may be held open (the backend keeps it at or under 20 s).
+    static let longPollSeconds = 20
+    /// Cadence when the backend answers without waiting, or a call fails.
+    static let fallbackPollInterval: TimeInterval = 1.5
+    /// Extra time after the token expires for the backend to publish the final state.
+    static let verdictGrace: TimeInterval = 10
+    private static let reportAttempts = 2
+
+    private let backend: SmsBindingBackend
+    private let composer: SmsBindingComposer
+    private let iccid: IccidTokenProvider
+    private let device: SmsBindingDevice
+    private let sdkVersion: String
+    private let deviceFingerprintHash: @Sendable () -> String?
+    private let now: @Sendable () -> Date
+    private let sleep: @Sendable (TimeInterval) async -> Void
+
+    init(
+        backend: SmsBindingBackend,
+        composer: SmsBindingComposer = LiveSmsBindingComposer(),
+        iccid: IccidTokenProvider = LiveIccidTokenProvider(),
+        device: SmsBindingDevice = LiveSmsBindingDevice(),
+        sdkVersion: String = Constants.SDK_VERSION,
+        deviceFingerprintHash: @escaping @Sendable () -> String? = { nil },
+        now: @escaping @Sendable () -> Date = { Date() },
+        sleep: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
+            try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+        }
+    ) {
+        self.backend = backend
+        self.composer = composer
+        self.iccid = iccid
+        self.device = device
+        self.sdkVersion = sdkVersion
+        self.deviceFingerprintHash = deviceFingerprintHash
+        self.now = now
+        self.sleep = sleep
+    }
+
+    func run(
+        state: String,
+        msisdn: String,
+        upiEntitlementDeclared: Bool,
+        previousAttemptId: String? = nil,
+        onState: (@Sendable (SmsBindingState) -> Void)? = nil
+    ) async -> SmsBindingOutcome {
+
+        // 1. Effective rules
+        let rules: SmsBindingRules
+        do { rules = try await backend.fetchRules(state: state) } catch { return .failed(Self.failure(from: error)) }
+
+        // 2. Device rules. Nothing has been created or sent yet, so there is nothing to report.
+        if let failure = SmsBindingPrechecks.evaluate(
+            rules: rules, device: device, upiEntitlementDeclared: upiEntitlementDeclared
+        ) {
+            return .failed(failure)
+        }
+
+        // 3. Token and VMN
+        let issued: SmsBindingIssued
+        do {
+            issued = try await backend.startAttempt(
+                state: state,
+                request: SmsBindingStartRequest(
+                    msisdn: msisdn,
+                    osVersion: device.osVersion,
+                    appVersion: device.appVersion,
+                    sdkVersion: sdkVersion,
+                    deviceFingerprintHash: deviceFingerprintHash(),
+                    rules: rules,
+                    previousAttemptId: previousAttemptId,
+                    upiEntitlementDeclared: upiEntitlementDeclared,
+                    iccidTokenSupported: rules.requiresIccidToken
+                )
+            )
+        } catch {
+            return .failed(Self.failure(from: error))
+        }
+        let issuedAt = now()
+        var attempt = SmsBindingAttempt(
+            attemptId: issued.attemptId, vmn: issued.vmn, smsBody: issued.smsBody, ttlSeconds: issued.ttlSeconds
+        )
+        let expiresAt = issuedAt.addingTimeInterval(TimeInterval(issued.ttlSeconds))
+        onState?(.issued)
+
+        // 4. Composer
+        let sent = await composer.present(
+            recipient: issued.vmn, body: issued.smsBody, upiValidation: rules.requiresUpiEntitlement
+        )
+
+        // 5. What the way it was sent means
+        switch sent.result {
+        case .cancelled:
+            await reportBestEffort(state, issued.attemptId, event: .cancelled, reason: .smsSendFailed, outcome: sent)
+            return .failed(.smsSendFailed)
+        case .failed:
+            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .smsSendFailed, outcome: sent)
+            return .failed(.smsSendFailed)
+        case .sent:
+            break
+        }
+        // R19: Apple's completion is the proof the SMS reached the carrier. Composer ".sent"
+        // alone only means the user tapped Send.
+        if rules.requiresUpiEntitlement && sent.sendCompletion != true {
+            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .smsSendFailed, outcome: sent)
+            return .failed(.smsSendFailed)
+        }
+        // R20
+        if let limit = rules.composerReturnLimit, sent.returnSeconds > limit {
+            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .tokenExpired, outcome: sent)
+            return .failed(.tokenExpired)
+        }
+        // R3, measured locally from when the token arrived
+        if now() >= expiresAt {
+            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .tokenExpired, outcome: sent)
+            return .failed(.tokenExpired)
+        }
+
+        // 6. R21: ICCID token, within the window after sending. A nil token is marked, not failed.
+        var tokenResult: IccidTokenResult?
+        if rules.requiresIccidToken {
+            let remaining = max(0, Self.iccidWindow - now().timeIntervalSince(sent.returnedAt))
+            tokenResult = (try? await AsyncUtils.withTimeout(seconds: remaining) { [iccid] in await iccid.fetch() }) ?? .nilToken
+        }
+
+        // 7. Tell the backend what the device saw
+        await reportBestEffort(
+            state, issued.attemptId, event: .sent, reason: nil, outcome: sent,
+            iccid: tokenResult, iccidRequired: rules.requiresIccidToken
+        )
+        attempt.advance(to: .sent)
+        onState?(.sent)
+
+        // 8. Wait for the verdict
+        return await awaitVerdict(state: state, attempt: &attempt, issuedAt: issuedAt, onState: onState)
+    }
+
+    // MARK: - Verdict
+
+    private func awaitVerdict(
+        state: String,
+        attempt: inout SmsBindingAttempt,
+        issuedAt: Date,
+        onState: (@Sendable (SmsBindingState) -> Void)?
+    ) async -> SmsBindingOutcome {
+        let deadline = issuedAt.addingTimeInterval(TimeInterval(attempt.ttlSeconds) + Self.verdictGrace)
+        var sinceVersion: Int?
+
+        while now() < deadline {
+            let remaining = Int(deadline.timeIntervalSince(now()).rounded(.up))
+            do {
+                let verdict = try await backend.verdict(
+                    state: state,
+                    attemptId: attempt.attemptId,
+                    sinceVersion: sinceVersion,
+                    waitSeconds: max(1, min(Self.longPollSeconds, remaining))
+                )
+                let progressed = verdict.stateVersion != sinceVersion
+                sinceVersion = verdict.stateVersion
+
+                switch verdict.state {
+                case .verified:
+                    attempt.advance(to: .verified)
+                    onState?(.verified)
+                    return .verified(bindingId: verdict.bindingId)
+                case .rejected:
+                    onState?(.rejected)
+                    return .failed(SmsBindingFailure(backendReason: verdict.reason))
+                case .expired:
+                    onState?(.expired)
+                    return .failed(.tokenExpired)
+                case .aborted:
+                    onState?(.aborted)
+                    return .failed(verdict.reason.map { SmsBindingFailure(backendReason: $0) } ?? .sessionInterrupted)
+                case .issued, .sent, .received:
+                    if attempt.advance(to: verdict.state) { onState?(verdict.state) }
+                    // A backend that answers at once (no long-poll) must not be hammered.
+                    if !progressed { await sleep(Self.fallbackPollInterval) }
+                }
+            } catch SmsBindingBackendError.rejected(let failure, _) {
+                return .failed(failure)
+            } catch {
+                await sleep(Self.fallbackPollInterval)
+            }
+        }
+        return .failed(.tokenExpired)
+    }
+
+    // MARK: - Reporting
+
+    /// A report that fails must not end the attempt: the VMN callback is the deciding proof and
+    /// may still verify it. Tries twice, then moves on.
+    private func reportBestEffort(
+        _ state: String,
+        _ attemptId: String,
+        event: SmsBindingReport.Event,
+        reason: SmsBindingFailure?,
+        outcome: SmsComposerOutcome,
+        iccid: IccidTokenResult? = nil,
+        iccidRequired: Bool = false
+    ) async {
+        let iccidStatus: String
+        var iccidToken: String?
+        switch iccid {
+        case .token(let value)?: iccidStatus = "OK"; iccidToken = value
+        case .nilToken?: iccidStatus = "NIL"
+        case .unsupported?: iccidStatus = "UNSUPPORTED"
+        case nil: iccidStatus = iccidRequired ? "NIL" : "NOT_REQUIRED"
+        }
+        let report = SmsBindingReport(
+            event: event,
+            at: now(),
+            reason: reason,
+            ios: SmsBindingReport.IOS(
+                composerResult: outcome.result.rawValue,
+                sendCompletion: outcome.sendCompletion,
+                composerPresentedAt: outcome.presentedAt,
+                appRegainedControlAt: outcome.returnedAt,
+                returnSeconds: outcome.returnSeconds,
+                iccidToken: iccidToken,
+                iccidTokenStatus: iccidStatus
+            )
+        )
+        for _ in 0..<Self.reportAttempts {
+            if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
+        }
+    }
+
+    private static func failure(from error: Error) -> SmsBindingFailure {
+        if case SmsBindingBackendError.rejected(let failure, _)? = error as? SmsBindingBackendError { return failure }
+        return .internalError
+    }
+}

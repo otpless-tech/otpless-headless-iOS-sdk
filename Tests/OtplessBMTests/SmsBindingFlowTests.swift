@@ -457,6 +457,24 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(seen.values, [.issued, .sent, .received, .verified])
     }
 
+    /// Found on a real device: a verdict that repeats the state the attempt is already in
+    /// (the device just reported SENT, and the backend's first answer is also SENT) fired the
+    /// progress callback again on every poll.
+    func testAStateThatRepeatsIsReportedOnlyOnce() async {
+        let h = Harness()
+        h.backend.verdicts = [
+            verdict(.sent, version: 1), verdict(.sent, version: 1), verdict(.sent, version: 2),
+            verdict(.received, version: 3), verdict(.received, version: 3), verdict(.verified, version: 4)
+        ]
+        let seen = StateLog()
+        let outcome = await h.useCase.run(
+            state: "s", msisdn: "+919812345621", upiEntitlementDeclared: true,
+            onState: { seen.record($0) }
+        )
+        XCTAssertEqual(outcome, .verified(bindingId: nil))
+        XCTAssertEqual(seen.values, [.issued, .sent, .received, .verified], "each state exactly once")
+    }
+
     final class StateLog: @unchecked Sendable {
         private let lock = NSLock()
         private var _values: [SmsBindingState] = []

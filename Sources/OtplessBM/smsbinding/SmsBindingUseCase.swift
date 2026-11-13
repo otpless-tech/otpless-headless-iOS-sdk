@@ -190,7 +190,11 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     onState?(.aborted)
                     return .failed(verdict.reason.map { SmsBindingFailure(backendReason: $0) } ?? .sessionInterrupted)
                 case .issued, .sent, .received:
-                    if attempt.advance(to: verdict.state) { onState?(verdict.state) }
+                    // `advance` accepts a repeat of the current state, so compare: progress is
+                    // reported when the state changes, not on every poll that confirms it.
+                    let before = attempt.state
+                    attempt.advance(to: verdict.state)
+                    if attempt.state != before { onState?(attempt.state) }
                     // A backend that answers at once (no long-poll) must not be hammered.
                     if !progressed { await sleep(Self.fallbackPollInterval) }
                 }

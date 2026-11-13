@@ -18,6 +18,11 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// The real outbound SMS binding backend, on this repository's `ApiManager`.
+    func makeSmsBindingBackend() -> SmsBindingBackend {
+        LiveSmsBindingBackend(apiManager: apiManager)
+    }
+
     /// Test seam: lets a test supply an `ApiManager` built on a stubbed `URLSession`.
     init(apiManager: ApiManager) {
         self.apiManager = apiManager

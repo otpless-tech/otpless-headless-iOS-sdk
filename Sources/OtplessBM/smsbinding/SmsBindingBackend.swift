@@ -16,7 +16,9 @@ internal struct SmsBindingStartRequest: Sendable {
     func toDict() -> [String: Any] {
         var body: [String: Any] = [
             "msisdn": msisdn,
-            "platform": "ios",
+            // Not `platform`: the standard SDK body parameters already carry `platform: HEADLESS`
+            // and overwrite a field of that name.
+            "device_platform": "ios",
             "os_version": osVersion,
             "app_version": appVersion,
             "sdk_version": sdkVersion,
@@ -153,8 +155,9 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
     }
 
     func verdict(state: String, attemptId: String, sinceVersion: Int?, waitSeconds: Int) async throws -> SmsBindingVerdict {
-        var query: [String: Any] = ["wait": waitSeconds]
-        if let sinceVersion { query["since"] = sinceVersion }
+        // `constructURL` only renders string values; an Int here arrives as an empty parameter.
+        var query: [String: Any] = ["wait": String(waitSeconds)]
+        if let sinceVersion { query["since"] = String(sinceVersion) }
         let data = try await call(
             state: state,
             path: Self.verdictPath.replacingOccurrences(of: "{attempt_id}", with: attemptId),

@@ -190,7 +190,7 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(request.rules.configVersion, 12)
         XCTAssertTrue(request.upiEntitlementDeclared)
         let dict = request.toDict()
-        XCTAssertEqual(dict["platform"] as? String, "ios")
+        XCTAssertEqual(dict["device_platform"] as? String, "ios")
         XCTAssertEqual(dict["rules_hash"] as? String, "r_9c41e0")
         XCTAssertEqual((dict["capabilities"] as? [String: Any])?["upi_entitlement"] as? Bool, true)
 

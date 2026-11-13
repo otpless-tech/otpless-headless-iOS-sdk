@@ -1,0 +1,162 @@
+import Foundation
+
+// MARK: - Public types
+
+/// Where an outbound SMS binding attempt is. Delivered to `onProgress` on the main thread.
+public enum OtplessSmsBindingProgress: String, Sendable {
+    /// The backend issued a token and a number to send it to.
+    case issued = "ISSUED"
+    /// The SMS left the phone.
+    case sent = "SENT"
+    /// The backend received it.
+    case received = "RECEIVED"
+    case verified = "VERIFIED"
+    case rejected = "REJECTED"
+    case expired = "EXPIRED"
+    case aborted = "ABORTED"
+}
+
+/// Why a binding attempt did not produce a binding. `code` is one of the reason strings in the
+/// Outbound SMS binding PRD (section 15), plus `SDK_NOT_READY` and `ATTEMPT_IN_PROGRESS`.
+public struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
+    public let code: String
+    /// Whether trying again straight away can help.
+    public let isRetryable: Bool
+
+    internal init(code: String, isRetryable: Bool) {
+        self.code = code
+        self.isRetryable = isRetryable
+    }
+
+    internal init(_ failure: SmsBindingFailure) {
+        self.init(code: failure.rawValue, isRetryable: failure.isRetryable)
+    }
+}
+
+public enum OtplessSmsBindingResult: Equatable, Sendable {
+    case verified(bindingId: String?)
+    case failed(OtplessSmsBindingFailure)
+}
+
+// MARK: - Entry point
+
+extension Otpless {
+
+    /// Binds the user's SIM by having the phone send a one-time token by SMS from its own SIM.
+    ///
+    /// Behaviour follows the rules the backend serves for the app's client; the SDK never asks
+    /// which template a client is on. Call after `initialise` has reported `SDK_READY`.
+    ///
+    /// - Parameters:
+    ///   - msisdn: The number being bound, in E.164 form (`+919812345621`).
+    ///   - upiEntitlementDeclared: Pass `true` only if the app holds Apple's UPI Device Validation
+    ///     entitlement. iOS offers no way for the SDK to check this itself, so the SDK trusts the
+    ///     declaration and the backend enforces it. With the rule on and `false` here the attempt
+    ///     stops with `ENTITLEMENT_MISSING`; it never falls back to an editable message.
+    ///   - onProgress: Called on the main thread as the attempt advances.
+    ///   - completion: Called once, on the main thread, with the outcome.
+    public func startSmsBinding(
+        msisdn: String,
+        upiEntitlementDeclared: Bool = false,
+        onProgress: (@Sendable (OtplessSmsBindingProgress) -> Void)? = nil,
+        completion: @escaping @Sendable (OtplessSmsBindingResult) -> Void
+    ) {
+        func finish(_ result: OtplessSmsBindingResult) {
+            DispatchQueue.main.async { completion(result) }
+        }
+
+        guard sdkState == .READY, let state = self.state else {
+            return finish(.failed(OtplessSmsBindingFailure(code: "SDK_NOT_READY", isRetryable: true)))
+        }
+        guard SmsBindingRunGate.shared.tryBegin() else {
+            return finish(.failed(OtplessSmsBindingFailure(code: "ATTEMPT_IN_PROGRESS", isRetryable: false)))
+        }
+
+        let useCase = SmsBindingUseCase(backend: smsBindingBackend())
+        Task {
+            let outcome = await useCase.run(
+                state: state,
+                msisdn: msisdn,
+                upiEntitlementDeclared: upiEntitlementDeclared,
+                onState: { reached in
+                    guard let progress = OtplessSmsBindingProgress(rawValue: reached.rawValue) else { return }
+                    DispatchQueue.main.async { onProgress?(progress) }
+                }
+            )
+            SmsBindingRunGate.shared.end()
+            switch outcome {
+            case .verified(let bindingId): finish(.verified(bindingId: bindingId))
+            case .failed(let failure): finish(.failed(OtplessSmsBindingFailure(failure)))
+            }
+        }
+    }
+
+    /// The backend the flow talks to: the real one, unless a Debug build chose a mock.
+    internal func smsBindingBackend() -> SmsBindingBackend {
+        #if DEBUG
+        if let mock = SmsBindingMockSwitch.shared.current { return mock }
+        #endif
+        return apiRepository.makeSmsBindingBackend()
+    }
+}
+
+/// One binding attempt at a time: two composers cannot be on screen, and the backend counts
+/// attempts per device (R10).
+private final class SmsBindingRunGate: @unchecked Sendable {
+    static let shared = SmsBindingRunGate()
+    private let lock = NSLock()
+    private var running = false
+
+    func tryBegin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if running { return false }
+        running = true
+        return true
+    }
+
+    func end() {
+        lock.lock()
+        running = false
+        lock.unlock()
+    }
+}
+
+#if DEBUG
+/// Holds the mock a Debug build selected.
+internal final class SmsBindingMockSwitch: @unchecked Sendable {
+    static let shared = SmsBindingMockSwitch()
+    private let lock = NSLock()
+    private var backend: SmsBindingBackend?
+
+    var current: SmsBindingBackend? {
+        lock.lock()
+        defer { lock.unlock() }
+        return backend
+    }
+
+    func set(_ backend: SmsBindingBackend?) {
+        lock.lock()
+        self.backend = backend
+        lock.unlock()
+    }
+}
+
+extension Otpless {
+    /// **Debug builds only.** Answers every outbound SMS binding backend call from a fixed script
+    /// instead of the network, so each outcome can be tested before the backend exists.
+    ///
+    /// - Parameters:
+    ///   - scenario: Which outcome to play.
+    ///   - vmn: The number the SMS is addressed to. The composer sends a real SMS to it; use a
+    ///     number you own.
+    public func useMockSmsBinding(_ scenario: OtplessSmsBindingMockScenario, vmn: String) {
+        SmsBindingMockSwitch.shared.set(MockSmsBindingBackend(scenario: scenario, vmn: vmn))
+    }
+
+    /// **Debug builds only.** Goes back to the real backend.
+    public func useLiveSmsBinding() {
+        SmsBindingMockSwitch.shared.set(nil)
+    }
+}
+#endif

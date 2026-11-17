@@ -27,6 +27,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     private let composer: SmsBindingComposer
     private let iccid: IccidTokenProvider
     private let device: SmsBindingDevice
+    private let prompter: SmsBindingPrompter
+    private let planStatusSupported: @Sendable () -> Bool
     private let sdkVersion: String
     private let deviceFingerprintHash: @Sendable () -> String?
     private let now: @Sendable () -> Date
@@ -37,6 +39,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         composer: SmsBindingComposer = LiveSmsBindingComposer(),
         iccid: IccidTokenProvider = LiveIccidTokenProvider(),
         device: SmsBindingDevice = LiveSmsBindingDevice(),
+        prompter: SmsBindingPrompter = HeadlessSmsBindingPrompter(),
+        planStatusSupported: @escaping @Sendable () -> Bool = { LivePlanStatusProvider().isSupported },
         sdkVersion: String = Constants.SDK_VERSION,
         deviceFingerprintHash: @escaping @Sendable () -> String? = { nil },
         now: @escaping @Sendable () -> Date = { Date() },
@@ -48,6 +52,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.composer = composer
         self.iccid = iccid
         self.device = device
+        self.prompter = prompter
+        self.planStatusSupported = planStatusSupported
         self.sdkVersion = sdkVersion
         self.deviceFingerprintHash = deviceFingerprintHash
         self.now = now
@@ -73,6 +79,12 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
             return .failed(failure)
         }
 
+        // 2b. Dual SIM: before any token is requested, so declining costs nothing (R10 counts attempts).
+        if device.activeLineCount > 1,
+           await !prompter.confirmDualSim(lastDigits: String(msisdn.filter { $0.isNumber }.suffix(4))) {
+            return .failed(.smsSendFailed)
+        }
+
         // 3. Token and VMN
         let issued: SmsBindingIssued
         do {
@@ -87,7 +99,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     rules: rules,
                     previousAttemptId: previousAttemptId,
                     upiEntitlementDeclared: upiEntitlementDeclared,
-                    iccidTokenSupported: rules.requiresIccidToken
+                    iccidTokenSupported: rules.requiresIccidToken,
+                    planStatusSupported: planStatusSupported()
                 )
             )
         } catch {

@@ -1,0 +1,287 @@
+//
+//  SimCheckTests.swift
+//  OtplessBMTests
+//
+//  ENG-628: the plan status mapping, the permission helper, the change listener and the user copy.
+//  Every expectation for Apple's values comes from what an iOS 27.0.1 device returned (ENG-626).
+//
+
+import XCTest
+@testable import OtplessBM
+
+private extension NSLock {
+    func locked<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
+    }
+}
+
+private final class FakePlanStatus: PlanStatusProvider, @unchecked Sendable {
+    private let lock = NSLock()
+    var supported = true
+    var authorization: Result<PlanAuthorization, PlanStatusError> = .success(.authorized)
+    var requestAnswer: Result<PlanAuthorization, PlanStatusError> = .success(.authorized)
+    var hintAnswer: Result<PlanHint, PlanStatusError> = .success(PlanHint(available: true, highConfidence: true))
+    private var _requests = 0
+    private var _hints = 0
+    var requests: Int { lock.locked { _requests } }
+    var hints: Int { lock.locked { _hints } }
+
+    var isSupported: Bool { supported }
+    func authorizationStatus(for phoneNumber: String) async throws -> PlanAuthorization { try lock.locked { authorization }.get() }
+    func requestAuthorization(for phoneNumber: String) async throws -> PlanAuthorization {
+        lock.locked { _requests += 1 }
+        return try lock.locked { requestAnswer }.get()
+    }
+    func hint(for phoneNumber: String) async throws -> PlanHint {
+        lock.locked { _hints += 1 }
+        return try lock.locked { hintAnswer }.get()
+    }
+    func set(_ authorization: PlanAuthorization) { lock.locked { self.authorization = .success(authorization) } }
+    func set(hint: PlanHint) { lock.locked { hintAnswer = .success(hint) } }
+}
+
+private final class MemoryStore: SimBindingStateStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+    func last(for phoneNumber: String) -> String? { lock.locked { values[phoneNumber] } }
+    func save(_ signature: String, for phoneNumber: String) { lock.locked { values[phoneNumber] = signature } }
+}
+
+private final class Collected: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _checks: [OtplessSimBindingCheck] = []
+    var checks: [OtplessSimBindingCheck] { lock.locked { _checks } }
+    func add(_ check: OtplessSimBindingCheck) { lock.locked { _checks.append(check) } }
+}
+
+private let number = "+918980994455"
+
+final class SimCheckTests: XCTestCase {
+
+    private func check(_ fake: FakePlanStatus, _ phone: String = number) async -> Result<OtplessSimBindingCheck, OtplessSimCheckError> {
+        await SimBindingChecker(provider: fake).check(phoneNumber: phone)
+    }
+
+    // MARK: checkSimBinding mapping
+
+    func testAuthorizedAvailableHighConfidenceIsBound() async throws {
+        let fake = FakePlanStatus()
+        let v1 = try await check(fake).get()
+        XCTAssertEqual(v1, OtplessSimBindingCheck(.bound))
+    }
+
+    func testAuthorizedUnavailableHighConfidenceIsNotBound() async throws {
+        let fake = FakePlanStatus()
+        fake.set(hint: PlanHint(available: false, highConfidence: true))
+        let v2 = try await check(fake).get()
+        XCTAssertEqual(v2, OtplessSimBindingCheck(.notBound))
+    }
+
+    func testLowConfidenceIsUnknownWhicheverWayTheHintPoints() async throws {
+        for available in [true, false] {
+            let fake = FakePlanStatus()
+            fake.set(hint: PlanHint(available: available, highConfidence: false))
+            let v3 = try await check(fake).get()
+            XCTAssertEqual(v3, .unknown(.lowConfidence))
+        }
+    }
+
+    func testNotAuthorizedIsUnknownAndTheHintIsNeverRead() async throws {
+        // On device an unauthorized number still got `unavailable` + high confidence from the hint.
+        // Reading it would call a number "not bound" that nobody was allowed to check.
+        let fake = FakePlanStatus()
+        fake.set(.notAuthorized)
+        fake.set(hint: PlanHint(available: false, highConfidence: true))
+        let v4 = try await check(fake).get()
+        XCTAssertEqual(v4, .unknown(.notAuthorized))
+        XCTAssertEqual(fake.hints, 0)
+    }
+
+    func testRestrictedAndNotSupportedAndErrorsMap() async throws {
+        let restricted = FakePlanStatus(); restricted.set(.restricted)
+        let v5 = try await check(restricted).get()
+        XCTAssertEqual(v5, .unknown(.restricted))
+
+        let unsupported = FakePlanStatus(); unsupported.set(.notSupported)
+        let v6 = try await check(unsupported).get()
+        XCTAssertEqual(v6, .unknown(.apiError))
+
+        let authError = FakePlanStatus(); authError.authorization = .failure(.system)
+        let v7 = try await check(authError).get()
+        XCTAssertEqual(v7, .unknown(.apiError))
+
+        let hintError = FakePlanStatus(); hintError.hintAnswer = .failure(.timeout)
+        let v8 = try await check(hintError).get()
+        XCTAssertEqual(v8, .unknown(.apiError))
+    }
+
+    func testBeforeIOS27ItIsAnErrorNotAStatus() async throws {
+        let fake = FakePlanStatus(); fake.supported = false
+        let v9 = await SimBindingChecker(provider: fake).check(phoneNumber: number)
+        XCTAssertEqual(v9, .failure(.notSupported))
+        XCTAssertEqual(OtplessSimCheckError.notSupported.code, "SIM_CHECK_NOT_SUPPORTED")
+    }
+
+    func testANumberThatIsNotE164IsRejectedBeforeAppleIsCalled() async throws {
+        let fake = FakePlanStatus()
+        for bad in ["8980994455", "+0123456789", "+91 8980994455", "+12", "", "+9189809944551234"] {
+            let v10 = await SimBindingChecker(provider: fake).check(phoneNumber: bad)
+            XCTAssertEqual(v10, .failure(.invalidPhoneNumber), bad)
+        }
+        XCTAssertEqual(fake.hints, 0)
+    }
+
+    func testAppleRawValuesMatchWhatTheDeviceReturned() {
+        XCTAssertEqual(PlanAuthorization(rawValue: 0), .notAuthorized)
+        XCTAssertEqual(PlanAuthorization(rawValue: 1), .authorized)
+        XCTAssertEqual(PlanAuthorization(rawValue: 2), .restricted)
+        XCTAssertEqual(PlanAuthorization(rawValue: 99), .notSupported)
+        XCTAssertEqual(PlanHint(availabilityRaw: 1, confidenceRaw: 1), PlanHint(available: true, highConfidence: true))
+        XCTAssertEqual(PlanHint(availabilityRaw: 0, confidenceRaw: 1), PlanHint(available: false, highConfidence: true))
+    }
+
+    // MARK: Permission helper
+
+    func testAlreadyGrantedNeverShowsAppleDialogAgain() async throws {
+        // Asking again on device re-showed the dialog, and "Not Now" then took the permission away.
+        let fake = FakePlanStatus()
+        let v11 = try await SimBindingChecker(provider: fake).requestPermission(phoneNumber: number).get()
+        XCTAssertEqual(v11, .granted)
+        XCTAssertEqual(fake.requests, 0)
+    }
+
+    func testAskingWhenNotYetAuthorizedReportsTheAnswer() async throws {
+        let allow = FakePlanStatus(); allow.set(.notAuthorized); allow.requestAnswer = .success(.authorized)
+        let v12 = try await SimBindingChecker(provider: allow).requestPermission(phoneNumber: number).get()
+        XCTAssertEqual(v12, .granted)
+        XCTAssertEqual(allow.requests, 1)
+
+        let deny = FakePlanStatus(); deny.set(.notAuthorized); deny.requestAnswer = .success(.notAuthorized)
+        let v13 = try await SimBindingChecker(provider: deny).requestPermission(phoneNumber: number).get()
+        XCTAssertEqual(v13, .denied)
+
+        let restrictedAfter = FakePlanStatus(); restrictedAfter.set(.notAuthorized); restrictedAfter.requestAnswer = .success(.restricted)
+        let v14 = try await SimBindingChecker(provider: restrictedAfter).requestPermission(phoneNumber: number).get()
+        XCTAssertEqual(v14, .unavailable)
+
+        let failed = FakePlanStatus(); failed.set(.notAuthorized); failed.requestAnswer = .failure(.system)
+        let v15 = try await SimBindingChecker(provider: failed).requestPermission(phoneNumber: number).get()
+        XCTAssertEqual(v15, .unavailable)
+    }
+
+    func testRestrictedNumberIsUnavailableWithoutAsking() async throws {
+        let fake = FakePlanStatus(); fake.set(.restricted)
+        let v16 = try await SimBindingChecker(provider: fake).requestPermission(phoneNumber: "+14155550123").get()
+        XCTAssertEqual(v16, .unavailable)
+        XCTAssertEqual(fake.requests, 0, "restricted numbers get no dialog")
+    }
+
+    func testPermissionHelperBeforeIOS27() async throws {
+        let fake = FakePlanStatus(); fake.supported = false
+        let v17 = await SimBindingChecker(provider: fake).requestPermission(phoneNumber: number)
+        XCTAssertEqual(v17, .failure(.notSupported))
+    }
+
+    // MARK: Change listener
+
+    private func monitor(_ fake: FakePlanStatus, _ store: MemoryStore, _ out: Collected) -> SimBindingMonitor {
+        SimBindingMonitor(phoneNumber: number, checker: SimBindingChecker(provider: fake), store: store, deliver: { out.add($0) })
+    }
+
+    func testTheFirstResultIsRememberedWithoutACallback() async throws {
+        let out = Collected(), store = MemoryStore()
+        await monitor(FakePlanStatus(), store, out).evaluate()
+        XCTAssertTrue(out.checks.isEmpty)
+        XCTAssertEqual(store.last(for: number), "BOUND")
+    }
+
+    func testOnlyAChangeCallsBack() async throws {
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
+        let m = monitor(fake, store, out)
+        await m.evaluate()
+        await m.evaluate()
+        XCTAssertTrue(out.checks.isEmpty, "same result twice is not a change")
+
+        fake.set(hint: PlanHint(available: false, highConfidence: true))
+        await m.evaluate()
+        XCTAssertEqual(out.checks, [OtplessSimBindingCheck(.notBound)])
+
+        await m.evaluate()
+        XCTAssertEqual(out.checks.count, 1, "and it does not repeat")
+    }
+
+    func testAChangeWhileTheAppWasSuspendedIsReportedAtTheNextLaunch() async throws {
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
+        await monitor(fake, store, out).evaluate()                         // launch 1 saves BOUND
+
+        fake.set(.notAuthorized)                                           // changed while suspended
+        await monitor(fake, store, out).evaluate()                         // launch 2: a new monitor, same store
+        XCTAssertEqual(out.checks, [.unknown(.notAuthorized)])
+    }
+
+    func testATransientApiErrorIsNeitherSavedNorReported() async throws {
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
+        let m = monitor(fake, store, out)
+        await m.evaluate()
+
+        fake.authorization = .failure(.system)
+        await m.evaluate()
+        XCTAssertTrue(out.checks.isEmpty)
+        XCTAssertEqual(store.last(for: number), "BOUND")
+
+        fake.set(.authorized)
+        await m.evaluate()
+        XCTAssertTrue(out.checks.isEmpty, "recovering to the same result is still not a change")
+    }
+
+    func testListenerHostRechecksOnAnEventAndStopsOnRemove() async throws {
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
+        let center = NotificationCenter()
+        let radioChange = Notification.Name("CTServiceRadioAccessTechnologyDidChangeNotification")
+        let host = SimBindingListenerHost()
+        host.start(
+            phoneNumber: number, interval: 3600, checker: SimBindingChecker(provider: fake), store: store,
+            listener: { out.add($0) }, center: center, isForeground: { true }
+        )
+        defer { host.stop() }
+        try? await Task.sleep(nanoseconds: 300_000_000)        // launch check saves the baseline
+        XCTAssertEqual(store.last(for: number), "BOUND")
+
+        fake.set(hint: PlanHint(available: false, highConfidence: true))
+        center.post(name: radioChange, object: nil)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        try? await Task.sleep(nanoseconds: 200_000_000)        // the callback hops to the main queue
+        XCTAssertEqual(out.checks, [OtplessSimBindingCheck(.notBound)])
+
+        host.stop()
+        fake.set(hint: PlanHint(available: true, highConfidence: true))
+        center.post(name: radioChange, object: nil)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(out.checks.count, 1, "no callback after the listener is removed")
+    }
+
+    // MARK: Copy
+
+    func testEveryFailureHasUserTextAndAnUnknownCodeFallsBackToAGenericOne() {
+        let all: [SmsBindingFailure] = [
+            .permissionMissing, .noSim, .airplaneMode, .upgradeRequired, .entitlementMissing, .unsafeSmsApp,
+            .smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted, .deviceBlocked,
+            .vmnPoolUnavailable, .verificationFailed, .internalError
+        ]
+        for failure in all {
+            XCTAssertFalse(SmsBindingCopy.failure(code: failure.rawValue).isEmpty, failure.rawValue)
+        }
+        XCTAssertEqual(SmsBindingCopy.failure(code: "SDK_NOT_READY"), SmsBindingCopy.failure(code: "INTERNAL_ERROR"))
+        XCTAssertEqual(OtplessSmsBindingFailure(.numberMismatch).message, SmsBindingCopy.failure(code: "NUMBER_MISMATCH"))
+    }
+
+    func testHeadlessUIDoesNothingAndAlwaysContinues() async throws {
+        let headless = HeadlessSmsBindingPrompter()
+        let confirmed = await headless.confirmDualSim(lastDigits: "4455")
+        let retry = await headless.offerRetry(.tokenExpired)
+        XCTAssertTrue(confirmed)
+        XCTAssertFalse(retry)
+    }
+}

@@ -10,6 +10,13 @@ internal protocol SmsBindingDevice: Sendable {
     var hasCellularRadio: Bool { get }
     /// `MFMessageComposeViewController.canSendText()`.
     var canSendText: Bool { get }
+    /// How many lines (physical SIM or eSIM) are on a network. More than one means the user must
+    /// send from the line that holds the number being bound.
+    var activeLineCount: Int { get }
+}
+
+extension SmsBindingDevice {
+    var activeLineCount: Int { 1 }
 }
 
 /// The device rules that run **before** any token is requested (PRD section 11, step 1).

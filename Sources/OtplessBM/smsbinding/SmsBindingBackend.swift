@@ -12,6 +12,9 @@ internal struct SmsBindingStartRequest: Sendable {
     let previousAttemptId: String?
     let upiEntitlementDeclared: Bool
     let iccidTokenSupported: Bool
+    /// ENG-628: this device has Apple's plan status API (iOS 27+). Lets orchestration route on
+    /// capability rather than on the OS version alone.
+    var planStatusSupported: Bool = false
 
     func toDict() -> [String: Any] {
         var body: [String: Any] = [
@@ -26,7 +29,8 @@ internal struct SmsBindingStartRequest: Sendable {
             "rules_hash": rules.rulesHash,
             "capabilities": [
                 "upi_entitlement": upiEntitlementDeclared,
-                "iccid_token_supported": iccidTokenSupported
+                "iccid_token_supported": iccidTokenSupported,
+                "plan_status_supported": planStatusSupported
             ]
         ]
         if let deviceFingerprintHash { body["device_fp_hash"] = deviceFingerprintHash }

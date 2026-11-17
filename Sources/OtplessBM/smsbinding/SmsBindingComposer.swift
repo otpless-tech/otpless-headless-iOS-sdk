@@ -54,6 +54,11 @@ internal struct LiveSmsBindingDevice: SmsBindingDevice {
     }
 
     var canSendText: Bool { MFMessageComposeViewController.canSendText() }
+
+    var activeLineCount: Int {
+        guard #available(iOS 12.0, *) else { return 1 }
+        return (CTTelephonyNetworkInfo().serviceCurrentRadioAccessTechnology ?? [:]).count
+    }
 }
 
 // MARK: - Live: ICCID token

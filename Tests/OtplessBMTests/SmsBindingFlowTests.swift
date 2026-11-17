@@ -31,6 +31,22 @@ private struct FakeDevice: SmsBindingDevice {
     var appVersion = "3.2.0"
     var hasCellularRadio = true
     var canSendText = true
+    var activeLineCount = 1
+}
+
+private final class FakePrompter: SmsBindingPrompter, @unchecked Sendable {
+    private let lock = NSLock()
+    var confirmDualSimAnswer = true
+    private var _dualSimAsks: [String] = []
+    var dualSimAsks: [String] { lock.locked { _dualSimAsks } }
+
+    func confirmDualSim(lastDigits: String) async -> Bool {
+        lock.locked { _dualSimAsks.append(lastDigits) }
+        return confirmDualSimAnswer
+    }
+    func showVerifying() {}
+    func hideVerifying() async {}
+    func offerRetry(_ failure: SmsBindingFailure) async -> Bool { false }
 }
 
 private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
@@ -145,7 +161,9 @@ final class SmsBindingFlowTests: XCTestCase {
         let useCase: SmsBindingUseCase
         let sleeps: SleepLog
 
-        init(rules: Data = rules(), device: FakeDevice = FakeDevice()) {
+        let prompter = FakePrompter()
+
+        init(rules: Data = rules(), device: FakeDevice = FakeDevice(), planStatusSupported: Bool = false) {
             let clock = self.clock
             backend = FakeBackend(rules: rules)
             composer = FakeComposer(clock: clock)
@@ -153,6 +171,7 @@ final class SmsBindingFlowTests: XCTestCase {
             sleeps = log
             useCase = SmsBindingUseCase(
                 backend: backend, composer: composer, iccid: iccid, device: device,
+                prompter: prompter, planStatusSupported: { planStatusSupported },
                 sdkVersion: "3.2.0", deviceFingerprintHash: { "fp-hash" },
                 now: { clock.now },
                 sleep: { seconds in log.record(seconds); clock.advance(seconds) }
@@ -169,6 +188,49 @@ final class SmsBindingFlowTests: XCTestCase {
         private var _values: [TimeInterval] = []
         func record(_ value: TimeInterval) { lock.locked { _values.append(value) } }
         var values: [TimeInterval] { lock.locked { _values } }
+    }
+
+    // MARK: Dual SIM and device context (ENG-622, ENG-628)
+
+    func testDualSimAsksBeforeAnyTokenIsRequested() async {
+        let h = Harness(device: FakeDevice(activeLineCount: 2))
+        h.prompter.confirmDualSimAnswer = false
+
+        let outcome = await h.run()
+
+        XCTAssertEqual(outcome, .failed(.smsSendFailed))
+        XCTAssertEqual(h.prompter.dualSimAsks, ["5621"], "names the last four digits of the number being bound")
+        XCTAssertTrue(h.backend.startRequests.isEmpty, "declining must not consume an attempt")
+        XCTAssertTrue(h.composer.calls.isEmpty)
+    }
+
+    func testDualSimConfirmedContinuesToTheComposer() async {
+        let h = Harness(device: FakeDevice(activeLineCount: 2))
+        h.backend.verdicts = [verdict(.verified, binding: "bnd_1", version: 2)]
+
+        let outcome = await h.run()
+
+        XCTAssertEqual(outcome, .verified(bindingId: "bnd_1"))
+        XCTAssertEqual(h.prompter.dualSimAsks.count, 1)
+        XCTAssertEqual(h.composer.calls.count, 1)
+    }
+
+    func testSingleLineNeverAsks() async {
+        let h = Harness(device: FakeDevice(activeLineCount: 1))
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.run()
+        XCTAssertTrue(h.prompter.dualSimAsks.isEmpty)
+    }
+
+    func testStartRequestCarriesPlanStatusSupported() async {
+        for supported in [true, false] {
+            let h = Harness(planStatusSupported: supported)
+            h.backend.verdicts = [verdict(.verified, version: 2)]
+            _ = await h.run()
+            let request = try! XCTUnwrap(h.backend.startRequests.first)
+            XCTAssertEqual(request.planStatusSupported, supported)
+            XCTAssertEqual((request.toDict()["capabilities"] as? [String: Any])?["plan_status_supported"] as? Bool, supported)
+        }
     }
 
     // MARK: Happy path

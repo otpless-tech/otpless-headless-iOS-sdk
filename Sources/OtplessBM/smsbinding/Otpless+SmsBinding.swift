@@ -53,11 +53,15 @@ extension Otpless {
     ///     entitlement. iOS offers no way for the SDK to check this itself, so the SDK trusts the
     ///     declaration and the backend enforces it. With the rule on and `false` here the attempt
     ///     stops with `ENTITLEMENT_MISSING`; it never falls back to an editable message.
+    ///   - ui: `.headless` (default) draws nothing of its own. `.standard` adds the dual-SIM prompt,
+    ///     a "verifying" indicator and a "Try again" alert on failures that can be retried.
     ///   - onProgress: Called on the main thread as the attempt advances.
-    ///   - completion: Called once, on the main thread, with the outcome.
+    ///   - completion: Called once, on the main thread, with the outcome. With `.standard` this is
+    ///     after the user has dismissed a failure alert or stopped retrying.
     public func startSmsBinding(
         msisdn: String,
         upiEntitlementDeclared: Bool = false,
+        ui: OtplessSmsBindingUI = .headless,
         onProgress: (@Sendable (OtplessSmsBindingProgress) -> Void)? = nil,
         completion: @escaping @Sendable (OtplessSmsBindingResult) -> Void
     ) {
@@ -72,17 +76,25 @@ extension Otpless {
             return finish(.failed(OtplessSmsBindingFailure(code: "ATTEMPT_IN_PROGRESS", isRetryable: false)))
         }
 
-        let useCase = SmsBindingUseCase(backend: smsBindingBackend())
+        let backend = smsBindingBackend()
+        let prompter: SmsBindingPrompter = ui == .standard ? StandardSmsBindingPrompter() : HeadlessSmsBindingPrompter()
         Task {
-            let outcome = await useCase.run(
-                state: state,
-                msisdn: msisdn,
-                upiEntitlementDeclared: upiEntitlementDeclared,
-                onState: { reached in
-                    guard let progress = OtplessSmsBindingProgress(rawValue: reached.rawValue) else { return }
-                    DispatchQueue.main.async { onProgress?(progress) }
-                }
-            )
+            var outcome: SmsBindingOutcome
+            while true {
+                let useCase = SmsBindingUseCase(backend: backend, prompter: prompter)
+                outcome = await useCase.run(
+                    state: state,
+                    msisdn: msisdn,
+                    upiEntitlementDeclared: upiEntitlementDeclared,
+                    onState: { reached in
+                        if reached == .sent { prompter.showVerifying() }
+                        guard let progress = OtplessSmsBindingProgress(rawValue: reached.rawValue) else { return }
+                        DispatchQueue.main.async { onProgress?(progress) }
+                    }
+                )
+                await prompter.hideVerifying()
+                guard case .failed(let failure) = outcome, await prompter.offerRetry(failure) else { break }
+            }
             SmsBindingRunGate.shared.end()
             switch outcome {
             case .verified(let bindingId): finish(.verified(bindingId: bindingId))

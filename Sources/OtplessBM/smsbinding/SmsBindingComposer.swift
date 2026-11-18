@@ -122,6 +122,7 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
     private var composerResult: SmsComposerOutcome.Result = .failed
     private var sendCompletion: Bool?
     private var awaitingCompletion = false
+    private var dismissalHandled = false
 
     init(continuation: CheckedContinuation<SmsComposerOutcome, Never>, upiValidation: Bool) {
         self.continuation = continuation
@@ -175,17 +176,31 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
             case .cancelled: composerResult = .cancelled
             default: composerResult = .failed
             }
-            controller.dismiss(animated: true)
-
-            guard composerResult == .sent, upiValidation else { return finish() }
-            // Apple calls the send completion after this, once the carrier has the message.
-            // If it already ran, finish now; otherwise wait a bounded time for it.
-            if sendCompletion != nil { return finish() }
-            awaitingCompletion = true
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(LiveSmsBindingComposer.sendCompletionTimeout * 1_000_000_000))
-                self?.finish()
+            // Carry on only once the composer has left the screen: anything the SDK shows next (an
+            // alert) cannot be presented while it is still animating away.
+            controller.dismiss(animated: true) { [weak self] in
+                Task { @MainActor in self?.composerDismissed() }
             }
+            // `dismiss` skips its completion if the controller is already gone.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                self?.composerDismissed()
+            }
+        }
+    }
+
+    private func composerDismissed() {
+        guard !dismissalHandled else { return }
+        dismissalHandled = true
+
+        guard composerResult == .sent, upiValidation else { return finish() }
+        // Apple calls the send completion after this, once the carrier has the message.
+        // If it already ran, finish now; otherwise wait a bounded time for it.
+        if sendCompletion != nil { return finish() }
+        awaitingCompletion = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(LiveSmsBindingComposer.sendCompletionTimeout * 1_000_000_000))
+            self?.finish()
         }
     }
 

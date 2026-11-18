@@ -141,18 +141,46 @@ internal final class StandardSmsBindingPrompter: SmsBindingPrompter, @unchecked 
     // MARK: -
 
     /// One alert, answered once. `confirm == nil` shows a single dismiss button.
+    ///
+    /// UIKit silently refuses to present while another controller is animating in or out, and the
+    /// message composer is usually still leaving the screen when a result arrives. So this waits
+    /// for the transition to end, checks the alert actually appeared, and tries again if not. If it
+    /// cannot be shown within a few seconds it answers with `ifNoScreen` rather than leave the flow
+    /// waiting forever.
     private func ask(title: String, message: String, confirm: String?, dismiss: String, ifNoScreen: Bool) async -> Bool {
         await withCheckedContinuation { continuation in
+            let once = OneShot()
+            let answer: @Sendable (Bool) -> Void = { value in
+                if once.claim() { continuation.resume(returning: value) }
+            }
             Task { @MainActor in
-                guard let top = presenter() else { return continuation.resume(returning: ifNoScreen) }
                 let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: dismiss, style: .cancel) { _ in continuation.resume(returning: false) })
+                alert.addAction(UIAlertAction(title: dismiss, style: .cancel) { _ in answer(false) })
                 if let confirm {
-                    alert.addAction(UIAlertAction(title: confirm, style: .default) { _ in continuation.resume(returning: true) })
+                    alert.addAction(UIAlertAction(title: confirm, style: .default) { _ in answer(true) })
                 }
-                top.present(alert, animated: true)
+
+                let deadline = Date().addingTimeInterval(Self.presentTimeout)
+                while Date() < deadline {
+                    if let top = presenter(), !Self.isTransitioning(top) {
+                        top.present(alert, animated: true)
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        if alert.presentingViewController != nil { return }   // it is on screen
+                        continue                                              // it did not take; try again
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                answer(ifNoScreen)
             }
         }
+    }
+
+    /// How long to keep trying to put an alert on screen.
+    static let presentTimeout: TimeInterval = 5
+
+    @MainActor
+    private static func isTransitioning(_ controller: UIViewController) -> Bool {
+        controller.isBeingPresented || controller.isBeingDismissed || controller.transitionCoordinator != nil
     }
 
     @MainActor

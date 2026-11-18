@@ -22,14 +22,24 @@ public struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
     public let code: String
     /// Whether trying again straight away can help.
     public let isRetryable: Bool
+    /// The number being bound with its middle hidden (`+91 89xxxxxx55`), for wording such as "send it
+    /// from the line with …". Nil when the failure has nothing to do with the number.
+    public let maskedNumber: String?
+    /// For `DEVICE_BLOCKED`: seconds until the user may try again, when known.
+    public let retryAfterSeconds: Int?
 
-    internal init(code: String, isRetryable: Bool) {
+    internal init(code: String, isRetryable: Bool, maskedNumber: String? = nil, retryAfterSeconds: Int? = nil) {
         self.code = code
         self.isRetryable = isRetryable
+        self.maskedNumber = maskedNumber
+        self.retryAfterSeconds = retryAfterSeconds
     }
 
-    internal init(_ failure: SmsBindingFailure) {
-        self.init(code: failure.rawValue, isRetryable: failure.isRetryable)
+    internal init(_ failure: SmsBindingFailure, maskedNumber: String? = nil, retryAfterSeconds: Int? = nil) {
+        self.init(
+            code: failure.rawValue, isRetryable: failure.isRetryable,
+            maskedNumber: maskedNumber, retryAfterSeconds: retryAfterSeconds
+        )
     }
 }
 
@@ -86,15 +96,18 @@ extension Otpless {
             return finish(.failed(OtplessSmsBindingFailure(code: "ATTEMPT_IN_PROGRESS", isRetryable: false)))
         }
 
+        let masked = SmsBindingCopy.mask(countryCode: code, national: String(msisdn.dropFirst(code.count)))
         let backend = smsBindingBackend()
         let prompter: SmsBindingPrompter = ui == .standard ? StandardSmsBindingPrompter() : HeadlessSmsBindingPrompter()
         Task {
             var outcome: SmsBindingOutcome
+            var retryAfter: Int?
             while true {
                 let useCase = SmsBindingUseCase(
                     backend: backend,
                     prompter: prompter,
                     lastAttempt: .shared,
+                    blockMemory: .shared,
                     // The stable device id the SDK already reports with every request.
                     deviceFingerprintHash: { Otpless.shared.appInfo["deviceId"] as? String }
                 )
@@ -104,18 +117,26 @@ extension Otpless {
                     countryCode: code,
                     upiEntitlementDeclared: upiEntitlementDeclared,
                     onState: { reached in
-                        if reached == .sent { prompter.showVerifying() }
                         guard let progress = OtplessSmsBindingProgress(rawValue: reached.rawValue) else { return }
                         DispatchQueue.main.async { onProgress?(progress) }
                     }
                 )
-                await prompter.hideVerifying()
-                guard case .failed(let failure) = outcome, await prompter.offerRetry(failure) else { break }
+                await prompter.hideProgress()
+                retryAfter = useCase.lastRetryAfterSeconds
+                guard case .failed(let failure) = outcome,
+                      await prompter.offerRetry(
+                        failure, context: SmsBindingFailureContext(maskedNumber: masked, retryAfterSeconds: retryAfter)
+                      ) else { break }
             }
             SmsBindingRunGate.shared.end()
             switch outcome {
             case .verified(let bindingId): finish(.verified(bindingId: bindingId))
-            case .failed(let failure): finish(.failed(OtplessSmsBindingFailure(failure)))
+            case .failed(let failure):
+                finish(.failed(OtplessSmsBindingFailure(
+                    failure,
+                    maskedNumber: failure == .numberMismatch ? masked : nil,
+                    retryAfterSeconds: failure == .deviceBlocked ? retryAfter : nil
+                )))
             }
         }
     }

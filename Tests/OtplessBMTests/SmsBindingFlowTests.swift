@@ -36,17 +36,22 @@ private struct FakeDevice: SmsBindingDevice {
 
 private final class FakePrompter: SmsBindingPrompter, @unchecked Sendable {
     private let lock = NSLock()
-    var confirmDualSimAnswer = true
-    private var _dualSimAsks: [String] = []
-    var dualSimAsks: [String] { lock.locked { _dualSimAsks } }
+    var confirmAnswer = true
+    private var _asks: [(lastDigits: String, dualSim: Bool)] = []
+    private var _progressShown: [Date] = []
+    private var _progressStates: [SmsBindingState] = []
+    var asks: [(lastDigits: String, dualSim: Bool)] { lock.locked { _asks } }
+    var progressShown: [Date] { lock.locked { _progressShown } }
+    var progressStates: [SmsBindingState] { lock.locked { _progressStates } }
 
-    func confirmDualSim(lastDigits: String) async -> Bool {
-        lock.locked { _dualSimAsks.append(lastDigits) }
-        return confirmDualSimAnswer
+    func confirmBeforeSend(lastDigits: String, dualSim: Bool) async -> Bool {
+        lock.locked { _asks.append((lastDigits, dualSim)) }
+        return confirmAnswer
     }
-    func showVerifying() {}
-    func hideVerifying() async {}
-    func offerRetry(_ failure: SmsBindingFailure) async -> Bool { false }
+    func showProgress(expiresAt: Date) { lock.locked { _progressShown.append(expiresAt) } }
+    func updateProgress(_ state: SmsBindingState) { lock.locked { _progressStates.append(state) } }
+    func hideProgress() async {}
+    func offerRetry(_ failure: SmsBindingFailure, context: SmsBindingFailureContext) async -> Bool { false }
 }
 
 private final class FakeSessionGuard: SmsBindingSessionGuard, @unchecked Sendable {
@@ -196,6 +201,7 @@ final class SmsBindingFlowTests: XCTestCase {
 
         let prompter = FakePrompter()
         let lastAttempt = SmsBindingLastAttempt()
+        let blockMemory = SmsBindingBlockMemory(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = FakeSessionGuard()
         let guardsCreated = Counter()
 
@@ -210,7 +216,7 @@ final class SmsBindingFlowTests: XCTestCase {
             useCase = SmsBindingUseCase(
                 backend: backend, composer: composer, iccid: iccid, device: device,
                 prompter: prompter, planStatusSupported: { planStatusSupported },
-                lastAttempt: lastAttempt, sessionGuard: { guardsCreated.increment(); return session },
+                lastAttempt: lastAttempt, blockMemory: blockMemory, sessionGuard: { guardsCreated.increment(); return session },
                 sdkVersion: "3.2.0", deviceFingerprintHash: { "fp-hash" },
                 now: { clock.now },
                 sleep: { seconds in log.record(seconds); clock.advance(seconds) }
@@ -240,34 +246,94 @@ final class SmsBindingFlowTests: XCTestCase {
 
     // MARK: Dual SIM and device context (ENG-622, ENG-628)
 
-    func testDualSimAsksBeforeAnyTokenIsRequested() async {
+    func testTheStepIsExplainedBeforeAnythingIsRequested() async {
+        let h = Harness(device: FakeDevice(activeLineCount: 1))
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.run()
+        XCTAssertEqual(h.prompter.asks.count, 1)
+        XCTAssertEqual(h.prompter.asks.first?.lastDigits, "5621", "names the last four digits of the number being bound")
+        XCTAssertEqual(h.prompter.asks.first?.dualSim, false, "one line: no dual-SIM wording")
+    }
+
+    func testDualSimIsNamedAndDecliningCostsNothing() async {
         let h = Harness(device: FakeDevice(activeLineCount: 2))
-        h.prompter.confirmDualSimAnswer = false
+        h.prompter.confirmAnswer = false
 
         let outcome = await h.run()
 
         XCTAssertEqual(outcome, .failed(.smsSendFailed))
-        XCTAssertEqual(h.prompter.dualSimAsks, ["5621"], "names the last four digits of the number being bound")
+        XCTAssertEqual(h.prompter.asks.first?.dualSim, true)
         XCTAssertTrue(h.backend.startRequests.isEmpty, "declining must not consume an attempt")
         XCTAssertTrue(h.composer.calls.isEmpty)
     }
 
-    func testDualSimConfirmedContinuesToTheComposer() async {
+    func testConfirmingContinuesToTheComposer() async {
         let h = Harness(device: FakeDevice(activeLineCount: 2))
         h.backend.verdicts = [verdict(.verified, binding: "bnd_1", version: 2)]
 
         let outcome = await h.run()
 
         XCTAssertEqual(outcome, .verified(bindingId: "bnd_1"))
-        XCTAssertEqual(h.prompter.dualSimAsks.count, 1)
         XCTAssertEqual(h.composer.calls.count, 1)
     }
 
-    func testSingleLineNeverAsks() async {
-        let h = Harness(device: FakeDevice(activeLineCount: 1))
+    // MARK: Progress and the block hint (PRD section 17, section 15)
+
+    func testProgressIsShownOnceAfterSendingWithTheTokensExpiry() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.received, version: 2), verdict(.verified, version: 3)]
+        _ = await h.run()
+        // issued at the clock's start, with the fake backend's 45 s token
+        XCTAssertEqual(h.prompter.progressShown, [Date(timeIntervalSince1970: 1_800_000_045)])
+        XCTAssertEqual(h.prompter.progressStates, [.received, .verified])
+    }
+
+    func testNoProgressWhenTheMessageWasNeverSent() async {
+        let h = Harness()
+        h.composer.result = .cancelled
+        _ = await h.run()
+        XCTAssertTrue(h.prompter.progressShown.isEmpty)
+
+        let blocked = Harness(device: FakeDevice(hasCellularRadio: false))
+        _ = await blocked.run()
+        XCTAssertTrue(blocked.prompter.progressShown.isEmpty)
+    }
+
+    func testTheBlockLengthSeenInTheRulesIsRemembered() async {
+        let h = Harness(rules: rules(extra: #""attempt_limit": {"enabled": true, "max": 5, "window_h": 24, "block_h": 6}"#))
         h.backend.verdicts = [verdict(.verified, version: 2)]
         _ = await h.run()
-        XCTAssertTrue(h.prompter.dualSimAsks.isEmpty)
+        XCTAssertEqual(h.blockMemory.hours, 6)
+    }
+
+    func testADeviceBlockedRefusalSaysHowLongFromTheRememberedBlockLength() async {
+        let h = Harness()
+        h.blockMemory.remember(6)
+        h.backend.startError = .rejected(.deviceBlocked, retryAfterSeconds: nil)
+        let outcome = await h.run()
+        XCTAssertEqual(outcome, .failed(.deviceBlocked))
+        XCTAssertEqual(h.useCase.lastRetryAfterSeconds, 6 * 3600)
+    }
+
+    func testTheBackendsOwnRetryAfterWinsAndNothingKnownMeansNoHint() async {
+        let own = Harness()
+        own.blockMemory.remember(6)
+        own.backend.startError = .rejected(.deviceBlocked, retryAfterSeconds: 3600)
+        _ = await own.run()
+        XCTAssertEqual(own.useCase.lastRetryAfterSeconds, 3600)
+
+        let unknown = Harness()
+        unknown.backend.startError = .rejected(.deviceBlocked, retryAfterSeconds: nil)
+        _ = await unknown.run()
+        XCTAssertNil(unknown.useCase.lastRetryAfterSeconds)
+    }
+
+    func testOtherFailuresCarryNoRetryHint() async {
+        let h = Harness()
+        h.blockMemory.remember(6)
+        h.backend.startError = .rejected(.vmnPoolUnavailable, retryAfterSeconds: nil)
+        _ = await h.run()
+        XCTAssertNil(h.useCase.lastRetryAfterSeconds)
     }
 
     func testStartRequestCarriesPlanStatusSupported() async {

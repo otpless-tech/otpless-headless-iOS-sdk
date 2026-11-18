@@ -29,6 +29,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     private let device: SmsBindingDevice
     private let prompter: SmsBindingPrompter
     private let lastAttempt: SmsBindingLastAttempt
+    private let blockMemory: SmsBindingBlockMemory
     private let makeSessionGuard: @Sendable () -> SmsBindingSessionGuard
     private let planStatusSupported: @Sendable () -> Bool
     private let sdkVersion: String
@@ -44,6 +45,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         prompter: SmsBindingPrompter = HeadlessSmsBindingPrompter(),
         planStatusSupported: @escaping @Sendable () -> Bool = { LivePlanStatusProvider().isSupported },
         lastAttempt: SmsBindingLastAttempt = SmsBindingLastAttempt(),
+        blockMemory: SmsBindingBlockMemory = SmsBindingBlockMemory(defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard),
         sessionGuard: @escaping @Sendable () -> SmsBindingSessionGuard = { LiveSmsBindingSessionGuard() },
         sdkVersion: String = Constants.SDK_VERSION,
         deviceFingerprintHash: @escaping @Sendable () -> String? = { nil },
@@ -58,6 +60,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.device = device
         self.prompter = prompter
         self.lastAttempt = lastAttempt
+        self.blockMemory = blockMemory
         self.makeSessionGuard = sessionGuard
         self.planStatusSupported = planStatusSupported
         self.sdkVersion = sdkVersion
@@ -65,6 +68,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.now = now
         self.sleep = sleep
     }
+
+    /// Set by `run` when it ends in "device blocked": seconds until the user may try again, if known.
+    /// Read after `run` returns.
+    private(set) var lastRetryAfterSeconds: Int?
 
     func run(
         state: String,
@@ -75,9 +82,14 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         onState: (@Sendable (SmsBindingState) -> Void)? = nil
     ) async -> SmsBindingOutcome {
 
-        // 1. Dual SIM. Asked before the attempt exists, so declining costs nothing (R10 counts attempts).
-        if device.activeLineCount > 1,
-           await !prompter.confirmDualSim(lastDigits: String(msisdn.filter { $0.isNumber }.suffix(4))) {
+        lastRetryAfterSeconds = nil
+
+        // 1. Explain the step, and on a dual-SIM phone name the line to send from. Asked before the
+        // attempt exists, so declining costs nothing (R10 counts attempts). Headless mode skips it.
+        if await !prompter.confirmBeforeSend(
+            lastDigits: String(msisdn.filter { $0.isNumber }.suffix(4)),
+            dualSim: device.activeLineCount > 1
+        ) {
             return .failed(.smsSendFailed)
         }
 
@@ -101,8 +113,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                 )
             )
         } catch {
+            lastRetryAfterSeconds = retryHint(for: error)
             return .failed(Self.failure(from: error))
         }
+        blockMemory.remember(started.rules.attemptBlockHours)
         let issued = started.issued
         let rules = started.rules
         let issuedAt = now()
@@ -180,6 +194,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         )
         attempt.advance(to: .sent)
         onState?(.sent)
+        prompter.showProgress(expiresAt: expiresAt)
 
         // 8. Wait for the verdict
         return await awaitVerdict(state: state, attempt: &attempt, issuedAt: issuedAt, session: session, onState: onState)
@@ -214,6 +229,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                 case .verified:
                     lastAttempt.clear()
                     attempt.advance(to: .verified)
+                    prompter.updateProgress(.verified)
                     onState?(.verified)
                     return .verified(bindingId: verdict.bindingId)
                 case .rejected:
@@ -230,7 +246,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     // reported when the state changes, not on every poll that confirms it.
                     let before = attempt.state
                     attempt.advance(to: verdict.state)
-                    if attempt.state != before { onState?(attempt.state) }
+                    if attempt.state != before {
+                        prompter.updateProgress(attempt.state)
+                        onState?(attempt.state)
+                    }
                     // A backend that answers at once (no long-poll) must not be hammered.
                     if !progressed { await sleep(Self.fallbackPollInterval) }
                 }
@@ -290,6 +309,13 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         for _ in 0..<Self.reportAttempts {
             if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
         }
+    }
+
+    /// How long the user must wait after a "device blocked" refusal: the backend's figure when it
+    /// gives one, else the block length last seen in the rules.
+    private func retryHint(for error: Error) -> Int? {
+        guard case SmsBindingBackendError.rejected(.deviceBlocked, let after)? = error as? SmsBindingBackendError else { return nil }
+        return after ?? blockMemory.hours.map { $0 * 3600 }
     }
 
     private static func failure(from error: Error) -> SmsBindingFailure {

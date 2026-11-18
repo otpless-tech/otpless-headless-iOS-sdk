@@ -9,6 +9,7 @@ internal enum SmsBindingRuleKey: String, Sendable {
     case singleSession = "single_session"
     case minAppVersion = "min_app_version"
     case minOS = "min_os"
+    case attemptLimit = "attempt_limit"
     case iosUpiEntitlement = "ios_upi_entitlement"
     case iosComposerReturn = "ios_composer_return"
     case iosIccidToken = "ios_iccid_token"
@@ -113,11 +114,25 @@ internal struct SmsBindingRules: Equatable, Sendable {
         return TimeInterval(int(.iosComposerReturn, "max_seconds") ?? 30)
     }
 
-    /// R11. Minimum app version, or nil when the rule is off.
-    var minimumAppVersion: String? { string(.minAppVersion, "version") }
+    /// R11. Minimum app version, or nil when the rule is off. The PRD does not name the value, so a
+    /// few likely names are accepted.
+    var minimumAppVersion: String? {
+        firstString(.minAppVersion, ["version", "min_version", "app_version", "value"])
+    }
 
-    /// R12. Minimum iOS version, or nil when the rule is off.
-    var minimumOSVersion: String? { string(.minOS, "ios") }
+    /// R12. Minimum iOS version, or nil when the rule is off (`ios`, as in the PRD's
+    /// `android_api` / `ios` pair, or a few likely alternatives).
+    var minimumOSVersion: String? {
+        firstString(.minOS, ["ios", "ios_version", "min_ios", "version"])
+    }
+
+    /// R10. How long a device stays blocked after reaching the attempt limit, in hours.
+    var attemptBlockHours: Int? { int(.attemptLimit, "block_h") }
+
+    private func firstString(_ key: SmsBindingRuleKey, _ names: [String]) -> String? {
+        for name in names { if let value = string(key, name) { return value } }
+        return nil
+    }
 }
 
 /// Dotted numeric version comparison ("3.10.0" > "3.9.2"). Non-numeric parts count as 0.

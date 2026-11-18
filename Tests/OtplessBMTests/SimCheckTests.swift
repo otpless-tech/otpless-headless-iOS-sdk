@@ -279,8 +279,8 @@ final class SimCheckTests: XCTestCase {
 
     func testHeadlessUIDoesNothingAndAlwaysContinues() async throws {
         let headless = HeadlessSmsBindingPrompter()
-        let confirmed = await headless.confirmDualSim(lastDigits: "4455")
-        let retry = await headless.offerRetry(.tokenExpired)
+        let confirmed = await headless.confirmBeforeSend(lastDigits: "4455", dualSim: false)
+        let retry = await headless.offerRetry(.tokenExpired, context: SmsBindingFailureContext())
         XCTAssertTrue(confirmed)
         XCTAssertFalse(retry)
     }

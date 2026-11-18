@@ -45,6 +45,7 @@ internal enum SmsBindingCopy {
         case .deviceBlocked?: return "Too many attempts. Please try again later."
         case .vmnPoolUnavailable?: return "Verification isn't available right now. Please try another way."
         case .verificationFailed?: return "We couldn't verify your number."
+        case .invalidPhoneNumber?: return "That phone number doesn't look right. Check it and try again."
         case .notAvailable?: return "SIM verification isn't available right now. Please try another way."
         case .internalError?, nil: return "Something went wrong. Please try again."
         }

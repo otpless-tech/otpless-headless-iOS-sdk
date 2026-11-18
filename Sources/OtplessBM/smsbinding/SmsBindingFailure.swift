@@ -23,6 +23,8 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
     /// The backend did not route this request to SIM binding (for example the app is not set up
     /// for it), so nothing was sent to the user.
     case notAvailable = "SIM_BINDING_NOT_AVAILABLE"
+    /// The backend rejected the phone number as invalid (7102).
+    case invalidPhoneNumber = "INVALID_PHONE_NUMBER"
 
     /// Maps a backend `reason` string. Anything unrecognised becomes `verificationFailed`.
     init(backendReason: String?) {
@@ -39,7 +41,7 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
         case .permissionMissing, .smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted:
             return true
         case .noSim, .airplaneMode, .upgradeRequired, .entitlementMissing, .unsafeSmsApp,
-             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .internalError, .notAvailable:
+             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .internalError, .notAvailable, .invalidPhoneNumber:
             return false
         }
     }

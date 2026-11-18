@@ -150,7 +150,9 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
             email: nil,
             hasWhatsapp: (Otpless.shared.appInfo["hasWhatsapp"] as? String) ?? "",
             identifierType: "MOBILE",
-            mobile: parts.national,
+            // Country code and number together, as every other phone intent sends it. The backend's
+            // sample had the national number only; staging answered that with 7102 (invalid phone number).
+            mobile: parts.countryCode.trimmingCharacters(in: CharacterSet(charactersIn: "+")) + parts.national,
             selectedCountryCode: parts.countryCode,
             // A silent-auth attempt would answer on a different channel; this is SMS binding only.
             silentAuthEnabled: false,
@@ -274,6 +276,7 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
     /// The backend's own codes for SIM binding refusals (`ErrorConstant`, otpless-common).
     /// 7184 is an HTTP 429; the others are 400s.
     private static let numericCodes: [String: SmsBindingFailure] = [
+        "7102": .invalidPhoneNumber,
         "7184": .deviceBlocked,
         "7185": .vmnPoolUnavailable,
         "7186": .upgradeRequired

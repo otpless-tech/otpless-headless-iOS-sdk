@@ -268,7 +268,7 @@ final class SmsBindingLiveContractTests: XCTestCase {
         XCTAssertEqual(body["identifierType"] as? String, "MOBILE")
         XCTAssertEqual(body["value"] as? String, "9812345621", "the national number")
         XCTAssertEqual(body["selectedCountryCode"] as? String, "+91")
-        XCTAssertEqual(body["mobile"] as? String, "9812345621", "the national number, as the backend's sample sends it")
+        XCTAssertEqual(body["mobile"] as? String, "919812345621", "country code and number: staging rejected the national number alone (7102)")
         XCTAssertEqual(body["sdkPlatform"] as? String, "IOS")
         XCTAssertEqual(body["silentAuthEnabled"] as? Bool, false, "this is not a silent-auth attempt")
         XCTAssertNotNil(body["appId"], "the standard SDK body parameters must still be sent")
@@ -308,6 +308,8 @@ final class SmsBindingLiveContractTests: XCTestCase {
              .rejected(.vmnPoolUnavailable, retryAfterSeconds: nil)),
             (400, #"{"message":"Request error: App version is below the minimum required for SIM binding.","errorCode":7186}"#,
              .rejected(.upgradeRequired, retryAfterSeconds: nil)),
+            (400, #"{"message":"Invalid Request","errorCode":"7102","description":"Request error: Invalid phone number"}"#,
+             .rejected(.invalidPhoneNumber, retryAfterSeconds: nil)),
             (500, "{}", .transport),
             (502, "oops", .transport),
             (400, #"{"message":"Invalid Request","errorCode":"7006"}"#, .transport)

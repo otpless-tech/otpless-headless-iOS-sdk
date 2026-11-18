@@ -96,7 +96,7 @@ extension Otpless {
                     prompter: prompter,
                     lastAttempt: .shared,
                     // The stable device id the SDK already reports with every request.
-                    deviceFingerprintHash: { Otpless.shared.deviceInfo["deviceId"] }
+                    deviceFingerprintHash: { Otpless.shared.appInfo["deviceId"] as? String }
                 )
                 outcome = await useCase.run(
                     state: state,

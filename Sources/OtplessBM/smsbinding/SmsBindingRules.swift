@@ -46,27 +46,43 @@ internal struct SmsBindingRules: Equatable, Sendable {
               let version = root["config_version"] as? Int,
               let hash = root["rules_hash"] as? String else { return nil }
 
-        var parsed: [String: Rule] = [:]
-        for (key, value) in (root["rules"] as? [String: Any]) ?? [:] {
-            guard let body = value as? [String: Any] else { continue }
-            var ints: [String: Int] = [:]
-            var strings: [String: String] = [:]
-            for (name, raw) in body where name != "enabled" {
-                // NSNumber bridges Bool and Int; keep real booleans out of the int bucket.
-                if let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
-                    ints[name] = number.intValue
-                } else if let text = raw as? String {
-                    strings[name] = text
-                }
-            }
-            parsed[key] = Rule(enabled: (body["enabled"] as? Bool) ?? false, intValues: ints, stringValues: strings)
-        }
+        let parsed = parseRules((root["rules"] as? [String: Any]) ?? [:])
         return SmsBindingRules(
             configVersion: version,
             rulesHash: hash,
             smsTemplate: (root["sms_template"] as? String) ?? "{token}",
             rules: parsed
         )
+    }
+
+    /// The rules as they arrive inside the intent response (`quantumLeap.simBinding`): the rule
+    /// map and its hash, with no version number of their own.
+    static func decodeInline(rules: [String: Any], rulesHash: String?, smsTemplate: String? = nil) -> SmsBindingRules {
+        SmsBindingRules(
+            configVersion: 0,
+            rulesHash: rulesHash ?? "",
+            smsTemplate: smsTemplate ?? "{token}",
+            rules: parseRules(rules)
+        )
+    }
+
+    private static func parseRules(_ raw: [String: Any]) -> [String: Rule] {
+        var parsed: [String: Rule] = [:]
+        for (key, value) in raw {
+            guard let body = value as? [String: Any] else { continue }
+            var ints: [String: Int] = [:]
+            var strings: [String: String] = [:]
+            for (name, field) in body where name != "enabled" {
+                // NSNumber bridges Bool and Int; keep real booleans out of the int bucket.
+                if let number = field as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+                    ints[name] = number.intValue
+                } else if let text = field as? String {
+                    strings[name] = text
+                }
+            }
+            parsed[key] = Rule(enabled: (body["enabled"] as? Bool) ?? false, intValues: ints, stringValues: strings)
+        }
+        return parsed
     }
 
     // MARK: - Accessors

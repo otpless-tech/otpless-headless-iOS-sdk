@@ -13,10 +13,13 @@ internal protocol SmsBindingDevice: Sendable {
     /// How many lines (physical SIM or eSIM) are on a network. More than one means the user must
     /// send from the line that holds the number being bound.
     var activeLineCount: Int { get }
+    /// Apple's ICCID token exists on this device (iOS 26+).
+    var supportsIccidToken: Bool { get }
 }
 
 extension SmsBindingDevice {
     var activeLineCount: Int { 1 }
+    var supportsIccidToken: Bool { false }
 }
 
 /// The device rules that run **before** any token is requested (PRD section 11, step 1).

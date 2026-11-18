@@ -101,17 +101,14 @@ private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
     var reports: [SmsBindingReport] { lock.locked { _reports } }
     var verdictCalls: Int { lock.locked { _verdictCalls } }
 
-    func fetchRules(state: String) async throws -> SmsBindingRules {
-        guard let rules = SmsBindingRules.decode(rulesJSON) else { throw SmsBindingBackendError.transport }
-        return rules
-    }
-
-    func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingIssued {
+    func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingStarted {
         lock.locked { _startRequests.append(request) }
         if let startError { throw startError }
-        return SmsBindingIssued(
-            attemptId: "att_1", smsBody: "k#7Qv:2Lm", vmn: "+919000000007",
-            ttlSeconds: ttlSeconds, configVersion: request.rules.configVersion, rulesHash: request.rules.rulesHash
+        // The rules come back with the token; a payload that is not a rules document is a failed start.
+        guard let rules = SmsBindingRules.decode(rulesJSON) else { throw SmsBindingBackendError.transport }
+        return SmsBindingStarted(
+            issued: SmsBindingIssued(attemptId: "att_1", smsBody: "k#7Qv:2Lm", vmn: "+919000000007", ttlSeconds: ttlSeconds),
+            rules: rules
         )
     }
 
@@ -280,7 +277,7 @@ final class SmsBindingFlowTests: XCTestCase {
             _ = await h.run()
             let request = try! XCTUnwrap(h.backend.startRequests.first)
             XCTAssertEqual(request.planStatusSupported, supported)
-            XCTAssertEqual((request.toDict()["capabilities"] as? [String: Any])?["plan_status_supported"] as? Bool, supported)
+            XCTAssertEqual(request.simBindingDict()["planStatusSupported"] as? Bool, supported)
         }
     }
 
@@ -297,7 +294,7 @@ final class SmsBindingFlowTests: XCTestCase {
 
         XCTAssertNil(h.backend.startRequests[0].previousAttemptId)
         XCTAssertEqual(h.backend.startRequests[1].previousAttemptId, "att_1")
-        XCTAssertEqual(h.backend.startRequests[1].toDict()["previous_attempt_id"] as? String, "att_1")
+        XCTAssertEqual(h.backend.startRequests[1].simBindingDict()["previousAttemptId"] as? String, "att_1")
     }
 
     func testADifferentNumberNeverGetsTheOldAttempt() async {
@@ -396,12 +393,14 @@ final class SmsBindingFlowTests: XCTestCase {
 
         let request = try! XCTUnwrap(h.backend.startRequests.first)
         XCTAssertEqual(request.msisdn, "+919812345621")
-        XCTAssertEqual(request.rules.configVersion, 12)
         XCTAssertTrue(request.upiEntitlementDeclared)
-        let dict = request.toDict()
-        XCTAssertEqual(dict["device_platform"] as? String, "ios")
-        XCTAssertEqual(dict["rules_hash"] as? String, "r_9c41e0")
-        XCTAssertEqual((dict["capabilities"] as? [String: Any])?["upi_entitlement"] as? Bool, true)
+        let simBinding = request.simBindingDict()
+        XCTAssertEqual(simBinding["platform"] as? String, "IOS")
+        XCTAssertEqual(simBinding["osVersion"] as? String, "27.0")
+        XCTAssertEqual(simBinding["appVersion"] as? String, "3.2.0")
+        XCTAssertEqual(simBinding["sdkVersion"] as? String, "3.2.0")
+        XCTAssertEqual(simBinding["deviceFingerprint"] as? String, "fp-hash")
+        XCTAssertEqual(simBinding["upiEntitlement"] as? Bool, true)
 
         let sentReport = try! XCTUnwrap(h.backend.reports.first)
         XCTAssertEqual(sentReport.event, .sent)
@@ -416,25 +415,37 @@ final class SmsBindingFlowTests: XCTestCase {
         h.backend.verdicts = [verdict(.verified, version: 2)]
         _ = await h.run(previous: "att_0")
         XCTAssertEqual(h.backend.startRequests.first?.previousAttemptId, "att_0")
-        XCTAssertEqual(h.backend.startRequests.first?.toDict()["previous_attempt_id"] as? String, "att_0")
+        XCTAssertEqual(h.backend.startRequests.first?.simBindingDict()["previousAttemptId"] as? String, "att_0")
     }
 
     // MARK: Pre-checks and start
 
-    func testFailedPrecheckNeverRequestsATokenOrShowsTheComposer() async {
+    /// The rules arrive with the token, so a device rule can only fail once the attempt exists. It
+    /// must then end the attempt at the backend rather than leave a live token behind.
+    func testFailedPrecheckNeverShowsTheComposerAndEndsTheAttemptAtTheBackend() async {
         let h = Harness(device: FakeDevice(hasCellularRadio: false))
         let outcome = await h.run()
         XCTAssertEqual(outcome, .failed(.noSim))
-        XCTAssertTrue(h.backend.startRequests.isEmpty)
+        XCTAssertEqual(h.backend.startRequests.count, 1)
         XCTAssertTrue(h.composer.calls.isEmpty)
-        XCTAssertTrue(h.backend.reports.isEmpty)
+        XCTAssertEqual(h.backend.reports.count, 1)
+        XCTAssertEqual(h.backend.reports.first?.event, .failed)
+        XCTAssertEqual(h.backend.reports.first?.reason, .noSim)
     }
 
-    func testMissingEntitlementDeclarationStopsBeforeAnyTokenIsIssued() async {
+    func testMissingEntitlementDeclarationEndsTheAttemptBeforeTheComposer() async {
         let h = Harness()
         let outcome = await h.run(entitlement: false)
         XCTAssertEqual(outcome, .failed(.entitlementMissing))
-        XCTAssertTrue(h.backend.startRequests.isEmpty)
+        XCTAssertTrue(h.composer.calls.isEmpty)
+        XCTAssertEqual(h.backend.reports.first?.reason, .entitlementMissing)
+    }
+
+    func testNoProgressIsReportedForAnAttemptThatFailedItsDeviceRules() async {
+        let h = Harness(device: FakeDevice(hasCellularRadio: false))
+        let seen = StateLog()
+        _ = await h.useCase.run(state: "s", msisdn: "+919812345621", upiEntitlementDeclared: true, onState: { seen.record($0) })
+        XCTAssertTrue(seen.values.isEmpty, "the user never got as far as sending")
     }
 
     func testBackendRefusalToStartIsSurfacedAndNothingIsShown() async {
@@ -445,7 +456,7 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertTrue(h.composer.calls.isEmpty)
     }
 
-    func testRulesThatCannotBeFetchedFailAsAnInternalError() async {
+    func testAStartWhoseRulesAreMissingFailsAsAnInternalError() async {
         let h = Harness(rules: Data("garbage".utf8))
         let outcome = await h.run()
         XCTAssertEqual(outcome, .failed(.internalError))

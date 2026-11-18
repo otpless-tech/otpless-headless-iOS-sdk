@@ -19,7 +19,8 @@ Outbound SMS binding is off for every app until OTPLESS switches it on in your m
 
 ```swift
 Otpless.shared.startSmsBinding(
-    msisdn: "+919812345621",          // E.164
+    phoneNumber: "9812345621",        // without the country code
+    countryCode: "+91",
     upiEntitlementDeclared: false,    // true only if your app holds Apple's UPI entitlement
     ui: .standard,                    // or .headless (default)
     onProgress: { progress in /* ISSUED, SENT, RECEIVED, VERIFIED ... */ },
@@ -33,9 +34,21 @@ Otpless.shared.startSmsBinding(
 ```
 
 - Call it after `SDK_READY`. One attempt runs at a time (`ATTEMPT_IN_PROGRESS`).
+- **How it talks to the backend:** SMS binding is a channel of the intent call. The SDK sends the
+  normal phone intent with a `simBinding` block (platform, OS and app version, device fingerprint,
+  whether the app holds the UPI entitlement, ICCID and plan-status support). The response carries the
+  token, the number to send to, the message and your rules together. The SDK then reports what the
+  device did (`sim-binding-report`) and polls `sim-binding-status` until the attempt is verified,
+  rejected or expired. A successful poll returns a normal authentication result; `bindingId` carries
+  its token.
+- Because the rules arrive with the token, the device checks (minimum app and iOS version, SIM, the
+  UPI entitlement declaration) run after the attempt exists. If one fails, the SDK reports it so the
+  token stops working at once.
+- If the intent does not come back as SIM binding (the app is not set up for it), the call ends with
+  `SIM_BINDING_NOT_AVAILABLE`.
 - `.headless`: the only screen is Apple's message composer. Use `failure.message` if you want ready wording.
 - `.standard`: adds a dual-SIM prompt (before any token is requested, so cancelling costs nothing), a "verifying" indicator, and a "Try again" alert on retryable failures. `completion` runs after the user dismisses the alert or stops retrying.
-- Failure codes: `PERMISSION_MISSING`, `NO_SIM`, `AIRPLANE_MODE`, `UPGRADE_REQUIRED`, `ENTITLEMENT_MISSING`, `UNSAFE_SMS_APP`, `SMS_SEND_FAILED`, `NUMBER_MISMATCH`, `TOKEN_EXPIRED`, `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`, `INTERNAL_ERROR`, plus `SDK_NOT_READY`, `ATTEMPT_IN_PROGRESS` and `FEATURE_NOT_ENABLED`.
+- Failure codes: `PERMISSION_MISSING`, `NO_SIM`, `AIRPLANE_MODE`, `UPGRADE_REQUIRED`, `ENTITLEMENT_MISSING`, `UNSAFE_SMS_APP`, `SMS_SEND_FAILED`, `NUMBER_MISMATCH`, `TOKEN_EXPIRED`, `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`, `INTERNAL_ERROR`, plus `SDK_NOT_READY`, `ATTEMPT_IN_PROGRESS`, `FEATURE_NOT_ENABLED`, `SIM_BINDING_NOT_AVAILABLE` and `INVALID_PHONE_NUMBER`.
 - Keep the app in front while an attempt runs. If your rules include the single-session rule, going to the background abandons the attempt (`SESSION_INTERRUPTED`).
 - iOS has no airplane-mode API; airplane mode empties the radio list, so it shows as `NO_SIM`.
 

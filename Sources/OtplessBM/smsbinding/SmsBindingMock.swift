@@ -1,8 +1,8 @@
 #if DEBUG
 import Foundation
 
-/// Hardcoded backend answers for every outbound SMS binding outcome, so the whole flow (rules,
-/// pre-checks, composer, report, verdict) can be exercised before the real backend exists.
+/// Hardcoded backend answers for every outbound SMS binding outcome, so the whole flow (start with
+/// rules, pre-checks, composer, report, status) can be exercised before the real backend exists.
 ///
 /// Debug builds only: this file is not compiled into a Release build of the SDK. Going live means
 /// not calling `Otpless.useMockSmsBinding`; the flow then talks to `LiveSmsBindingBackend`, whose
@@ -21,7 +21,7 @@ public enum OtplessSmsBindingMockScenario: String, CaseIterable, Sendable {
     /// Two failed verdict polls, then verified.
     case pollFlaky
 
-    // Device rules (stopped before any token is issued)
+    // Device rules (stopped before the composer; the token exists, so the attempt is reported failed)
     case upgradeRequired
     case osTooOld
 
@@ -87,21 +87,19 @@ internal final class MockSmsBindingBackend: SmsBindingBackend, @unchecked Sendab
 
     // MARK: SmsBindingBackend
 
-    func fetchRules(state: String) async throws -> SmsBindingRules {
+    func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingStarted {
+        // As on the real backend, the rules arrive with the token; no rules is a failed start.
         guard let data = plan.rules, let rules = SmsBindingRules.decode(data) else { throw SmsBindingBackendError.transport }
-        return rules
-    }
-
-    func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingIssued {
         if let error = plan.startError { throw error }
         let serial: Int = lock.locked { _attemptSerial += 1; return _attemptSerial }
-        return SmsBindingIssued(
-            attemptId: "att_mock_\(serial)",
-            smsBody: "mock#Tk3:Zq_8Lm+4Rt=eP1.wZ*9sN-6bYh2uGcFdJ",
-            vmn: vmn,
-            ttlSeconds: plan.ttlSeconds,
-            configVersion: request.rules.configVersion,
-            rulesHash: request.rules.rulesHash
+        return SmsBindingStarted(
+            issued: SmsBindingIssued(
+                attemptId: "att_mock_\(serial)",
+                smsBody: "mock#Tk3:Zq_8Lm+4Rt=eP1.wZ*9sN-6bYh2uGcFdJ",
+                vmn: vmn,
+                ttlSeconds: plan.ttlSeconds
+            ),
+            rules: rules
         )
     }
 

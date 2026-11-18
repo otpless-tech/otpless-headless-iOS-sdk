@@ -69,62 +69,63 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     func run(
         state: String,
         msisdn: String,
+        countryCode: String? = nil,
         upiEntitlementDeclared: Bool,
         previousAttemptId: String? = nil,
         onState: (@Sendable (SmsBindingState) -> Void)? = nil
     ) async -> SmsBindingOutcome {
 
-        // 1. Effective rules
-        let rules: SmsBindingRules
-        do { rules = try await backend.fetchRules(state: state) } catch { return .failed(Self.failure(from: error)) }
-
-        // 2. Device rules. Nothing has been created or sent yet, so there is nothing to report.
-        if let failure = SmsBindingPrechecks.evaluate(
-            rules: rules, device: device, upiEntitlementDeclared: upiEntitlementDeclared
-        ) {
-            return .failed(failure)
-        }
-
-        // 2b. Dual SIM: before any token is requested, so declining costs nothing (R10 counts attempts).
+        // 1. Dual SIM. Asked before the attempt exists, so declining costs nothing (R10 counts attempts).
         if device.activeLineCount > 1,
            await !prompter.confirmDualSim(lastDigits: String(msisdn.filter { $0.isNumber }.suffix(4))) {
             return .failed(.smsSendFailed)
         }
 
-        // 3. Token and VMN
-        let issued: SmsBindingIssued
+        // 2. Token, number and rules. The rules the client is on come back with the token, so the
+        // device rules can only run after the attempt exists.
+        let started: SmsBindingStarted
         do {
-            issued = try await backend.startAttempt(
+            started = try await backend.startAttempt(
                 state: state,
                 request: SmsBindingStartRequest(
                     msisdn: msisdn,
+                    countryCode: countryCode,
                     osVersion: device.osVersion,
                     appVersion: device.appVersion,
                     sdkVersion: sdkVersion,
                     deviceFingerprintHash: deviceFingerprintHash(),
-                    rules: rules,
                     previousAttemptId: previousAttemptId ?? lastAttempt.previous(for: msisdn),
                     upiEntitlementDeclared: upiEntitlementDeclared,
-                    iccidTokenSupported: rules.requiresIccidToken,
+                    iccidTokenSupported: device.supportsIccidToken,
                     planStatusSupported: planStatusSupported()
                 )
             )
         } catch {
             return .failed(Self.failure(from: error))
         }
+        let issued = started.issued
+        let rules = started.rules
         let issuedAt = now()
         var attempt = SmsBindingAttempt(
             attemptId: issued.attemptId, vmn: issued.vmn, smsBody: issued.smsBody, ttlSeconds: issued.ttlSeconds
         )
         let expiresAt = issuedAt.addingTimeInterval(TimeInterval(issued.ttlSeconds))
         lastAttempt.record(issued.attemptId, for: msisdn)
+
+        // 3. Device rules. The attempt exists by now, so a failure is reported and the token dies.
+        if let failure = SmsBindingPrechecks.evaluate(
+            rules: rules, device: device, upiEntitlementDeclared: upiEntitlementDeclared
+        ) {
+            await reportEnd(state, issued.attemptId, event: .failed, reason: failure)
+            return .failed(failure)
+        }
         onState?(.issued)
 
         // R9: from here the app must stay in front. Going to the background abandons the attempt.
         let session: SmsBindingSessionGuard = rules.isOn(.singleSession) ? makeSessionGuard() : InactiveSessionGuard()
         session.begin { [self] done in
             Task {
-                await reportAbort(state, issued.attemptId)
+                await reportEnd(state, issued.attemptId, event: .aborted, reason: .sessionInterrupted)
                 done()
             }
         }
@@ -282,9 +283,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         }
     }
 
-    /// R9: tells the backend the app left the foreground, which invalidates the token at once.
-    private func reportAbort(_ state: String, _ attemptId: String) async {
-        let report = SmsBindingReport(event: .aborted, at: now(), reason: .sessionInterrupted, ios: nil)
+    /// Tells the backend the attempt ended without the device sending, which invalidates the token at
+    /// once: R9 (the app left the foreground) and a device rule that failed after the token was issued.
+    private func reportEnd(_ state: String, _ attemptId: String, event: SmsBindingReport.Event, reason: SmsBindingFailure) async {
+        let report = SmsBindingReport(event: event, at: now(), reason: reason, ios: nil)
         for _ in 0..<Self.reportAttempts {
             if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
         }

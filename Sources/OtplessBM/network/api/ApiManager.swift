@@ -155,7 +155,8 @@ final class ApiManager: Sendable {
         let base1 = ApiManager.TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
         let base2 = ApiManager.SNA_TRANSACTION_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
         let base3 = ApiManager.MFA_SNA_STATUS_PATH.replacingOccurrences(of: "{state}", with: "")
-        return fullPath.contains(base1) || fullPath.contains(base2) || fullPath.contains(base3)
+        let base4 = "/transaction/sim-binding-status/"
+        return fullPath.contains(base1) || fullPath.contains(base2) || fullPath.contains(base3) || fullPath.contains(base4)
     }
 
     // Central place to decide success tracking; easy to extend later.

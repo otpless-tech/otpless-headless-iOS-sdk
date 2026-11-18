@@ -20,6 +20,9 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
     case verificationFailed = "VERIFICATION_FAILED"
     /// The SDK could not complete the call itself (network error, undecodable response).
     case internalError = "INTERNAL_ERROR"
+    /// The backend did not route this request to SIM binding (for example the app is not set up
+    /// for it), so nothing was sent to the user.
+    case notAvailable = "SIM_BINDING_NOT_AVAILABLE"
 
     /// Maps a backend `reason` string. Anything unrecognised becomes `verificationFailed`.
     init(backendReason: String?) {
@@ -36,7 +39,7 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
         case .permissionMissing, .smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted:
             return true
         case .noSim, .airplaneMode, .upgradeRequired, .entitlementMissing, .unsafeSmsApp,
-             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .internalError:
+             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .internalError, .notAvailable:
             return false
         }
     }

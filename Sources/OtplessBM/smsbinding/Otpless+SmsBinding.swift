@@ -48,7 +48,8 @@ extension Otpless {
     /// which template a client is on. Call after `initialise` has reported `SDK_READY`.
     ///
     /// - Parameters:
-    ///   - msisdn: The number being bound, in E.164 form (`+919812345621`).
+    ///   - phoneNumber: The number being bound, without its country code (`9812345621`).
+    ///   - countryCode: Its country code (`+91` or `91`).
     ///   - upiEntitlementDeclared: Pass `true` only if the app holds Apple's UPI Device Validation
     ///     entitlement. iOS offers no way for the SDK to check this itself, so the SDK trusts the
     ///     declaration and the backend enforces it. With the rule on and `false` here the attempt
@@ -59,7 +60,8 @@ extension Otpless {
     ///   - completion: Called once, on the main thread, with the outcome. With `.standard` this is
     ///     after the user has dismissed a failure alert or stopped retrying.
     public func startSmsBinding(
-        msisdn: String,
+        phoneNumber: String,
+        countryCode: String,
         upiEntitlementDeclared: Bool = false,
         ui: OtplessSmsBindingUI = .headless,
         onProgress: (@Sendable (OtplessSmsBindingProgress) -> Void)? = nil,
@@ -69,6 +71,11 @@ extension Otpless {
             DispatchQueue.main.async { completion(result) }
         }
 
+        let code = "+" + countryCode.filter { $0.isNumber }
+        let msisdn = code + phoneNumber.filter { $0.isNumber }
+        guard PhoneNumberFormat.isE164(msisdn) else {
+            return finish(.failed(OtplessSmsBindingFailure(code: "INVALID_PHONE_NUMBER", isRetryable: false)))
+        }
         guard sdkState == .READY, let state = self.state else {
             return finish(.failed(OtplessSmsBindingFailure(code: "SDK_NOT_READY", isRetryable: true)))
         }
@@ -88,6 +95,7 @@ extension Otpless {
                 outcome = await useCase.run(
                     state: state,
                     msisdn: msisdn,
+                    countryCode: code,
                     upiEntitlementDeclared: upiEntitlementDeclared,
                     onState: { reached in
                         if reached == .sent { prompter.showVerifying() }

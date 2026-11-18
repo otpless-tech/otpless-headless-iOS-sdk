@@ -276,8 +276,10 @@ final class SmsBindingFlowTests: XCTestCase {
             h.backend.verdicts = [verdict(.verified, version: 2)]
             _ = await h.run()
             let request = try! XCTUnwrap(h.backend.startRequests.first)
+            // Known to the SDK and carried in the request model; the backend's contract has no field
+            // for it yet, so it is not sent.
             XCTAssertEqual(request.planStatusSupported, supported)
-            XCTAssertEqual(request.simBindingDict()["planStatusSupported"] as? Bool, supported)
+            XCTAssertNil(request.simBindingDict()["planStatusSupported"])
         }
     }
 
@@ -294,7 +296,6 @@ final class SmsBindingFlowTests: XCTestCase {
 
         XCTAssertNil(h.backend.startRequests[0].previousAttemptId)
         XCTAssertEqual(h.backend.startRequests[1].previousAttemptId, "att_1")
-        XCTAssertEqual(h.backend.startRequests[1].simBindingDict()["previousAttemptId"] as? String, "att_1")
     }
 
     func testADifferentNumberNeverGetsTheOldAttempt() async {
@@ -372,9 +373,8 @@ final class SmsBindingFlowTests: XCTestCase {
 
     func testTheAbortReportCarriesNoDeviceFields() {
         let dict = SmsBindingReport(event: .aborted, at: Date(timeIntervalSince1970: 0), reason: .sessionInterrupted, ios: nil).toDict()
-        XCTAssertEqual(dict["event"] as? String, "ABORTED")
-        XCTAssertEqual(dict["reason"] as? String, "SESSION_INTERRUPTED")
-        XCTAssertNil(dict["ios"])
+        XCTAssertEqual(dict.keys.sorted(), ["aborted"], "the backend accepts only `aborted` as an end")
+        XCTAssertEqual(dict["aborted"] as? Bool, true)
     }
 
     // MARK: Happy path
@@ -398,9 +398,9 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(simBinding["platform"] as? String, "IOS")
         XCTAssertEqual(simBinding["osVersion"] as? String, "27.0")
         XCTAssertEqual(simBinding["appVersion"] as? String, "3.2.0")
-        XCTAssertEqual(simBinding["sdkVersion"] as? String, "3.2.0")
         XCTAssertEqual(simBinding["deviceFingerprint"] as? String, "fp-hash")
-        XCTAssertEqual(simBinding["upiEntitlement"] as? Bool, true)
+        XCTAssertEqual(Set(simBinding.keys), ["platform", "osVersion", "appVersion", "deviceFingerprint"],
+                       "only the fields the backend defines for iOS")
 
         let sentReport = try! XCTUnwrap(h.backend.reports.first)
         XCTAssertEqual(sentReport.event, .sent)
@@ -415,7 +415,6 @@ final class SmsBindingFlowTests: XCTestCase {
         h.backend.verdicts = [verdict(.verified, version: 2)]
         _ = await h.run(previous: "att_0")
         XCTAssertEqual(h.backend.startRequests.first?.previousAttemptId, "att_0")
-        XCTAssertEqual(h.backend.startRequests.first?.simBindingDict()["previousAttemptId"] as? String, "att_0")
     }
 
     // MARK: Pre-checks and start

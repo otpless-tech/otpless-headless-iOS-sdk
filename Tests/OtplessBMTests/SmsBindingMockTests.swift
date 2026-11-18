@@ -268,7 +268,8 @@ final class SmsBindingLiveContractTests: XCTestCase {
         XCTAssertEqual(body["identifierType"] as? String, "MOBILE")
         XCTAssertEqual(body["value"] as? String, "9812345621", "the national number")
         XCTAssertEqual(body["selectedCountryCode"] as? String, "+91")
-        XCTAssertEqual(body["mobile"] as? String, "919812345621", "country code and number, as every other phone intent sends it")
+        XCTAssertEqual(body["mobile"] as? String, "9812345621", "the national number, as the backend's sample sends it")
+        XCTAssertEqual(body["sdkPlatform"] as? String, "IOS")
         XCTAssertEqual(body["silentAuthEnabled"] as? Bool, false, "this is not a silent-auth attempt")
         XCTAssertNotNil(body["appId"], "the standard SDK body parameters must still be sent")
 
@@ -277,10 +278,8 @@ final class SmsBindingLiveContractTests: XCTestCase {
         XCTAssertEqual(sim["osVersion"] as? String, "26.7")
         XCTAssertEqual(sim["appVersion"] as? String, "3.2.0")
         XCTAssertEqual(sim["deviceFingerprint"] as? String, "fp")
-        XCTAssertEqual(sim["upiEntitlement"] as? Bool, true)
-        XCTAssertEqual(sim["iccidTokenSupported"] as? Bool, true)
-        XCTAssertEqual(sim["planStatusSupported"] as? Bool, false)
-        XCTAssertEqual(sim["previousAttemptId"] as? String, "att_0")
+        XCTAssertEqual(Set(sim.keys), ["platform", "osVersion", "appVersion", "deviceFingerprint"],
+                       "only the fields the backend defines for iOS")
         XCTAssertNil(sim["apiLevel"], "Android only")
         XCTAssertNil(sim["sim"], "Android only")
     }
@@ -355,39 +354,37 @@ final class SmsBindingLiveContractTests: XCTestCase {
         XCTAssertEqual(sent.path, "/v3/lp/user/transaction/sim-binding-report/s1")
         XCTAssertEqual(sent.body?["token"] as? String, "5f535be8")
         let sim = try XCTUnwrap(sent.body?["simBinding"] as? [String: Any])
-        XCTAssertEqual(sim["event"] as? String, "SENT")
-        XCTAssertEqual(sim["sentAck"] as? String, "RESULT_OK")
-        XCTAssertEqual(sim["sentAt"] as? Int, 1_800_000_000_000, "milliseconds, as Android sends it")
-        let ios = try XCTUnwrap(sim["ios"] as? [String: Any])
-        XCTAssertEqual(ios["composerResult"] as? String, "sent")
-        XCTAssertEqual(ios["sendCompletion"] as? Bool, true)
-        XCTAssertEqual(ios["iccidToken"] as? String, "tok")
-        XCTAssertEqual(ios["iccidTokenStatus"] as? String, "OK")
-        XCTAssertEqual(ios["returnSeconds"] as? Double, 5)
+        XCTAssertEqual(Set(sim.keys), ["sentAt", "composerReturnedAt"], "the backend's iOS shape, nothing more")
+        XCTAssertEqual(sim["sentAt"] as? Int, 1_799_999_995_000, "when the composer went up, in milliseconds")
+        XCTAssertEqual(sim["composerReturnedAt"] as? Int, 1_800_000_000_000, "when the app got control back")
+        XCTAssertNil(sim["sentAck"], "Android only")
     }
 
     func testAnEndReportHasAReasonAndNoSentAck() throws {
         let dict = SmsBindingReport(event: .aborted, at: Date(timeIntervalSince1970: 1), reason: .sessionInterrupted, ios: nil).toDict()
-        XCTAssertEqual(dict["event"] as? String, "ABORTED")
-        XCTAssertEqual(dict["reason"] as? String, "SESSION_INTERRUPTED")
-        XCTAssertNil(dict["sentAck"], "nothing was sent")
-        XCTAssertNil(dict["ios"])
+        XCTAssertEqual(dict.keys.sorted(), ["aborted"])
+        XCTAssertEqual(dict["aborted"] as? Bool, true)
+        for event in [SmsBindingReport.Event.failed, .cancelled] {
+            let other = SmsBindingReport(event: event, at: Date(timeIntervalSince1970: 1), reason: .smsSendFailed, ios: nil).toDict()
+            XCTAssertEqual(other.keys.sorted(), ["aborted"], "\(event) ends the attempt the same way")
+        }
     }
 
     // MARK: Status poll
 
     func testStatusPendingMeansWaiting() async throws {
-        SmsStubProtocol.reset(["/sim-binding-status/s1/tok": (200, #"{"authDetail":{"status":"PENDING"}}"#)])
+        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, #"{"authDetail":{"status":"PENDING"}}"#)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .sent)
         let sent = try XCTUnwrap(SmsStubProtocol.recorded.first)
         XCTAssertEqual(sent.method, "GET")
-        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/sim-binding-status/s1/tok")
+        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/sim-binding-status/s1")
+        XCTAssertTrue(sent.query.contains("token=tok"), "the token is a query parameter: \(sent.query)")
     }
 
     func testStatusSuccessIsVerifiedAndCarriesTheAuthToken() async throws {
         let success = #"{"authDetail":{"status":"SUCCESS","token":"auth-token","channel":"SIM_BINDING","asId":"a"},"config":{},"oneTap":{}}"#
-        SmsStubProtocol.reset(["/sim-binding-status/s1/tok": (200, success)])
+        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, success)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .verified)
         XCTAssertEqual(verdict.bindingId, "auth-token")
@@ -395,7 +392,7 @@ final class SmsBindingLiveContractTests: XCTestCase {
 
     func testStatusFailedCarriesTheErrorCodeAsTheReason() async throws {
         let failed = #"{"authDetail":{"status":"FAILED","channel":"SIM_BINDING","errorCode":"NUMBER_MISMATCH","errorDetails":"NUMBER_MISMATCH"}}"#
-        SmsStubProtocol.reset(["/sim-binding-status/s1/tok": (200, failed)])
+        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, failed)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .rejected)
         XCTAssertEqual(verdict.reason, "NUMBER_MISMATCH")
@@ -403,14 +400,14 @@ final class SmsBindingLiveContractTests: XCTestCase {
     }
 
     func testAnExpiredAttemptAnswersWithAnErrorAndIsReadAsExpired() async throws {
-        SmsStubProtocol.reset(["/sim-binding-status/s1/tok": (400, #"{"errorCode":"7011","message":"Transaction expired"}"#)])
+        SmsStubProtocol.reset(["/sim-binding-status/s1": (400, #"{"errorCode":"7011","message":"Transaction expired"}"#)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .expired)
     }
 
     func testAServerErrorOrAnUnknownStatusIsTransportSoThePollCarriesOn() async throws {
         for (status, body) in [(500, "{}"), (200, #"{"authDetail":{"status":"SOMETHING_NEW"}}"#), (200, #"{"x":1}"#)] {
-            SmsStubProtocol.reset(["/sim-binding-status/s1/tok": (status, body)])
+            SmsStubProtocol.reset(["/sim-binding-status/s1": (status, body)])
             do {
                 _ = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
                 XCTFail("expected an error for \(status) \(body)")

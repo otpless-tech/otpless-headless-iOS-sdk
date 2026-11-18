@@ -33,20 +33,17 @@ internal struct SmsBindingStartRequest: Sendable {
         return ("", digits)
     }
 
-    /// The `simBinding` member of the intent request. Android's `sim { subscriptionId, slot, ... }`
-    /// and `apiLevel` have no iOS counterpart, so they are not sent.
+    /// The `simBinding` member of the intent request: the four fields the backend documents for iOS
+    /// (Android adds `apiLevel` and `sim`). Nothing else is sent, so the backend never meets a field
+    /// it did not define. The UPI entitlement declaration, plan-status support and the previous
+    /// attempt are known to the SDK but have no field in the contract yet.
     func simBindingDict() -> [String: Any] {
         var body: [String: Any] = [
             "platform": "IOS",
             "osVersion": osVersion,
-            "appVersion": appVersion,
-            "sdkVersion": sdkVersion,
-            "upiEntitlement": upiEntitlementDeclared,
-            "iccidTokenSupported": iccidTokenSupported,
-            "planStatusSupported": planStatusSupported
+            "appVersion": appVersion
         ]
         if let deviceFingerprintHash { body["deviceFingerprint"] = deviceFingerprintHash }
-        if let previousAttemptId { body["previousAttemptId"] = previousAttemptId }
         return body
     }
 }
@@ -85,25 +82,21 @@ internal struct SmsBindingReport: Sendable {
     let reason: SmsBindingFailure?
     let ios: IOS?
 
-    /// The `simBinding` member of the report. `sentAck` and `sentAt` are the fields Android sends;
-    /// the iOS-specific facts travel in `ios`.
+    /// The `simBinding` member of the report, in the backend's shape for iOS: after sending,
+    /// `sentAt` (when the composer went up) and `composerReturnedAt` (when the app got control back);
+    /// for anything that ends the attempt without a send (cancelled, failed, aborted) just
+    /// `aborted: true`, the only thing the backend accepts as an end. Android's `sentAck` and
+    /// `deliveryStatus` do not apply. The reason and the iOS-only facts (Apple's send completion, the
+    /// ICCID token) stay on the device: the backend has no field for them yet.
     func toDict() -> [String: Any] {
-        var body: [String: Any] = ["event": event.rawValue, "sentAt": Self.millis(at)]
-        if event == .sent { body["sentAck"] = "RESULT_OK" }
-        if let reason { body["reason"] = reason.rawValue }
-        if let ios {
-            var fields: [String: Any] = [
-                "composerResult": ios.composerResult,
-                "composerPresentedAt": Self.millis(ios.composerPresentedAt),
-                "appRegainedControlAt": Self.millis(ios.appRegainedControlAt),
-                "returnSeconds": ios.returnSeconds,
-                "iccidTokenStatus": ios.iccidTokenStatus
-            ]
-            if let sendCompletion = ios.sendCompletion { fields["sendCompletion"] = sendCompletion }
-            if let token = ios.iccidToken { fields["iccidToken"] = token }
-            body["ios"] = fields
+        switch event {
+        case .sent:
+            var body: [String: Any] = ["sentAt": Self.millis(ios?.composerPresentedAt ?? at)]
+            if let returned = ios?.appRegainedControlAt { body["composerReturnedAt"] = Self.millis(returned) }
+            return body
+        case .failed, .cancelled, .aborted:
+            return ["aborted": true]
         }
-        return body
     }
 
     private static func millis(_ date: Date) -> Int { Int((date.timeIntervalSince1970 * 1000).rounded()) }
@@ -140,8 +133,9 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
     /// Starting an attempt is the normal intent call.
     static let startPath = ApiManager.POST_INTENT_PATH
     static let reportPath = "/v3/lp/user/transaction/sim-binding-report/{state}"
-    /// The token's place in this path is not confirmed by the backend yet (their example was cut off).
-    static let statusPath = "/v3/lp/user/transaction/sim-binding-status/{state}/{token}"
+    /// The token is a query parameter. The backend may reuse `silent-auth-status` for fallbacks
+    /// (ENG-627), which would change this path; it is the only place it is written.
+    static let statusPath = "/v3/lp/user/transaction/sim-binding-status/{state}"
     /// The channel the intent response names when it routed the request to SIM binding.
     static let channel = "SIM_BINDING"
     /// The channel the intent asks for; the backend decides the request becomes SIM binding.
@@ -156,7 +150,7 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
             email: nil,
             hasWhatsapp: (Otpless.shared.appInfo["hasWhatsapp"] as? String) ?? "",
             identifierType: "MOBILE",
-            mobile: parts.countryCode.trimmingCharacters(in: CharacterSet(charactersIn: "+")) + parts.national,
+            mobile: parts.national,
             selectedCountryCode: parts.countryCode,
             // A silent-auth attempt would answer on a different channel; this is SMS binding only.
             silentAuthEnabled: false,
@@ -173,6 +167,7 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
             clientMetaData: nil,
             asId: Otpless.shared.asId
         ).toDict()
+        body["sdkPlatform"] = "IOS"
         body["simBinding"] = request.simBindingDict()
 
         let data = try await call(state: state, path: Self.startPath, method: "POST", body: body)
@@ -210,8 +205,9 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         do {
             data = try await call(
                 state: state,
-                path: Self.statusPath.replacingOccurrences(of: "{token}", with: attemptId),
-                method: "GET"
+                path: Self.statusPath,
+                method: "GET",
+                query: ["token": attemptId]
             )
         } catch SmsBindingBackendError.rejected(let failure, _) where failure == .tokenExpired {
             // An expired attempt answers with an error, not with a state.

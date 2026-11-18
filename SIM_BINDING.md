@@ -35,11 +35,11 @@ Otpless.shared.startSmsBinding(
 
 - Call it after `SDK_READY`. One attempt runs at a time (`ATTEMPT_IN_PROGRESS`).
 - **How it talks to the backend:** SMS binding is a channel of the intent call. The SDK sends the
-  normal phone intent with a `simBinding` block (platform, OS and app version, device fingerprint,
-  whether the app holds the UPI entitlement, ICCID and plan-status support). The response carries the
-  token, the number to send to, the message and your rules together. The SDK then reports what the
-  device did (`sim-binding-report`) and polls `sim-binding-status` until the attempt is verified,
-  rejected or expired. A successful poll returns a normal authentication result; `bindingId` carries
+  normal phone intent with a `simBinding` block (`platform`, `osVersion`, `appVersion` and the
+  device id as `deviceFingerprint`). The response carries the token, the number to send to, the
+  message and your rules together. The SDK then reports to `sim-binding-report` (`sentAt` and
+  `composerReturnedAt` after sending, or `aborted` if the attempt ends without a send) and polls
+  `sim-binding-status?token=…` every 1.5 s until the attempt is verified, rejected or expired. A successful poll returns a normal authentication result; `bindingId` carries
   its token.
 - Because the rules arrive with the token, the device checks (minimum app and iOS version, SIM, the
   UPI entitlement declaration) run after the attempt exists. If one fails, the SDK reports it so the

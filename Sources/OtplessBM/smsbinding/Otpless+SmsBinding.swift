@@ -91,7 +91,13 @@ extension Otpless {
         Task {
             var outcome: SmsBindingOutcome
             while true {
-                let useCase = SmsBindingUseCase(backend: backend, prompter: prompter, lastAttempt: .shared)
+                let useCase = SmsBindingUseCase(
+                    backend: backend,
+                    prompter: prompter,
+                    lastAttempt: .shared,
+                    // The stable device id the SDK already reports with every request.
+                    deviceFingerprintHash: { Otpless.shared.deviceInfo["deviceId"] }
+                )
                 outcome = await useCase.run(
                     state: state,
                     msisdn: msisdn,

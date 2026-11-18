@@ -275,10 +275,25 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         }
     }
 
+    /// The backend's own codes for SIM binding refusals (`ErrorConstant`, otpless-common).
+    /// 7184 is an HTTP 429; the others are 400s.
+    private static let numericCodes: [String: SmsBindingFailure] = [
+        "7184": .deviceBlocked,
+        "7185": .vmnPoolUnavailable,
+        "7186": .upgradeRequired
+    ]
+
+    private static func string(_ value: Any?) -> String? {
+        if let text = value as? String { return text }
+        if let number = value as? NSNumber { return number.stringValue }
+        return nil
+    }
+
     /// The reason a refusal carries. The backend's error body is `{ errorCode, message }`, and
     /// `errorCode` is numeric (`7xxx`), so a name is taken from `reason` or `errorDetails` (or
     /// `errorCode` when it is a name), and an expired attempt is recognised by its message.
     private static func refusal(_ json: [String: Any]?) -> SmsBindingFailure? {
+        if let code = Self.string(json?["errorCode"]), let known = numericCodes[code] { return known }
         for key in ["reason", "errorDetails", "errorCode"] {
             if let value = json?[key] as? String, let known = SmsBindingFailure(rawValue: value) { return known }
         }

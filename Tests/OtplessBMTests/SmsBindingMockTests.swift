@@ -302,6 +302,13 @@ final class SmsBindingLiveContractTests: XCTestCase {
              .rejected(.deviceBlocked, retryAfterSeconds: 3600)),
             (403, #"{"message":"No number","errorCode":"7101","errorDetails":"VMN_POOL_UNAVAILABLE"}"#,
              .rejected(.vmnPoolUnavailable, retryAfterSeconds: nil)),
+            // The backend's own numeric codes (otpless-common ErrorConstant), with no reason name.
+            (429, #"{"message":"SIM binding attempt limit reached for this device. Please try again later.","errorCode":"7184"}"#,
+             .rejected(.deviceBlocked, retryAfterSeconds: nil)),
+            (400, #"{"message":"Request error: No eligible number available for SIM binding.","errorCode":"7185"}"#,
+             .rejected(.vmnPoolUnavailable, retryAfterSeconds: nil)),
+            (400, #"{"message":"Request error: App version is below the minimum required for SIM binding.","errorCode":7186}"#,
+             .rejected(.upgradeRequired, retryAfterSeconds: nil)),
             (500, "{}", .transport),
             (502, "oops", .transport),
             (400, #"{"message":"Invalid Request","errorCode":"7006"}"#, .transport)

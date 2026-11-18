@@ -28,6 +28,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     private let iccid: IccidTokenProvider
     private let device: SmsBindingDevice
     private let prompter: SmsBindingPrompter
+    private let lastAttempt: SmsBindingLastAttempt
+    private let makeSessionGuard: @Sendable () -> SmsBindingSessionGuard
     private let planStatusSupported: @Sendable () -> Bool
     private let sdkVersion: String
     private let deviceFingerprintHash: @Sendable () -> String?
@@ -41,6 +43,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         device: SmsBindingDevice = LiveSmsBindingDevice(),
         prompter: SmsBindingPrompter = HeadlessSmsBindingPrompter(),
         planStatusSupported: @escaping @Sendable () -> Bool = { LivePlanStatusProvider().isSupported },
+        lastAttempt: SmsBindingLastAttempt = SmsBindingLastAttempt(),
+        sessionGuard: @escaping @Sendable () -> SmsBindingSessionGuard = { LiveSmsBindingSessionGuard() },
         sdkVersion: String = Constants.SDK_VERSION,
         deviceFingerprintHash: @escaping @Sendable () -> String? = { nil },
         now: @escaping @Sendable () -> Date = { Date() },
@@ -53,6 +57,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.iccid = iccid
         self.device = device
         self.prompter = prompter
+        self.lastAttempt = lastAttempt
+        self.makeSessionGuard = sessionGuard
         self.planStatusSupported = planStatusSupported
         self.sdkVersion = sdkVersion
         self.deviceFingerprintHash = deviceFingerprintHash
@@ -97,7 +103,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     sdkVersion: sdkVersion,
                     deviceFingerprintHash: deviceFingerprintHash(),
                     rules: rules,
-                    previousAttemptId: previousAttemptId,
+                    previousAttemptId: previousAttemptId ?? lastAttempt.previous(for: msisdn),
                     upiEntitlementDeclared: upiEntitlementDeclared,
                     iccidTokenSupported: rules.requiresIccidToken,
                     planStatusSupported: planStatusSupported()
@@ -111,12 +117,25 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
             attemptId: issued.attemptId, vmn: issued.vmn, smsBody: issued.smsBody, ttlSeconds: issued.ttlSeconds
         )
         let expiresAt = issuedAt.addingTimeInterval(TimeInterval(issued.ttlSeconds))
+        lastAttempt.record(issued.attemptId, for: msisdn)
         onState?(.issued)
+
+        // R9: from here the app must stay in front. Going to the background abandons the attempt.
+        let session: SmsBindingSessionGuard = rules.isOn(.singleSession) ? makeSessionGuard() : InactiveSessionGuard()
+        session.begin { [self] done in
+            Task {
+                await reportAbort(state, issued.attemptId)
+                done()
+            }
+        }
+        defer { session.end() }
 
         // 4. Composer
         let sent = await composer.present(
             recipient: issued.vmn, body: issued.smsBody, upiValidation: rules.requiresUpiEntitlement
         )
+
+        if session.interrupted { return .failed(.sessionInterrupted) }
 
         // 5. What the way it was sent means
         switch sent.result {
@@ -162,7 +181,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         onState?(.sent)
 
         // 8. Wait for the verdict
-        return await awaitVerdict(state: state, attempt: &attempt, issuedAt: issuedAt, onState: onState)
+        return await awaitVerdict(state: state, attempt: &attempt, issuedAt: issuedAt, session: session, onState: onState)
     }
 
     // MARK: - Verdict
@@ -171,12 +190,14 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         state: String,
         attempt: inout SmsBindingAttempt,
         issuedAt: Date,
+        session: SmsBindingSessionGuard,
         onState: (@Sendable (SmsBindingState) -> Void)?
     ) async -> SmsBindingOutcome {
         let deadline = issuedAt.addingTimeInterval(TimeInterval(attempt.ttlSeconds) + Self.verdictGrace)
         var sinceVersion: Int?
 
         while now() < deadline {
+            if session.interrupted { return .failed(.sessionInterrupted) }
             let remaining = Int(deadline.timeIntervalSince(now()).rounded(.up))
             do {
                 let verdict = try await backend.verdict(
@@ -190,6 +211,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
 
                 switch verdict.state {
                 case .verified:
+                    lastAttempt.clear()
                     attempt.advance(to: .verified)
                     onState?(.verified)
                     return .verified(bindingId: verdict.bindingId)
@@ -255,6 +277,14 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                 iccidTokenStatus: iccidStatus
             )
         )
+        for _ in 0..<Self.reportAttempts {
+            if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
+        }
+    }
+
+    /// R9: tells the backend the app left the foreground, which invalidates the token at once.
+    private func reportAbort(_ state: String, _ attemptId: String) async {
+        let report = SmsBindingReport(event: .aborted, at: now(), reason: .sessionInterrupted, ios: nil)
         for _ in 0..<Self.reportAttempts {
             if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
         }

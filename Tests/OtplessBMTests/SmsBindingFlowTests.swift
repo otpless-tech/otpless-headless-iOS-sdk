@@ -49,6 +49,38 @@ private final class FakePrompter: SmsBindingPrompter, @unchecked Sendable {
     func offerRetry(_ failure: SmsBindingFailure) async -> Bool { false }
 }
 
+private final class FakeSessionGuard: SmsBindingSessionGuard, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _interrupted = false
+    private var _began = false
+    private var _ended = false
+    private var handler: (@Sendable (@escaping @Sendable () -> Void) -> Void)?
+    var interrupted: Bool { lock.locked { _interrupted } }
+    var began: Bool { lock.locked { _began } }
+    var ended: Bool { lock.locked { _ended } }
+
+    func begin(onInterrupt: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void) {
+        lock.locked { _began = true; handler = onInterrupt }
+    }
+    func end() { lock.locked { _ended = true } }
+
+    /// The app goes to the background.
+    func trigger() {
+        let run: (@Sendable (@escaping @Sendable () -> Void) -> Void)? = lock.locked {
+            _interrupted = true
+            return handler
+        }
+        run?({})
+    }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.locked { value } }
+    func increment() { lock.locked { value += 1 } }
+}
+
 private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
     private let lock = NSLock()
     var rulesJSON: Data
@@ -56,6 +88,7 @@ private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
     var reportError: SmsBindingBackendError?
     var ttlSeconds = 45
     var verdicts: [Result<SmsBindingVerdict, SmsBindingBackendError>] = []
+    var onVerdict: (@Sendable () -> Void)?
 
     private var _startRequests: [SmsBindingStartRequest] = []
     private var _reports: [SmsBindingReport] = []
@@ -88,6 +121,7 @@ private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
     }
 
     func verdict(state: String, attemptId: String, sinceVersion: Int?, waitSeconds: Int) async throws -> SmsBindingVerdict {
+        onVerdict?()
         let next: Result<SmsBindingVerdict, SmsBindingBackendError> = lock.locked {
             let index = _verdictCalls
             _verdictCalls += 1
@@ -104,6 +138,7 @@ private final class FakeComposer: SmsBindingComposer, @unchecked Sendable {
     var result: SmsComposerOutcome.Result = .sent
     var sendCompletion: Bool? = true
     var returnSeconds: TimeInterval = 4
+    var onPresent: (@Sendable () -> Void)?
     private var _calls: [(recipient: String, body: String, upi: Bool)] = []
 
     init(clock: TestClock) { self.clock = clock }
@@ -111,6 +146,7 @@ private final class FakeComposer: SmsBindingComposer, @unchecked Sendable {
 
     func present(recipient: String, body: String, upiValidation: Bool) async -> SmsComposerOutcome {
         lock.locked { _calls.append((recipient, body, upiValidation)) }
+        onPresent?()
         let presented = clock.now
         clock.advance(returnSeconds)
         return SmsComposerOutcome(
@@ -162,24 +198,39 @@ final class SmsBindingFlowTests: XCTestCase {
         let sleeps: SleepLog
 
         let prompter = FakePrompter()
+        let lastAttempt = SmsBindingLastAttempt()
+        let session = FakeSessionGuard()
+        let guardsCreated = Counter()
 
         init(rules: Data = rules(), device: FakeDevice = FakeDevice(), planStatusSupported: Bool = false) {
             let clock = self.clock
             backend = FakeBackend(rules: rules)
             composer = FakeComposer(clock: clock)
             let log = SleepLog()
+            let session = self.session
+            let guardsCreated = self.guardsCreated
             sleeps = log
             useCase = SmsBindingUseCase(
                 backend: backend, composer: composer, iccid: iccid, device: device,
                 prompter: prompter, planStatusSupported: { planStatusSupported },
+                lastAttempt: lastAttempt, sessionGuard: { guardsCreated.increment(); return session },
                 sdkVersion: "3.2.0", deviceFingerprintHash: { "fp-hash" },
                 now: { clock.now },
                 sleep: { seconds in log.record(seconds); clock.advance(seconds) }
             )
         }
 
-        func run(entitlement: Bool = true, previous: String? = nil) async -> SmsBindingOutcome {
-            await useCase.run(state: "state-1", msisdn: "+919812345621", upiEntitlementDeclared: entitlement, previousAttemptId: previous)
+        func run(entitlement: Bool = true, previous: String? = nil, msisdn: String = "+919812345621") async -> SmsBindingOutcome {
+            await useCase.run(state: "state-1", msisdn: msisdn, upiEntitlementDeclared: entitlement, previousAttemptId: previous)
+        }
+
+        /// The abort report is sent from a task the guard starts; give it a moment.
+        func waitForReport(_ event: SmsBindingReport.Event) async -> SmsBindingReport? {
+            for _ in 0..<100 {
+                if let found = backend.reports.first(where: { $0.event == event }) { return found }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            return nil
         }
     }
 
@@ -231,6 +282,102 @@ final class SmsBindingFlowTests: XCTestCase {
             XCTAssertEqual(request.planStatusSupported, supported)
             XCTAssertEqual((request.toDict()["capabilities"] as? [String: Any])?["plan_status_supported"] as? Bool, supported)
         }
+    }
+
+    // MARK: Previous attempt (R4)
+
+    func testARetryNamesTheAttemptItFollows() async {
+        let h = Harness()
+        h.composer.result = .cancelled
+        _ = await h.run()                                  // att_1 ends without a binding
+
+        h.composer.result = .sent
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.run()
+
+        XCTAssertNil(h.backend.startRequests[0].previousAttemptId)
+        XCTAssertEqual(h.backend.startRequests[1].previousAttemptId, "att_1")
+        XCTAssertEqual(h.backend.startRequests[1].toDict()["previous_attempt_id"] as? String, "att_1")
+    }
+
+    func testADifferentNumberNeverGetsTheOldAttempt() async {
+        let h = Harness()
+        h.composer.result = .cancelled
+        _ = await h.run(msisdn: "+919812345621")
+        _ = await h.run(msisdn: "+919000011111")
+        XCTAssertNil(h.backend.startRequests[1].previousAttemptId)
+    }
+
+    func testAVerifiedBindingLeavesNothingToChain() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.run()
+        _ = await h.run()
+        XCTAssertNil(h.backend.startRequests[1].previousAttemptId)
+    }
+
+    func testAnExplicitPreviousAttemptWins() async {
+        let h = Harness()
+        h.composer.result = .cancelled
+        _ = await h.run()
+        _ = await h.run(previous: "att_explicit")
+        XCTAssertEqual(h.backend.startRequests[1].previousAttemptId, "att_explicit")
+    }
+
+    // MARK: Single session (R9)
+
+    private let r9 = #""single_session": {"enabled": true}"#
+
+    func testWithR9OffNoGuardIsCreated() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.run()
+        XCTAssertEqual(h.guardsCreated.count, 0)
+    }
+
+    func testBackgroundWhileTheComposerIsUpAbandonsTheAttempt() async {
+        let h = Harness(rules: rules(extra: r9))
+        let session = h.session
+        h.composer.onPresent = { session.trigger() }
+
+        let outcome = await h.run()
+
+        XCTAssertEqual(outcome, .failed(.sessionInterrupted))
+        let aborted = await h.waitForReport(.aborted)
+        XCTAssertEqual(aborted?.reason, .sessionInterrupted, "the backend is told, so the token dies at once")
+        XCTAssertNil(h.backend.reports.first { $0.event == .sent }, "a message sent from the background is not reported as sent")
+        XCTAssertTrue(h.session.began)
+        XCTAssertTrue(h.session.ended, "the guard is released")
+    }
+
+    func testBackgroundWhileWaitingForTheVerdictEndsTheWait() async {
+        let h = Harness(rules: rules(extra: r9))
+        let session = h.session
+        h.backend.verdicts = [verdict(.sent, version: 1)]
+        h.backend.onVerdict = { session.trigger() }
+
+        let outcome = await h.run()
+
+        XCTAssertEqual(outcome, .failed(.sessionInterrupted))
+        let aborted = await h.waitForReport(.aborted)
+        XCTAssertNotNil(aborted)
+        XCTAssertTrue(h.session.ended)
+    }
+
+    func testAnAttemptThatStaysInFrontIsUnaffected() async {
+        let h = Harness(rules: rules(extra: r9))
+        h.backend.verdicts = [verdict(.verified, binding: "bnd_1", version: 2)]
+        let outcome = await h.run()
+        XCTAssertEqual(outcome, .verified(bindingId: "bnd_1"))
+        XCTAssertNil(h.backend.reports.first { $0.event == .aborted })
+        XCTAssertTrue(h.session.ended)
+    }
+
+    func testTheAbortReportCarriesNoDeviceFields() {
+        let dict = SmsBindingReport(event: .aborted, at: Date(timeIntervalSince1970: 0), reason: .sessionInterrupted, ios: nil).toDict()
+        XCTAssertEqual(dict["event"] as? String, "ABORTED")
+        XCTAssertEqual(dict["reason"] as? String, "SESSION_INTERRUPTED")
+        XCTAssertNil(dict["ios"])
     }
 
     // MARK: Happy path

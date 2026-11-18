@@ -72,6 +72,9 @@ extension Otpless {
         guard sdkState == .READY, let state = self.state else {
             return finish(.failed(OtplessSmsBindingFailure(code: "SDK_NOT_READY", isRetryable: true)))
         }
+        guard isSmsBindingAvailable else {
+            return finish(.failed(OtplessSmsBindingFailure(code: SmsBindingGate.notEnabledCode, isRetryable: false)))
+        }
         guard SmsBindingRunGate.shared.tryBegin() else {
             return finish(.failed(OtplessSmsBindingFailure(code: "ATTEMPT_IN_PROGRESS", isRetryable: false)))
         }
@@ -81,7 +84,7 @@ extension Otpless {
         Task {
             var outcome: SmsBindingOutcome
             while true {
-                let useCase = SmsBindingUseCase(backend: backend, prompter: prompter)
+                let useCase = SmsBindingUseCase(backend: backend, prompter: prompter, lastAttempt: .shared)
                 outcome = await useCase.run(
                     state: state,
                     msisdn: msisdn,
@@ -103,12 +106,31 @@ extension Otpless {
         }
     }
 
+    /// The merchant config switches the feature on per app. A Debug build that chose a mock backend
+    /// skips this: the mock never talks to the network, and is how the flow is tested before an
+    /// app is onboarded.
+    internal var isSmsBindingAvailable: Bool {
+        #if DEBUG
+        if SmsBindingMockSwitch.shared.current != nil { return true }
+        #endif
+        return SmsBindingGate.isOpen(merchantConfig: merchantConfig)
+    }
+
     /// The backend the flow talks to: the real one, unless a Debug build chose a mock.
     internal func smsBindingBackend() -> SmsBindingBackend {
         #if DEBUG
         if let mock = SmsBindingMockSwitch.shared.current { return mock }
         #endif
         return apiRepository.makeSmsBindingBackend()
+    }
+}
+
+internal enum SmsBindingGate {
+    /// Returned when the app's config has not switched outbound SMS binding on.
+    static let notEnabledCode = "FEATURE_NOT_ENABLED"
+
+    static func isOpen(merchantConfig: MerchantConfigResponse?) -> Bool {
+        merchantConfig?.isOutboundSmsBindingEnabled == true
     }
 }
 

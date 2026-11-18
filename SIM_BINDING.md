@@ -9,6 +9,12 @@ Two features, both opt-in by calling them. Apps that call nothing see no change.
 | Be told when that answer changes | `setSimBindingListener` | 27+ |
 | Ask the user's permission for the check, with your own explanation first | `requestNumberStatusPermission` | 27+ |
 
+## Turning it on
+
+Outbound SMS binding is off for every app until OTPLESS switches it on in your merchant config
+(`merchant.config.outboundSmsBindingConfig.isEnabled`). Until then `startSmsBinding` returns
+`FEATURE_NOT_ENABLED` and nothing is sent. The iOS 27 SIM check below does not depend on this.
+
 ## Outbound SMS binding
 
 ```swift
@@ -29,7 +35,8 @@ Otpless.shared.startSmsBinding(
 - Call it after `SDK_READY`. One attempt runs at a time (`ATTEMPT_IN_PROGRESS`).
 - `.headless`: the only screen is Apple's message composer. Use `failure.message` if you want ready wording.
 - `.standard`: adds a dual-SIM prompt (before any token is requested, so cancelling costs nothing), a "verifying" indicator, and a "Try again" alert on retryable failures. `completion` runs after the user dismisses the alert or stops retrying.
-- Failure codes: `PERMISSION_MISSING`, `NO_SIM`, `AIRPLANE_MODE`, `UPGRADE_REQUIRED`, `ENTITLEMENT_MISSING`, `UNSAFE_SMS_APP`, `SMS_SEND_FAILED`, `NUMBER_MISMATCH`, `TOKEN_EXPIRED`, `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`, `INTERNAL_ERROR`, plus `SDK_NOT_READY`.
+- Failure codes: `PERMISSION_MISSING`, `NO_SIM`, `AIRPLANE_MODE`, `UPGRADE_REQUIRED`, `ENTITLEMENT_MISSING`, `UNSAFE_SMS_APP`, `SMS_SEND_FAILED`, `NUMBER_MISMATCH`, `TOKEN_EXPIRED`, `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`, `INTERNAL_ERROR`, plus `SDK_NOT_READY`, `ATTEMPT_IN_PROGRESS` and `FEATURE_NOT_ENABLED`.
+- Keep the app in front while an attempt runs. If your rules include the single-session rule, going to the background abandons the attempt (`SESSION_INTERRUPTED`).
 - iOS has no airplane-mode API; airplane mode empties the radio list, so it shows as `NO_SIM`.
 
 ## iOS 27 SIM check

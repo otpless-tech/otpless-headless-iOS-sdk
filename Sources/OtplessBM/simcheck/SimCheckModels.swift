@@ -47,6 +47,9 @@ public struct OtplessSimBindingCheck: Equatable, Sendable {
 /// The user's answer to Apple's "check the phone number on this device?" prompt.
 public enum OtplessNumberStatusPermission: String, Sendable {
     case granted = "GRANTED"
+    /// The user said no, or the number is not one of this device's own lines. Apple answers both
+    /// the same way: for a number the device does not hold it shows "Phone number mismatch" with no
+    /// Allow button, and the SDK cannot tell that apart from a refusal.
     case denied = "DENIED"
     /// Nothing can be asked: restricted for this number, or Apple's API failed.
     case unavailable = "UNAVAILABLE"

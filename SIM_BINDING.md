@@ -66,6 +66,10 @@ The SDK applies no defaults and blocks nothing; your app decides what each resul
 
 ### Permission
 
+Apple can only grant permission for a number that is one of this phone's own lines. For any other
+number it shows "Phone number mismatch" with no Allow button. The SDK reports that as `denied`,
+the same as a refusal, because Apple's answer is the same for both.
+
 Apple asks the user once per number: "Allow <app> to check the phone number on this device?" with
 **Not Now** and **Allow**. A denied user can be asked again. Show your own explanation first:
 

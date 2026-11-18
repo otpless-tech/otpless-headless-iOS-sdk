@@ -55,7 +55,6 @@ Otpless.shared.startSmsBinding(
 - Wording for your own screens: `failure.message` is a sentence fit for the user. For `NUMBER_MISMATCH` it names the line to send from (`failure.maskedNumber`, `+91 89xxxxxx55`), and for `DEVICE_BLOCKED` it says how long the block lasts when that is known (`failure.retryAfterSeconds`).
 - Failure codes: `PERMISSION_MISSING`, `NO_SIM`, `AIRPLANE_MODE`, `UPGRADE_REQUIRED`, `ENTITLEMENT_MISSING`, `UNSAFE_SMS_APP`, `SMS_SEND_FAILED`, `NUMBER_MISMATCH`, `TOKEN_EXPIRED`, `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`, `INTERNAL_ERROR`, plus `SDK_NOT_READY`, `ATTEMPT_IN_PROGRESS`, `FEATURE_NOT_ENABLED`, `SIM_BINDING_NOT_AVAILABLE` and `INVALID_PHONE_NUMBER`.
 - Keep the app in front while an attempt runs. If your rules include the single-session rule, going to the background abandons the attempt (`SESSION_INTERRUPTED`).
-- Debug builds only: `Otpless.shared.simulateUpiCompletion(.completes | .fails | nil)` stands in for Apple's UPI send completion, which never fires without the entitlement, so the R19 success path can be tried on a phone whose app holds none. It is not compiled into Release builds.
 - iOS has no airplane-mode API; airplane mode empties the radio list, so it shows as `NO_SIM`.
 
 ## iOS 27 SIM check

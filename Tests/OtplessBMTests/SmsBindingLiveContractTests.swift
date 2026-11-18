@@ -1,12 +1,11 @@
 //
-//  SmsBindingMockTests.swift
+//  SmsBindingLiveContractTests.swift
 //  OtplessBMTests
 //
-//  Plays every mock scenario through the real orchestrator, and proves the live backend client
-//  reads exactly the response shapes the mock returns (so going live is only a backend swap).
+//  The live backend client against the backend's own sample responses (served by a stub URL
+//  protocol): the intent, the report and the status poll. The device and the network are not involved.
 //
 
-#if DEBUG
 import XCTest
 @testable import OtplessBM
 
@@ -18,140 +17,7 @@ private extension NSLock {
     }
 }
 
-// MARK: - Small fakes (the device side; the backend under test is the real mock)
-
-private final class Clock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var date = Date(timeIntervalSince1970: 1_800_000_000)
-    var now: Date { lock.locked { date } }
-    func advance(_ seconds: TimeInterval) { lock.locked { date = date.addingTimeInterval(seconds) } }
-}
-
-private struct HealthyDevice: SmsBindingDevice {
-    var osVersion = "26.7"
-    var appVersion = "3.2.0"
-    var hasCellularRadio = true
-    var canSendText = true
-}
-
-private final class ScriptedComposer: SmsBindingComposer, @unchecked Sendable {
-    private let clock: Clock
-    var returnSeconds: TimeInterval
-    var sendCompletion: Bool?
-    private(set) var recipients: [String] = []
-    private(set) var upiFlags: [Bool] = []
-    private let lock = NSLock()
-
-    init(clock: Clock, returnSeconds: TimeInterval, sendCompletion: Bool?) {
-        self.clock = clock
-        self.returnSeconds = returnSeconds
-        self.sendCompletion = sendCompletion
-    }
-
-    func present(recipient: String, body: String, upiValidation: Bool) async -> SmsComposerOutcome {
-        lock.locked { recipients.append(recipient); upiFlags.append(upiValidation) }
-        let presented = clock.now
-        clock.advance(returnSeconds)
-        return SmsComposerOutcome(result: .sent, sendCompletion: sendCompletion, presentedAt: presented, returnedAt: clock.now)
-    }
-}
-
-private struct TokenOK: IccidTokenProvider {
-    func fetch() async -> IccidTokenResult { .token("t") }
-}
-
-// MARK: - Scenario table
-
-final class SmsBindingMockScenarioTests: XCTestCase {
-
-    private struct Expectation {
-        let outcome: SmsBindingOutcome
-        /// Seconds the user spends in the composer. Most scenarios use a quick send.
-        var composerSeconds: TimeInterval = 3
-        /// Whether the device is expected to reach the composer at all.
-        var reachesComposer = true
-    }
-
-    private static let expectations: [OtplessSmsBindingMockScenario: Expectation] = [
-        .verifiedNpci: Expectation(outcome: .verified(bindingId: "bnd_mock_npci")),
-        .verifiedStandard: Expectation(outcome: .verified(bindingId: "bnd_mock_standard")),
-        .slowVerdict: Expectation(outcome: .verified(bindingId: "bnd_mock_slow")),
-        .reportFails: Expectation(outcome: .verified(bindingId: "bnd_mock_report")),
-        .pollFlaky: Expectation(outcome: .verified(bindingId: "bnd_mock_flaky")),
-
-        .upgradeRequired: Expectation(outcome: .failed(.upgradeRequired), reachesComposer: false),
-        .osTooOld: Expectation(outcome: .failed(.upgradeRequired), reachesComposer: false),
-
-        .deviceBlockedAtStart: Expectation(outcome: .failed(.deviceBlocked), reachesComposer: false),
-        .vmnPoolUnavailable: Expectation(outcome: .failed(.vmnPoolUnavailable), reachesComposer: false),
-        .rulesUnavailable: Expectation(outcome: .failed(.internalError), reachesComposer: false),
-        .startTransportError: Expectation(outcome: .failed(.internalError), reachesComposer: false),
-
-        .numberMismatch: Expectation(outcome: .failed(.numberMismatch)),
-        .rejectedUnknownReason: Expectation(outcome: .failed(.verificationFailed)),
-        .tokenExpiredVerdict: Expectation(outcome: .failed(.tokenExpired)),
-        .abortedVerdict: Expectation(outcome: .failed(.sessionInterrupted)),
-        .neverCompletes: Expectation(outcome: .failed(.tokenExpired)),
-
-        .shortTtl: Expectation(outcome: .failed(.tokenExpired), composerSeconds: 10),
-        .strictComposerReturn: Expectation(outcome: .failed(.tokenExpired), composerSeconds: 10)
-    ]
-
-    func testEveryScenarioHasAnExpectation() {
-        let missing = OtplessSmsBindingMockScenario.allCases.filter { Self.expectations[$0] == nil }
-        XCTAssertTrue(missing.isEmpty, "add an expectation for: \(missing.map(\.rawValue))")
-    }
-
-    func testEveryScenarioPlaysOutAsScripted() async {
-        for scenario in OtplessSmsBindingMockScenario.allCases {
-            let expected = try! XCTUnwrap(Self.expectations[scenario])
-            let clock = Clock()
-            let backend = MockSmsBindingBackend(
-                scenario: scenario, vmn: "+910000000001",
-                sleep: { seconds in clock.advance(seconds) }
-            )
-            // NPCI scenarios use the entitlement composer, whose completion Apple fires with true.
-            let composer = ScriptedComposer(
-                clock: clock, returnSeconds: expected.composerSeconds,
-                sendCompletion: scenario == .verifiedNpci ? true : nil
-            )
-            let useCase = SmsBindingUseCase(
-                backend: backend, composer: composer, iccid: TokenOK(), device: HealthyDevice(),
-                sdkVersion: "3.2.0", now: { clock.now }, sleep: { clock.advance($0) }
-            )
-
-            let outcome = await useCase.run(
-                state: "state-1", msisdn: "+919812345621",
-                upiEntitlementDeclared: scenario == .verifiedNpci
-            )
-
-            XCTAssertEqual(outcome, expected.outcome, "scenario \(scenario.rawValue)")
-            XCTAssertEqual(
-                composer.recipients.isEmpty, !expected.reachesComposer,
-                "scenario \(scenario.rawValue): composer reached = \(!composer.recipients.isEmpty)"
-            )
-            if expected.reachesComposer {
-                XCTAssertEqual(composer.recipients, ["+910000000001"], "the SMS goes to the configured number")
-            }
-        }
-    }
-
-    func testNpciScenarioUsesTheEntitlementComposerAndStandardDoesNot() async {
-        for (scenario, upi) in [(OtplessSmsBindingMockScenario.verifiedNpci, true), (.verifiedStandard, false)] {
-            let clock = Clock()
-            let composer = ScriptedComposer(clock: clock, returnSeconds: 3, sendCompletion: upi ? true : nil)
-            let useCase = SmsBindingUseCase(
-                backend: MockSmsBindingBackend(scenario: scenario, vmn: "+910000000001", sleep: { clock.advance($0) }),
-                composer: composer, iccid: TokenOK(), device: HealthyDevice(),
-                now: { clock.now }, sleep: { clock.advance($0) }
-            )
-            _ = await useCase.run(state: "s", msisdn: "+919812345621", upiEntitlementDeclared: upi)
-            XCTAssertEqual(composer.upiFlags, [upi], "\(scenario.rawValue)")
-        }
-    }
-}
-
-// MARK: - Live client reads the shapes the mock returns
+// MARK: - The live client against the backend's responses
 
 private final class SmsStubProtocol: URLProtocol {
     struct Recorded { let method: String; let path: String; let query: String; let body: [String: Any]? }
@@ -419,4 +285,3 @@ final class SmsBindingLiveContractTests: XCTestCase {
         }
     }
 }
-#endif

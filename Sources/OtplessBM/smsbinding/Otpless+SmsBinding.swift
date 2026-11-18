@@ -97,7 +97,7 @@ extension Otpless {
         }
 
         let masked = SmsBindingCopy.mask(countryCode: code, national: String(msisdn.dropFirst(code.count)))
-        let backend = smsBindingBackend()
+        let backend = apiRepository.makeSmsBindingBackend()
         let prompter: SmsBindingPrompter = ui == .standard ? StandardSmsBindingPrompter() : HeadlessSmsBindingPrompter()
         Task {
             var outcome: SmsBindingOutcome
@@ -141,22 +141,10 @@ extension Otpless {
         }
     }
 
-    /// The merchant config switches the feature on per app. A Debug build that chose a mock backend
-    /// skips this: the mock never talks to the network, and is how the flow is tested before an
-    /// app is onboarded.
+    /// The merchant config switches the feature on per app. Until it does, nothing is sent to the
+    /// backend.
     internal var isSmsBindingAvailable: Bool {
-        #if DEBUG
-        if SmsBindingMockSwitch.shared.current != nil { return true }
-        #endif
-        return SmsBindingGate.isOpen(merchantConfig: merchantConfig)
-    }
-
-    /// The backend the flow talks to: the real one, unless a Debug build chose a mock.
-    internal func smsBindingBackend() -> SmsBindingBackend {
-        #if DEBUG
-        if let mock = SmsBindingMockSwitch.shared.current { return mock }
-        #endif
-        return apiRepository.makeSmsBindingBackend()
+        SmsBindingGate.isOpen(merchantConfig: merchantConfig)
     }
 }
 
@@ -190,42 +178,3 @@ private final class SmsBindingRunGate: @unchecked Sendable {
         lock.unlock()
     }
 }
-
-#if DEBUG
-/// Holds the mock a Debug build selected.
-internal final class SmsBindingMockSwitch: @unchecked Sendable {
-    static let shared = SmsBindingMockSwitch()
-    private let lock = NSLock()
-    private var backend: SmsBindingBackend?
-
-    var current: SmsBindingBackend? {
-        lock.lock()
-        defer { lock.unlock() }
-        return backend
-    }
-
-    func set(_ backend: SmsBindingBackend?) {
-        lock.lock()
-        self.backend = backend
-        lock.unlock()
-    }
-}
-
-extension Otpless {
-    /// **Debug builds only.** Answers every outbound SMS binding backend call from a fixed script
-    /// instead of the network, so each outcome can be tested before the backend exists.
-    ///
-    /// - Parameters:
-    ///   - scenario: Which outcome to play.
-    ///   - vmn: The number the SMS is addressed to. The composer sends a real SMS to it; use a
-    ///     number you own.
-    public func useMockSmsBinding(_ scenario: OtplessSmsBindingMockScenario, vmn: String) {
-        SmsBindingMockSwitch.shared.set(MockSmsBindingBackend(scenario: scenario, vmn: vmn))
-    }
-
-    /// **Debug builds only.** Goes back to the real backend.
-    public func useLiveSmsBinding() {
-        SmsBindingMockSwitch.shared.set(nil)
-    }
-}
-#endif

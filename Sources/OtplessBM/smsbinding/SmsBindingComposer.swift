@@ -148,7 +148,7 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
         controller.body = body
         controller.messageComposeDelegate = self
 
-        if upiValidation && !Self.upiCompletionIsSimulated {
+        if upiValidation {
             // `MainActor.assumeIsolated` is iOS 17+ and this package supports iOS 13, so hop
             // explicitly. Apple delivers the completion on the main thread, so ordering holds.
             let configured = Self.configureUPI(controller) { [weak self] didSend in
@@ -198,12 +198,6 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
         guard !dismissalHandled else { return }
         dismissalHandled = true
 
-        #if DEBUG
-        if upiValidation, composerResult == .sent, let simulated = SmsBindingDebugOverrides.shared.upiCompletion {
-            sendCompletion = (simulated == .completes)
-        }
-        #endif
-
         guard composerResult == .sent, upiValidation else { return finish() }
         // Apple calls the send completion after this, once the carrier has the message.
         // If it already ran, finish now; otherwise wait a bounded time for it.
@@ -227,15 +221,6 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
         let block: @convention(block) (Bool) -> Void = completion
         _ = controller.perform(selector, with: unsafeBitCast(block, to: AnyObject.self))
         return true
-    }
-
-    /// Debug builds can stand in for Apple's completion (see `Otpless.simulateUpiCompletion`).
-    private static var upiCompletionIsSimulated: Bool {
-        #if DEBUG
-        return SmsBindingDebugOverrides.shared.upiCompletion != nil
-        #else
-        return false
-        #endif
     }
 
     private func completionArrived(_ didSend: Bool) {

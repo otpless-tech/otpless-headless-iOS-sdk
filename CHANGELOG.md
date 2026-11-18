@@ -8,7 +8,7 @@
 - **Single session (R9).** When the rule is on and the app goes to the background during an attempt, the attempt is abandoned: the backend is told (`ABORTED`, reason `SESSION_INTERRUPTED`) so the token stops working at once, and the call returns `SESSION_INTERRUPTED`.
 - A retry for the same number names the attempt it follows (`previous_attempt_id`) so the backend can pick a different number to send to. It is kept in memory only and cleared once a binding verifies.
 ### Notes
-- Nothing changes for apps that do not call these APIs. The mock backend used for testing is compiled into Debug builds only.
+- Nothing changes for apps that do not call these APIs.
 - iOS cannot check a SIM while the app is suspended; the listener reports a change at the next launch or return to the foreground.
 - Apple's UPI device validation needs the `com.apple.developer.upi-device-validation` entitlement in the host app, which Apple grants only after NPCI whitelisting. Pass `upiEntitlementDeclared: true` only if your app holds it.
 

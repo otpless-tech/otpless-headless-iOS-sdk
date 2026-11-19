@@ -124,6 +124,21 @@ Otpless.shared.requestNumberStatusPermission(phoneNumber: number) { result in
 Apple's dialog appears only when the permission is not already held. Do not call Apple's request
 for a number that is already allowed: it shows the dialog again, and Not Now takes the permission away.
 
+### Inside the normal login flow
+
+The backend's orchestration can answer a normal `start` as SMS binding: outbound SMS is the last step after
+SNA and OTP. The SDK then runs it for you, with no call from the app:
+
+1. `INITIATE` with `authType: SIM_BINDING` and `deliveryChannel: OUTBOUND_SMS`. Do not show an OTP field.
+2. Apple's message screen opens, addressed to the service number with the message filled in.
+3. `DELIVERY_STATUS` once the message has left the phone.
+4. `ONETAP` with the session, as every other channel gives it, or an error shaped like the other verify
+   errors (`VERIFY`, with `errorCode`, `errorMessage`, `authType: SIM_BINDING` and `retryable`). The error
+   codes are the ones in the list above (`TOKEN_EXPIRED`, `NO_SIM`, `NUMBER_MISMATCH`, ...).
+
+The device rules, the composer limit and the single-session rule apply as in `startSmsBinding`. The SDK
+shows no screens of its own here (the app owns its login UI); only Apple's message screen appears.
+
 ### At OTP verify (iOS 27 and above)
 
 For an app that has SMS binding switched on, the normal OTP flow also uses the plan status API. When

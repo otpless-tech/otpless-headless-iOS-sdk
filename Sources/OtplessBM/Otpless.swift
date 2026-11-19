@@ -744,6 +744,12 @@ private extension Otpless {
             }
         }
         
+        // The backend answered as outbound SMS SIM binding (the last step after SNA and OTP): run it here.
+        if let started = intentResponse.smsBindingStart {
+            await runSmsBindingFromIntent(started, otplessRequest)
+            return
+        }
+
         if let passkeyRequestStr = intentResponse.passkeyRequestStr,
            !passkeyRequestStr.isEmpty,
            let passkeyRequestDict = Utils.convertStringToDictionary(passkeyRequestStr) {

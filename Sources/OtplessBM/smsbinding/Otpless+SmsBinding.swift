@@ -135,7 +135,7 @@ extension Otpless {
             }
             SmsBindingRunGate.shared.end()
             switch outcome {
-            case .verified(let bindingId, let mobile, let userId): finish(.verified(bindingId: bindingId, mobile: mobile, userId: userId))
+            case .verified(let bindingId, let mobile, let userId, _): finish(.verified(bindingId: bindingId, mobile: mobile, userId: userId))
             case .failed(let failure):
                 finish(.failed(OtplessSmsBindingFailure(
                     failure,
@@ -164,7 +164,7 @@ internal enum SmsBindingGate {
 
 /// One binding attempt at a time: two composers cannot be on screen, and the backend counts
 /// attempts per device (R10).
-private final class SmsBindingRunGate: @unchecked Sendable {
+internal final class SmsBindingRunGate: @unchecked Sendable {
     static let shared = SmsBindingRunGate()
     private let lock = NSLock()
     private var running = false

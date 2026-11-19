@@ -379,6 +379,49 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(outcome, .verified(bindingId: "tok", mobile: "919812345621", userId: "u-1"))
     }
 
+    // MARK: Continuing an attempt that already exists (the main login flow)
+
+    private func existingAttempt() -> SmsBindingStarted {
+        SmsBindingStarted(
+            issued: SmsBindingIssued(attemptId: "att_x", smsBody: "body-x", vmn: "+919000000007", ttlSeconds: 45),
+            rules: SmsBindingRules.decode(rules())!
+        )
+    }
+
+    func testContinuingStartsFromTheAttemptTheIntentAlreadyIssued() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.verified, binding: "tok", version: 2)]
+
+        let outcome = await h.useCase.continueAttempt(
+            state: "s", msisdn: "+919812345621", started: existingAttempt(), upiEntitlementDeclared: true
+        )
+
+        XCTAssertEqual(outcome, .verified(bindingId: "tok"))
+        XCTAssertTrue(h.backend.startRequests.isEmpty, "no second token is asked for")
+        XCTAssertTrue(h.prompter.asks.isEmpty, "the app owns the screens of its own login flow")
+        XCTAssertEqual(h.composer.calls.first?.recipient, "+919000000007")
+        XCTAssertEqual(h.composer.calls.first?.body, "body-x")
+    }
+
+    func testContinuingStillAppliesTheDeviceRulesAndEndsTheAttempt() async {
+        let h = Harness(device: FakeDevice(hasCellularRadio: false))
+        let outcome = await h.useCase.continueAttempt(
+            state: "s", msisdn: "+919812345621", started: existingAttempt(), upiEntitlementDeclared: true
+        )
+        XCTAssertEqual(outcome, .failed(.noSim))
+        XCTAssertTrue(h.composer.calls.isEmpty)
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["NO_SIM"])
+    }
+
+    func testAVerifiedContinuationIsRememberedAsTheBoundNumber() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        _ = await h.useCase.continueAttempt(
+            state: "s", msisdn: "+919812345621", started: existingAttempt(), upiEntitlementDeclared: true
+        )
+        XCTAssertEqual(h.boundNumbers.current, "+919812345621")
+    }
+
     // MARK: Previous attempt (R4)
 
     func testARetryNamesTheAttemptItFollows() async {

@@ -108,6 +108,8 @@ internal struct SmsBindingVerdict: Equatable, Sendable {
     /// On success, who was verified (`authDetail.user`).
     var mobile: String? = nil
     var userId: String? = nil
+    /// On success, the whole status response, so the main login flow can hand the app its session.
+    var payload: Data? = nil
 }
 
 /// How a backend call failed. `rejected` is the backend saying no with a reason; `transport` is
@@ -115,6 +117,31 @@ internal struct SmsBindingVerdict: Equatable, Sendable {
 internal enum SmsBindingBackendError: Error, Equatable, Sendable {
     case rejected(SmsBindingFailure, retryAfterSeconds: Int?)
     case transport
+}
+
+extension SmsBindingStarted {
+    enum Parsed {
+        case started(SmsBindingStarted)
+        /// The response is on another channel.
+        case notSimBinding
+        /// SIM binding, but without what the flow needs.
+        case malformed
+    }
+
+    /// Reads the `quantumLeap` of an intent response. Used for the standalone `startSmsBinding` and for
+    /// a normal login intent that the backend answers as SIM binding.
+    static func parse(quantumLeap leap: [String: Any]) -> Parsed {
+        guard (leap["channel"] as? String) == LiveSmsBindingBackend.channel else { return .notSimBinding }
+        guard let sim = leap["simBinding"] as? [String: Any],
+              let token = (sim["token"] as? String) ?? (leap["channelAuthToken"] as? String),
+              let smsBody = sim["smsBody"] as? String,
+              let vmn = sim["vmn"] as? String,
+              let ruleMap = sim["rules"] as? [String: Any] else { return .malformed }
+        return .started(SmsBindingStarted(
+            issued: SmsBindingIssued(attemptId: token, smsBody: smsBody, vmn: vmn, ttlSeconds: LiveSmsBindingBackend.ttlSeconds(sim, leap)),
+            rules: SmsBindingRules.decodeInline(rules: ruleMap, rulesHash: sim["rulesHash"] as? String)
+        ))
+    }
 }
 
 // MARK: - Seam
@@ -184,21 +211,13 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let leap = root["quantumLeap"] as? [String: Any] else { throw SmsBindingBackendError.transport }
 
+        switch SmsBindingStarted.parse(quantumLeap: leap) {
+        case .started(let started): return started
         // The intent can come back on another channel (the app is not set up for SIM binding). That
         // request has already been acted on by the backend, but nothing was sent to the user by us.
-        guard (leap["channel"] as? String) == Self.channel else {
-            throw SmsBindingBackendError.rejected(.notAvailable, retryAfterSeconds: nil)
+        case .notSimBinding: throw SmsBindingBackendError.rejected(.notAvailable, retryAfterSeconds: nil)
+        case .malformed: throw SmsBindingBackendError.transport
         }
-        guard let sim = leap["simBinding"] as? [String: Any],
-              let token = (sim["token"] as? String) ?? (leap["channelAuthToken"] as? String),
-              let smsBody = sim["smsBody"] as? String,
-              let vmn = sim["vmn"] as? String,
-              let ruleMap = sim["rules"] as? [String: Any] else { throw SmsBindingBackendError.transport }
-
-        return SmsBindingStarted(
-            issued: SmsBindingIssued(attemptId: token, smsBody: smsBody, vmn: vmn, ttlSeconds: Self.ttlSeconds(sim, leap)),
-            rules: SmsBindingRules.decodeInline(rules: ruleMap, rulesHash: sim["rulesHash"] as? String)
-        )
     }
 
     func lapse(state: String, attemptId: String, lapse: SmsBindingLapse) async throws {
@@ -238,7 +257,7 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
             let user = detail["user"] as? [String: Any]
             return SmsBindingVerdict(
                 state: .verified, reason: nil, bindingId: detail["token"] as? String, stateVersion: 0,
-                mobile: user?["mobile"] as? String, userId: user?["uid"] as? String
+                mobile: user?["mobile"] as? String, userId: user?["uid"] as? String, payload: data
             )
         case "FAILED":
             let reason = (detail["errorCode"] as? String) ?? (detail["errorDetails"] as? String)
@@ -252,7 +271,7 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
 
     /// Seconds the token lives: the response's own figure, else the time left to `expiresAt`, else
     /// the polling timeout.
-    private static func ttlSeconds(_ sim: [String: Any], _ leap: [String: Any]) -> Int {
+    fileprivate static func ttlSeconds(_ sim: [String: Any], _ leap: [String: Any]) -> Int {
         if let seconds = sim["expiresInSeconds"] as? Int, seconds > 0 { return seconds }
         if let expiresAt = sim["expiresAt"] as? Double {
             let left = Int(expiresAt - Date().timeIntervalSince1970)

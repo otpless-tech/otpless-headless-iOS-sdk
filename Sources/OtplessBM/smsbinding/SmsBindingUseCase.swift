@@ -1,7 +1,7 @@
 import Foundation
 
 internal enum SmsBindingOutcome: Equatable, Sendable {
-    case verified(bindingId: String?, mobile: String? = nil, userId: String? = nil)
+    case verified(bindingId: String?, mobile: String? = nil, userId: String? = nil, payload: Data? = nil)
     case failed(SmsBindingFailure)
 }
 
@@ -119,6 +119,37 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
             lastRetryAfterSeconds = retryHint(for: error)
             return .failed(Self.failure(from: error))
         }
+        return await proceed(
+            state: state, msisdn: msisdn, started: started,
+            upiEntitlementDeclared: upiEntitlementDeclared, onState: onState
+        )
+    }
+
+    /// Carries on from an attempt that already exists: the device rules, the composer, and the wait for
+    /// the verdict. The main login flow uses this when the backend answers a normal intent as SIM
+    /// binding, so the token is not asked for twice. There is no explanation alert here: the app owns
+    /// the screens of its own login flow.
+    func continueAttempt(
+        state: String,
+        msisdn: String,
+        started: SmsBindingStarted,
+        upiEntitlementDeclared: Bool,
+        onState: (@Sendable (SmsBindingState) -> Void)? = nil
+    ) async -> SmsBindingOutcome {
+        lastRetryAfterSeconds = nil
+        return await proceed(
+            state: state, msisdn: msisdn, started: started,
+            upiEntitlementDeclared: upiEntitlementDeclared, onState: onState
+        )
+    }
+
+    private func proceed(
+        state: String,
+        msisdn: String,
+        started: SmsBindingStarted,
+        upiEntitlementDeclared: Bool,
+        onState: (@Sendable (SmsBindingState) -> Void)?
+    ) async -> SmsBindingOutcome {
         blockMemory.remember(started.rules.attemptBlockHours)
         let issued = started.issued
         let rules = started.rules
@@ -234,7 +265,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     attempt.advance(to: .verified)
                     prompter.updateProgress(.verified)
                     onState?(.verified)
-                    return .verified(bindingId: verdict.bindingId, mobile: verdict.mobile, userId: verdict.userId)
+                    return .verified(bindingId: verdict.bindingId, mobile: verdict.mobile, userId: verdict.userId, payload: verdict.payload)
                 case .rejected:
                     onState?(.rejected)
                     return .failed(SmsBindingFailure(backendReason: verdict.reason))

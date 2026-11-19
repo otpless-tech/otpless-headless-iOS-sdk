@@ -269,6 +269,17 @@ final class SmsBindingLiveContractTests: XCTestCase {
         XCTAssertEqual(SmsBindingFailure(backendReason: verdict.reason), .numberMismatch)
     }
 
+    func testTheBackendsSenderMismatchIsANumberMismatch() async throws {
+        let failed = #"{"authDetail":{"status":"FAILED","token":"tok","asId":"a","errorDetails":"SMS was sent from an unexpected number","errorCode":"SENDER_MISMATCH"}}"#
+        SmsStubProtocol.reset(["/status/s1": (200, failed)])
+        let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
+        XCTAssertEqual(verdict.state, .rejected)
+        XCTAssertEqual(verdict.reason, "SENDER_MISMATCH")
+        XCTAssertEqual(SmsBindingFailure(backendReason: verdict.reason), .numberMismatch, "retryable, with the line to send from")
+        XCTAssertTrue(SmsBindingFailure(backendReason: verdict.reason).isRetryable)
+        XCTAssertEqual(SmsBindingFailure(backendReason: "SOMETHING_NEW"), .verificationFailed, "unknown names stay generic")
+    }
+
     func testAnExpiredAttemptAnswersWithAnErrorAndIsReadAsExpired() async throws {
         SmsStubProtocol.reset(["/status/s1": (400, #"{"errorCode":"7011","message":"Transaction expired"}"#)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)

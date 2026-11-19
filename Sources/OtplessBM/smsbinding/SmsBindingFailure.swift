@@ -28,12 +28,19 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
 
     /// Maps a backend `reason` string. Anything unrecognised becomes `verificationFailed`.
     init(backendReason: String?) {
-        guard let reason = backendReason, let known = SmsBindingFailure(rawValue: reason) else {
+        guard let reason = backendReason else {
             self = .verificationFailed
             return
         }
-        self = known
+        self = SmsBindingFailure(rawValue: reason) ?? Self.backendAliases[reason] ?? .verificationFailed
     }
+
+    /// Names the backend uses that differ from the PRD's. `SENDER_MISMATCH` ("SMS was sent from an
+    /// unexpected number") is what staging answers when the message came from another number; on
+    /// Nov 18 it said `NUMBER_MISMATCH`.
+    private static let backendAliases: [String: SmsBindingFailure] = [
+        "SENDER_MISMATCH": .numberMismatch
+    ]
 
     /// Whether the user can sensibly try again straight away (PRD section 15, "What the app should do").
     var isRetryable: Bool {

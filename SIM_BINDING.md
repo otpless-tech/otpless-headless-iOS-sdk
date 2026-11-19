@@ -127,7 +127,8 @@ for a number that is already allowed: it shows the dialog again, and Not Now tak
 ### Inside the normal login flow
 
 The backend's orchestration can answer a normal `start` as SMS binding: outbound SMS is the last step after
-SNA and OTP. The SDK then runs it for you, with no call from the app:
+SNA and OTP. It can say so in the intent response, or, when silent authentication fails, in the status
+response of that step. The SDK then runs it for you, with no call from the app:
 
 1. `INITIATE` with `authType: SIM_BINDING` and `deliveryChannel: OUTBOUND_SMS`. Do not show an OTP field.
 2. Apple's message screen opens, addressed to the service number with the message filled in.

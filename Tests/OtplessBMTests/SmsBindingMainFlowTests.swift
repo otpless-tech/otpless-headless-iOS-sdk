@@ -140,3 +140,56 @@ final class SmsBindingMainFlowResultTests: XCTestCase {
         XCTAssertNil(SmsBindingMainFlow.e164(countryCode: "+91", phoneNumber: ""))
     }
 }
+
+/// Found on a device: SNA failed and its status call named SIM binding as the next channel, but the main
+/// flow polled it like any other channel and nothing happened.
+final class SmsBindingAfterSnaTests: XCTestCase {
+
+    private let simBindingNext = """
+    {"authDetail":{"status":"FAILED","communicationDelivered":false,"channel":"SILENT_AUTH"},
+     "quantumLeap":{"state":"s1","channelAuthToken":"c8826741741c44bf973ab8764c899451","uid":"U1","channel":"SIM_BINDING",
+      "channels":["SIM_BINDING"],"asId":"A1","communicationMode":"OUTBOUND_SMS","status":"PENDING",
+      "timerSettings":{"interval":1500,"timeout":120000},"pollingRequired":true,
+      "simBinding":{"token":"c8826741741c44bf973ab8764c899451","vmn":"+917065888859","smsBody":"send-me",
+        "expiresInSeconds":120,"rulesHash":"67ce","rules":{"token_ttl":{"enabled":true,"seconds":120}}}}}
+    """
+
+    private let otpNext = """
+    {"authDetail":{"status":"FAILED","communicationDelivered":false,"channel":"SILENT_AUTH"},
+     "quantumLeap":{"state":"s1","channelAuthToken":"t","uid":"U1","channel":"OTP","channels":["OTP"],"asId":"A1",
+      "status":"PENDING","timerSettings":{"interval":3,"timeout":60},"pollingRequired":true,"communicationMode":"WHATSAPP"}}
+    """
+
+    private func status(_ json: String) throws -> TransactionStatusResponse {
+        try JSONDecoder().decode(TransactionStatusResponse.self, from: Data(json.utf8))
+    }
+
+    func testSimBindingAsTheNextChannelAfterSnaIsRunByTheSmsFlowNotPolled() throws {
+        let result = makeSnaUseCaseResponse(try status(simBindingNext))
+
+        let started = try XCTUnwrap(result.smsBindingStart)
+        XCTAssertEqual(started.issued.vmn, "+917065888859")
+        XCTAssertEqual(started.issued.smsBody, "send-me")
+        XCTAssertNil(result.tokenAsIdUIdAndTimerSettings?.timerSettings, "no generic poll: its 1500 would be read as seconds")
+        XCTAssertEqual(result.tokenAsIdUIdAndTimerSettings?.token, "c8826741741c44bf973ab8764c899451")
+        // The app still hears that SNA failed and what comes next.
+        XCTAssertEqual(result.otplessResponse?.count, 2)
+        XCTAssertEqual(result.otplessResponse?.last?.response?["deliveryChannel"] as? String, "OUTBOUND_SMS")
+    }
+
+    func testAMalformedSimBindingNextChannelFailsAtOnceInsteadOfHanging() throws {
+        let broken = simBindingNext.replacingOccurrences(of: #""smsBody":"send-me","#, with: "")
+        let result = makeSnaUseCaseResponse(try status(broken))
+        XCTAssertNil(result.smsBindingStart)
+        XCTAssertNil(result.tokenAsIdUIdAndTimerSettings?.timerSettings, "and nothing is polled")
+        let last = try XCTUnwrap(result.otplessResponse?.last)
+        XCTAssertEqual(last.response?["errorCode"] as? String, "SIM_BINDING_NOT_AVAILABLE")
+    }
+
+    func testAnotherNextChannelIsUntouched() throws {
+        let result = makeSnaUseCaseResponse(try status(otpNext))
+        XCTAssertNil(result.smsBindingStart)
+        XCTAssertEqual(result.tokenAsIdUIdAndTimerSettings?.timerSettings?.interval, 3, "OTP keeps its own polling")
+        XCTAssertEqual(result.tokenAsIdUIdAndTimerSettings?.timerSettings?.timeout, 60)
+    }
+}

@@ -808,6 +808,11 @@ private extension Otpless {
                 self.token = tokenAsIdUIdAndTimerSettings.token ?? ""
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
+                // SNA failed and the backend named outbound SMS as the next channel: run it here.
+                if let started = response.smsBindingStart {
+                    await runSmsBindingFromIntent(started, otplessRequest)
+                    return
+                }
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)

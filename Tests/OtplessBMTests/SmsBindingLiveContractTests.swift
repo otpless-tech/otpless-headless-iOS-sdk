@@ -210,38 +210,39 @@ final class SmsBindingLiveContractTests: XCTestCase {
         }
     }
 
-    // MARK: Report
+    // MARK: Ending an attempt (lapseMeta on the status call)
 
-    func testReportCarriesTheTokenAndTheSimBindingBlock() async throws {
-        SmsStubProtocol.reset(["/sim-binding-report/s1": (200, #"{"status":"SENT","expiresAt":1763436122,"platform":"IOS"}"#)])
-        let report = SmsBindingReport(
-            event: .sent, at: Date(timeIntervalSince1970: 1_800_000_000), reason: nil,
-            ios: .init(composerResult: "sent", sendCompletion: true,
-                       composerPresentedAt: Date(timeIntervalSince1970: 1_799_999_995),
-                       appRegainedControlAt: Date(timeIntervalSince1970: 1_800_000_000),
-                       returnSeconds: 5, iccidToken: "tok", iccidTokenStatus: "OK")
-        )
+    func testALapseGoesOnTheStatusCallAsLapseMeta() async throws {
+        SmsStubProtocol.reset(["/status/s1": (200, #"{"authDetail":{"status":"FAILED","errorCode":"USER_CANCELLED","errorDetails":"User cancelled"}}"#)])
 
-        try await backend().report(state: "s1", attemptId: "5f535be8", report: report)
+        try await backend().lapse(state: "s1", attemptId: "tok", lapse: .userCancelled)
 
         let sent = try XCTUnwrap(SmsStubProtocol.recorded.first)
-        XCTAssertEqual(sent.method, "POST")
-        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/sim-binding-report/s1")
-        XCTAssertEqual(sent.body?["token"] as? String, "5f535be8")
-        let sim = try XCTUnwrap(sent.body?["simBinding"] as? [String: Any])
-        XCTAssertEqual(Set(sim.keys), ["sentAt", "composerReturnedAt"], "the backend's iOS shape, nothing more")
-        XCTAssertEqual(sim["sentAt"] as? Int, 1_799_999_995_000, "when the composer went up, in milliseconds")
-        XCTAssertEqual(sim["composerReturnedAt"] as? Int, 1_800_000_000_000, "when the app got control back")
-        XCTAssertNil(sim["sentAck"], "Android only")
+        XCTAssertEqual(sent.method, "GET")
+        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/status/s1", "the same status API the poll uses")
+        let items = try XCTUnwrap(URLComponents(string: "https://host/?" + sent.query)?.queryItems)
+        XCTAssertEqual(items.first { $0.name == "token" }?.value, "tok")
+        let meta = try XCTUnwrap(items.first { $0.name == "lapseMeta" }?.value)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(meta.utf8)) as? [String: String])
+        XCTAssertEqual(json["error"], "USER_CANCELLED")
+        XCTAssertEqual(json["error_description"], "User cancelled")
+        XCTAssertFalse(sent.query.contains("{"), "the JSON is URL-encoded: \(sent.query)")
     }
 
-    func testAnEndReportHasAReasonAndNoSentAck() throws {
-        let dict = SmsBindingReport(event: .aborted, at: Date(timeIntervalSince1970: 1), reason: .sessionInterrupted, ios: nil).toDict()
-        XCTAssertEqual(dict.keys.sorted(), ["aborted"])
-        XCTAssertEqual(dict["aborted"] as? Bool, true)
-        for event in [SmsBindingReport.Event.failed, .cancelled] {
-            let other = SmsBindingReport(event: event, at: Date(timeIntervalSince1970: 1), reason: .smsSendFailed, ios: nil).toDict()
-            XCTAssertEqual(other.keys.sorted(), ["aborted"], "\(event) ends the attempt the same way")
+    func testTheLapseCodesAreTheOnesTheBackendAsksFor() {
+        XCTAssertEqual(SmsBindingLapse.userCancelled.error, "USER_CANCELLED")
+        XCTAssertEqual(SmsBindingLapse.failure(.sessionInterrupted).error, "SESSION_INTERRUPTED")
+        XCTAssertEqual(SmsBindingLapse.failure(.tokenExpired).error, "TOKEN_EXPIRED")
+        XCTAssertEqual(SmsBindingLapse.failure(.smsSendFailed).error, "SMS_SEND_FAILED")
+    }
+
+    func testAFailedLapseCallIsAnErrorTheCallerCanIgnore() async throws {
+        SmsStubProtocol.reset(["/status/s1": (500, "{}")])
+        do {
+            try await backend().lapse(state: "s1", attemptId: "tok", lapse: .userCancelled)
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? SmsBindingBackendError, .transport)
         }
     }
 

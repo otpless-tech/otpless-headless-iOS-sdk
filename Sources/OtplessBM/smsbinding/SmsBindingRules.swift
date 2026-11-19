@@ -114,10 +114,10 @@ internal struct SmsBindingRules: Equatable, Sendable {
         return TimeInterval(int(.iosComposerReturn, "max_seconds") ?? 30)
     }
 
-    /// R11. Minimum app version, or nil when the rule is off. The PRD does not name the value, so a
+    /// R11. Minimum app version, or nil when the rule is off. The backend names it `min_version`; a
     /// few likely names are accepted.
     var minimumAppVersion: String? {
-        firstString(.minAppVersion, ["version", "min_version", "app_version", "value"])
+        firstString(.minAppVersion, ["min_version", "version", "app_version", "value"])
     }
 
     /// R12. Minimum iOS version, or nil when the rule is off (`ios`, as in the PRD's

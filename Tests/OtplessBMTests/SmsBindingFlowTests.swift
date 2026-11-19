@@ -90,20 +90,20 @@ private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
     private let lock = NSLock()
     var rulesJSON: Data
     var startError: SmsBindingBackendError?
-    var reportError: SmsBindingBackendError?
+    var lapseError: SmsBindingBackendError?
     var ttlSeconds = 45
     var verdicts: [Result<SmsBindingVerdict, SmsBindingBackendError>] = []
     var onVerdict: (@Sendable () -> Void)?
 
     private var _startRequests: [SmsBindingStartRequest] = []
-    private var _reports: [SmsBindingReport] = []
+    private var _lapses: [SmsBindingLapse] = []
     private var _verdictCalls = 0
     private var _rulesCalls = 0
 
     init(rules: Data) { rulesJSON = rules }
 
     var startRequests: [SmsBindingStartRequest] { lock.locked { _startRequests } }
-    var reports: [SmsBindingReport] { lock.locked { _reports } }
+    var lapses: [SmsBindingLapse] { lock.locked { _lapses } }
     var verdictCalls: Int { lock.locked { _verdictCalls } }
 
     func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingStarted {
@@ -117,9 +117,9 @@ private final class FakeBackend: SmsBindingBackend, @unchecked Sendable {
         )
     }
 
-    func report(state: String, attemptId: String, report: SmsBindingReport) async throws {
-        lock.locked { _reports.append(report) }
-        if let reportError { throw reportError }
+    func lapse(state: String, attemptId: String, lapse: SmsBindingLapse) async throws {
+        lock.locked { _lapses.append(lapse) }
+        if let lapseError { throw lapseError }
     }
 
     func verdict(state: String, attemptId: String, sinceVersion: Int?, waitSeconds: Int) async throws -> SmsBindingVerdict {
@@ -228,10 +228,10 @@ final class SmsBindingFlowTests: XCTestCase {
             await useCase.run(state: "state-1", msisdn: msisdn, upiEntitlementDeclared: entitlement, previousAttemptId: previous)
         }
 
-        /// The abort report is sent from a task the guard starts; give it a moment.
-        func waitForReport(_ event: SmsBindingReport.Event) async -> SmsBindingReport? {
+        /// The R9 lapse is sent from a task the guard starts; give it a moment.
+        func waitForLapse(_ error: String) async -> SmsBindingLapse? {
             for _ in 0..<100 {
-                if let found = backend.reports.first(where: { $0.event == event }) { return found }
+                if let found = backend.lapses.first(where: { $0.error == error }) { return found }
                 try? await Task.sleep(nanoseconds: 20_000_000)
             }
             return nil
@@ -437,9 +437,9 @@ final class SmsBindingFlowTests: XCTestCase {
         let outcome = await h.run()
 
         XCTAssertEqual(outcome, .failed(.sessionInterrupted))
-        let aborted = await h.waitForReport(.aborted)
-        XCTAssertEqual(aborted?.reason, .sessionInterrupted, "the backend is told, so the token dies at once")
-        XCTAssertNil(h.backend.reports.first { $0.event == .sent }, "a message sent from the background is not reported as sent")
+        let lapse = await h.waitForLapse("SESSION_INTERRUPTED")
+        XCTAssertNotNil(lapse, "the backend is told, so the token dies at once")
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["SESSION_INTERRUPTED"], "and nothing else")
         XCTAssertTrue(h.session.began)
         XCTAssertTrue(h.session.ended, "the guard is released")
     }
@@ -453,8 +453,8 @@ final class SmsBindingFlowTests: XCTestCase {
         let outcome = await h.run()
 
         XCTAssertEqual(outcome, .failed(.sessionInterrupted))
-        let aborted = await h.waitForReport(.aborted)
-        XCTAssertNotNil(aborted)
+        let lapse = await h.waitForLapse("SESSION_INTERRUPTED")
+        XCTAssertNotNil(lapse)
         XCTAssertTrue(h.session.ended)
     }
 
@@ -463,14 +463,22 @@ final class SmsBindingFlowTests: XCTestCase {
         h.backend.verdicts = [verdict(.verified, binding: "bnd_1", version: 2)]
         let outcome = await h.run()
         XCTAssertEqual(outcome, .verified(bindingId: "bnd_1"))
-        XCTAssertNil(h.backend.reports.first { $0.event == .aborted })
+        XCTAssertTrue(h.backend.lapses.isEmpty, "an attempt that stays in front ends nothing")
         XCTAssertTrue(h.session.ended)
     }
 
-    func testTheAbortReportCarriesNoDeviceFields() {
-        let dict = SmsBindingReport(event: .aborted, at: Date(timeIntervalSince1970: 0), reason: .sessionInterrupted, ios: nil).toDict()
-        XCTAssertEqual(dict.keys.sorted(), ["aborted"], "the backend accepts only `aborted` as an end")
-        XCTAssertEqual(dict["aborted"] as? Bool, true)
+    func testTheLapseMetaIsTheBackendsJson() throws {
+        for (lapse, error, description) in [
+            (SmsBindingLapse.userCancelled, "USER_CANCELLED", "User cancelled"),
+            (.failure(.sessionInterrupted), "SESSION_INTERRUPTED", "App left the foreground"),
+            (.failure(.tokenExpired), "TOKEN_EXPIRED", "Token expired"),
+            (.failure(.smsSendFailed), "SMS_SEND_FAILED", "SMS could not be sent")
+        ] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lapse.json.utf8)) as? [String: String])
+            XCTAssertEqual(object["error"], error)
+            XCTAssertEqual(object["error_description"], description)
+            XCTAssertEqual(Set(object.keys), ["error", "error_description"])
+        }
     }
 
     // MARK: Happy path
@@ -498,12 +506,8 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(Set(simBinding.keys), ["platform", "osVersion", "appVersion", "deviceFingerprint"],
                        "only the fields the backend defines for iOS")
 
-        let sentReport = try! XCTUnwrap(h.backend.reports.first)
-        XCTAssertEqual(sentReport.event, .sent)
-        XCTAssertEqual(sentReport.ios?.sendCompletion, true)
-        XCTAssertEqual(sentReport.ios?.iccidToken, "iccid-token")
-        XCTAssertEqual(sentReport.ios?.iccidTokenStatus, "OK")
-        XCTAssertEqual(sentReport.ios?.returnSeconds ?? 0, 4, accuracy: 0.001)
+        XCTAssertTrue(h.backend.lapses.isEmpty, "a successful send reports nothing: the backend needs no timings")
+        XCTAssertEqual(h.iccid.fetches, 1, "R21's token is still requested")
     }
 
     func testPreviousAttemptIdIsForwardedSoTheBackendCanPickADifferentVmn() async {
@@ -523,9 +527,7 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(outcome, .failed(.noSim))
         XCTAssertEqual(h.backend.startRequests.count, 1)
         XCTAssertTrue(h.composer.calls.isEmpty)
-        XCTAssertEqual(h.backend.reports.count, 1)
-        XCTAssertEqual(h.backend.reports.first?.event, .failed)
-        XCTAssertEqual(h.backend.reports.first?.reason, .noSim)
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["NO_SIM"])
     }
 
     func testMissingEntitlementDeclarationEndsTheAttemptBeforeTheComposer() async {
@@ -533,7 +535,7 @@ final class SmsBindingFlowTests: XCTestCase {
         let outcome = await h.run(entitlement: false)
         XCTAssertEqual(outcome, .failed(.entitlementMissing))
         XCTAssertTrue(h.composer.calls.isEmpty)
-        XCTAssertEqual(h.backend.reports.first?.reason, .entitlementMissing)
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["ENTITLEMENT_MISSING"])
     }
 
     func testNoProgressIsReportedForAnAttemptThatFailedItsDeviceRules() async {
@@ -575,7 +577,7 @@ final class SmsBindingFlowTests: XCTestCase {
         h.composer.result = .cancelled
         let outcome = await h.run()
         XCTAssertEqual(outcome, .failed(.smsSendFailed))
-        XCTAssertEqual(h.backend.reports.map(\.event), [.cancelled])
+        XCTAssertEqual(h.backend.lapses, [.userCancelled])
         XCTAssertEqual(h.backend.verdictCalls, 0)
     }
 
@@ -584,7 +586,7 @@ final class SmsBindingFlowTests: XCTestCase {
         h.composer.result = .failed
         let outcome = await h.run()
         XCTAssertEqual(outcome, .failed(.smsSendFailed))
-        XCTAssertEqual(h.backend.reports.map(\.event), [.failed])
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["SMS_SEND_FAILED"])
     }
 
     // MARK: R19
@@ -595,7 +597,7 @@ final class SmsBindingFlowTests: XCTestCase {
             h.composer.sendCompletion = completion
             let outcome = await h.run()
             XCTAssertEqual(outcome, .failed(.smsSendFailed), "completion=\(String(describing: completion))")
-            XCTAssertEqual(h.backend.reports.map(\.event), [.failed])
+            XCTAssertEqual(h.backend.lapses.map(\.error), ["SMS_SEND_FAILED"])
             XCTAssertEqual(h.backend.verdictCalls, 0)
         }
     }
@@ -607,10 +609,7 @@ final class SmsBindingFlowTests: XCTestCase {
         h.composer.returnSeconds = 31
         let outcome = await h.run()
         XCTAssertEqual(outcome, .failed(.tokenExpired))
-        let report = try! XCTUnwrap(h.backend.reports.first)
-        XCTAssertEqual(report.event, .failed)
-        XCTAssertEqual(report.reason, .tokenExpired)
-        XCTAssertEqual(report.ios?.returnSeconds ?? 0, 31, accuracy: 0.001, "timings are reported even when declining")
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["TOKEN_EXPIRED"], "the app enforces R20 and reports the failure")
         XCTAssertEqual(h.backend.verdictCalls, 0)
     }
 
@@ -643,7 +642,7 @@ final class SmsBindingFlowTests: XCTestCase {
         h.composer.returnSeconds = 50
         let outcome4 = await h.run()
         XCTAssertEqual(outcome4, .failed(.tokenExpired))
-        XCTAssertEqual(h.backend.reports.first?.reason, .tokenExpired)
+        XCTAssertEqual(h.backend.lapses.map(\.error), ["TOKEN_EXPIRED"])
     }
 
     // MARK: R21
@@ -654,16 +653,15 @@ final class SmsBindingFlowTests: XCTestCase {
         h.backend.verdicts = [verdict(.verified, version: 2)]
         let outcome5 = await h.run()
         XCTAssertEqual(outcome5, .verified(bindingId: nil))
-        XCTAssertEqual(h.backend.reports.first?.ios?.iccidTokenStatus, "NIL")
-        XCTAssertNil(h.backend.reports.first?.ios?.iccidToken)
+        XCTAssertEqual(h.iccid.fetches, 1)
     }
 
-    func testUnsupportedOSIsReportedAsUnsupported() async {
+    func testAnUnsupportedOSDoesNotFailTheAttempt() async {
         let h = Harness()
         h.iccid.result = .unsupported
         h.backend.verdicts = [verdict(.verified, version: 2)]
-        _ = await h.run()
-        XCTAssertEqual(h.backend.reports.first?.ios?.iccidTokenStatus, "UNSUPPORTED")
+        let outcome = await h.run()
+        XCTAssertEqual(outcome, .verified(bindingId: nil))
     }
 
     func testIccidTokenIsNotRequestedWhenR21IsOff() async {
@@ -671,7 +669,6 @@ final class SmsBindingFlowTests: XCTestCase {
         h.backend.verdicts = [verdict(.verified, version: 2)]
         _ = await h.run()
         XCTAssertEqual(h.iccid.fetches, 0)
-        XCTAssertEqual(h.backend.reports.first?.ios?.iccidTokenStatus, "NOT_REQUIRED")
     }
 
     func testIccidTokenIsNotRequestedWhenR19IsOffEvenIfR21IsOn() async {
@@ -682,15 +679,15 @@ final class SmsBindingFlowTests: XCTestCase {
         XCTAssertEqual(h.iccid.fetches, 0, "PRD section 8: R21 needs R19")
     }
 
-    // MARK: Reporting
+    // MARK: Ending an attempt at the backend
 
-    func testAFailedReportDoesNotEndTheAttempt() async {
+    func testAFailedLapseCallDoesNotChangeWhatTheUserSees() async {
         let h = Harness()
-        h.backend.reportError = .transport
-        h.backend.verdicts = [verdict(.verified, version: 2)]
+        h.backend.lapseError = .transport
+        h.composer.result = .cancelled
         let outcome6 = await h.run()
-        XCTAssertEqual(outcome6, .verified(bindingId: nil))
-        XCTAssertEqual(h.backend.reports.count, 2, "one retry, then move on")
+        XCTAssertEqual(outcome6, .failed(.smsSendFailed))
+        XCTAssertEqual(h.backend.lapses.count, 2, "one retry, then move on")
     }
 
     // MARK: Verdict

@@ -63,43 +63,40 @@ internal struct SmsBindingStarted: Equatable, Sendable {
     let rules: SmsBindingRules
 }
 
-internal struct SmsBindingReport: Sendable {
-    enum Event: String, Sendable { case sent = "SENT", failed = "FAILED", cancelled = "CANCELLED", aborted = "ABORTED" }
+/// Why an attempt ended without a binding, sent to the backend on the status call as `lapseMeta`.
+/// A non-null `lapseMeta` fails the transaction and closes the attempt as aborted, so the token stops
+/// working at once. The backend asks for these codes: `USER_CANCELLED`, `SESSION_INTERRUPTED` (R9),
+/// `TOKEN_EXPIRED` (R20) and `SMS_SEND_FAILED`. It does not need the send time or the composer return
+/// time: the app enforces R20 itself and reports a failure this way.
+internal struct SmsBindingLapse: Equatable, Sendable {
+    let error: String
+    let description: String
 
-    struct IOS: Sendable {
-        let composerResult: String
-        let sendCompletion: Bool?
-        let composerPresentedAt: Date
-        let appRegainedControlAt: Date
-        let returnSeconds: TimeInterval
-        let iccidToken: String?
-        /// `OK`, `NIL`, `UNSUPPORTED` or `NOT_REQUIRED`.
-        let iccidTokenStatus: String
+    static let userCancelled = SmsBindingLapse(error: "USER_CANCELLED", description: "User cancelled")
+
+    /// A failure the app decided on, under its own name.
+    static func failure(_ failure: SmsBindingFailure) -> SmsBindingLapse {
+        SmsBindingLapse(error: failure.rawValue, description: description(for: failure))
     }
 
-    let event: Event
-    let at: Date
-    let reason: SmsBindingFailure?
-    let ios: IOS?
+    /// The JSON the status call carries: `{"error": …, "error_description": …}`.
+    var json: String {
+        let object: [String: Any] = ["error": error, "error_description": description]
+        let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
 
-    /// The `simBinding` member of the report, in the backend's shape for iOS: after sending,
-    /// `sentAt` (when the composer went up) and `composerReturnedAt` (when the app got control back);
-    /// for anything that ends the attempt without a send (cancelled, failed, aborted) just
-    /// `aborted: true`, the only thing the backend accepts as an end. Android's `sentAck` and
-    /// `deliveryStatus` do not apply. The reason and the iOS-only facts (Apple's send completion, the
-    /// ICCID token) stay on the device: the backend has no field for them yet.
-    func toDict() -> [String: Any] {
-        switch event {
-        case .sent:
-            var body: [String: Any] = ["sentAt": Self.millis(ios?.composerPresentedAt ?? at)]
-            if let returned = ios?.appRegainedControlAt { body["composerReturnedAt"] = Self.millis(returned) }
-            return body
-        case .failed, .cancelled, .aborted:
-            return ["aborted": true]
+    private static func description(for failure: SmsBindingFailure) -> String {
+        switch failure {
+        case .smsSendFailed: return "SMS could not be sent"
+        case .tokenExpired: return "Token expired"
+        case .sessionInterrupted: return "App left the foreground"
+        case .noSim: return "No SIM or no cellular signal"
+        case .upgradeRequired: return "App or OS version too low"
+        case .entitlementMissing: return "UPI entitlement not declared"
+        default: return "Attempt ended"
         }
     }
-
-    private static func millis(_ date: Date) -> Int { Int((date.timeIntervalSince1970 * 1000).rounded()) }
 }
 
 internal struct SmsBindingVerdict: Equatable, Sendable {
@@ -125,7 +122,8 @@ internal enum SmsBindingBackendError: Error, Equatable, Sendable {
 internal protocol SmsBindingBackend: Sendable {
     /// Creates the attempt. The rules the client is on come back with the token.
     func startAttempt(state: String, request: SmsBindingStartRequest) async throws -> SmsBindingStarted
-    func report(state: String, attemptId: String, report: SmsBindingReport) async throws
+    /// Ends the attempt at the backend, as a failure the app decided on.
+    func lapse(state: String, attemptId: String, lapse: SmsBindingLapse) async throws
     /// `sinceVersion` and `waitSeconds` are for backends that can hold a request open; the live
     /// one answers at once and the caller polls.
     func verdict(state: String, attemptId: String, sinceVersion: Int?, waitSeconds: Int) async throws -> SmsBindingVerdict
@@ -136,7 +134,6 @@ internal protocol SmsBindingBackend: Sendable {
 internal struct LiveSmsBindingBackend: SmsBindingBackend {
     /// Starting an attempt is the normal intent call.
     static let startPath = ApiManager.POST_INTENT_PATH
-    static let reportPath = "/v3/lp/user/transaction/sim-binding-report/{state}"
     /// The general status API, as the other channels use. The attempt is named by `token`, passed
     /// explicitly: the SDK's stored token, asId and uid are deliberately left alone, because a stored
     /// asId makes the next intent continue the same auth session. This is the only place the path is
@@ -204,12 +201,14 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         )
     }
 
-    func report(state: String, attemptId: String, report: SmsBindingReport) async throws {
+    func lapse(state: String, attemptId: String, lapse: SmsBindingLapse) async throws {
+        // The same status call, with `lapseMeta` added. The answer is the failed transaction and is
+        // not needed.
         _ = try await call(
             state: state,
-            path: Self.reportPath,
-            method: "POST",
-            body: ["token": attemptId, "simBinding": report.toDict()]
+            path: Self.statusPath,
+            method: "GET",
+            query: ["token": attemptId, "lapseMeta": lapse.json]
         )
     }
 

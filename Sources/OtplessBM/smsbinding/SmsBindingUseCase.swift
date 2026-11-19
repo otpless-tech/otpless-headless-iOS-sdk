@@ -133,7 +133,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         if let failure = SmsBindingPrechecks.evaluate(
             rules: rules, device: device, upiEntitlementDeclared: upiEntitlementDeclared
         ) {
-            await reportEnd(state, issued.attemptId, event: .failed, reason: failure)
+            await lapse(state, issued.attemptId, .failure(failure))
             return .failed(failure)
         }
         onState?(.issued)
@@ -142,7 +142,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         let session: SmsBindingSessionGuard = rules.isOn(.singleSession) ? makeSessionGuard() : InactiveSessionGuard()
         session.begin { [self] done in
             Task {
-                await reportEnd(state, issued.attemptId, event: .aborted, reason: .sessionInterrupted)
+                await lapse(state, issued.attemptId, .failure(.sessionInterrupted))
                 done()
             }
         }
@@ -158,10 +158,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         // 5. What the way it was sent means
         switch sent.result {
         case .cancelled:
-            await reportBestEffort(state, issued.attemptId, event: .cancelled, reason: .smsSendFailed, outcome: sent)
+            await lapse(state, issued.attemptId, .userCancelled)
             return .failed(.smsSendFailed)
         case .failed:
-            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .smsSendFailed, outcome: sent)
+            await lapse(state, issued.attemptId, .failure(.smsSendFailed))
             return .failed(.smsSendFailed)
         case .sent:
             break
@@ -169,32 +169,29 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         // R19: Apple's completion is the proof the SMS reached the carrier. Composer ".sent"
         // alone only means the user tapped Send.
         if rules.requiresUpiEntitlement && sent.sendCompletion != true {
-            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .smsSendFailed, outcome: sent)
+            await lapse(state, issued.attemptId, .failure(.smsSendFailed))
             return .failed(.smsSendFailed)
         }
         // R20
         if let limit = rules.composerReturnLimit, sent.returnSeconds > limit {
-            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .tokenExpired, outcome: sent)
+            await lapse(state, issued.attemptId, .failure(.tokenExpired))
             return .failed(.tokenExpired)
         }
         // R3, measured locally from when the token arrived
         if now() >= expiresAt {
-            await reportBestEffort(state, issued.attemptId, event: .failed, reason: .tokenExpired, outcome: sent)
+            await lapse(state, issued.attemptId, .failure(.tokenExpired))
             return .failed(.tokenExpired)
         }
 
         // 6. R21: ICCID token, within the window after sending. A nil token is marked, not failed.
-        var tokenResult: IccidTokenResult?
+        // The backend has no route for it yet, so it is requested (as the ticket says) and goes no
+        // further. Nothing else is sent after a send: the backend does not need the send time or the
+        // composer return time, and it learns the rest from the SMS check.
         if rules.requiresIccidToken {
             let remaining = max(0, Self.iccidWindow - now().timeIntervalSince(sent.returnedAt))
-            tokenResult = (try? await AsyncUtils.withTimeout(seconds: remaining) { [iccid] in await iccid.fetch() }) ?? .nilToken
+            _ = (try? await AsyncUtils.withTimeout(seconds: remaining) { [iccid] in await iccid.fetch() }) ?? .nilToken
         }
 
-        // 7. Tell the backend what the device saw
-        await reportBestEffort(
-            state, issued.attemptId, event: .sent, reason: nil, outcome: sent,
-            iccid: tokenResult, iccidRequired: rules.requiresIccidToken
-        )
         attempt.advance(to: .sent)
         onState?(.sent)
         prompter.showProgress(expiresAt: expiresAt)
@@ -268,52 +265,13 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         return .failed(.tokenExpired)
     }
 
-    // MARK: - Reporting
+    // MARK: - Ending an attempt at the backend
 
-    /// A report that fails must not end the attempt: the VMN callback is the deciding proof and
-    /// may still verify it. Tries twice, then moves on.
-    private func reportBestEffort(
-        _ state: String,
-        _ attemptId: String,
-        event: SmsBindingReport.Event,
-        reason: SmsBindingFailure?,
-        outcome: SmsComposerOutcome,
-        iccid: IccidTokenResult? = nil,
-        iccidRequired: Bool = false
-    ) async {
-        let iccidStatus: String
-        var iccidToken: String?
-        switch iccid {
-        case .token(let value)?: iccidStatus = "OK"; iccidToken = value
-        case .nilToken?: iccidStatus = "NIL"
-        case .unsupported?: iccidStatus = "UNSUPPORTED"
-        case nil: iccidStatus = iccidRequired ? "NIL" : "NOT_REQUIRED"
-        }
-        let report = SmsBindingReport(
-            event: event,
-            at: now(),
-            reason: reason,
-            ios: SmsBindingReport.IOS(
-                composerResult: outcome.result.rawValue,
-                sendCompletion: outcome.sendCompletion,
-                composerPresentedAt: outcome.presentedAt,
-                appRegainedControlAt: outcome.returnedAt,
-                returnSeconds: outcome.returnSeconds,
-                iccidToken: iccidToken,
-                iccidTokenStatus: iccidStatus
-            )
-        )
+    /// Ends the attempt at the backend (`lapseMeta` on the status call), so the token stops working at
+    /// once. Best effort, twice: a failure to tell the backend must not change what the user sees.
+    private func lapse(_ state: String, _ attemptId: String, _ lapse: SmsBindingLapse) async {
         for _ in 0..<Self.reportAttempts {
-            if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
-        }
-    }
-
-    /// Tells the backend the attempt ended without the device sending, which invalidates the token at
-    /// once: R9 (the app left the foreground) and a device rule that failed after the token was issued.
-    private func reportEnd(_ state: String, _ attemptId: String, event: SmsBindingReport.Event, reason: SmsBindingFailure) async {
-        let report = SmsBindingReport(event: event, at: now(), reason: reason, ios: nil)
-        for _ in 0..<Self.reportAttempts {
-            if (try? await backend.report(state: state, attemptId: attemptId, report: report)) != nil { return }
+            if (try? await backend.lapse(state: state, attemptId: attemptId, lapse: lapse)) != nil { return }
         }
     }
 

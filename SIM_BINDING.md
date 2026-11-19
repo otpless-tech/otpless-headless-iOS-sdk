@@ -52,9 +52,14 @@ Otpless.shared.startSmsBinding(
 - **How it talks to the backend:** SMS binding is a channel of the intent call. The SDK sends the
   normal phone intent with a `simBinding` block (`platform`, `osVersion`, `appVersion` and the
   device id as `deviceFingerprint`). The response carries the token, the number to send to, the
-  message and your rules together. The SDK then reports to `sim-binding-report` (`sentAt` and
-  `composerReturnedAt` after sending, or `aborted` if the attempt ends without a send) and polls
-  the general `status` API with the attempt's token every 1.5 s until the attempt is verified, rejected or expired. A successful poll returns a normal authentication result: `bindingId` carries
+  message and your rules together. After the user sends, the SDK polls the general `status` API with
+  the attempt's token every 1.5 s until the attempt is verified, rejected or expired. Nothing else is
+  reported after a send. If the attempt ends without one (the user cancels, the send fails, R20's
+  time limit is exceeded, or R9's single session is broken), the SDK adds `lapseMeta` to the status
+  call (`{"error": "USER_CANCELLED", "error_description": "User cancelled"}`, URL-encoded), which
+  fails the transaction and closes the attempt as aborted. The codes are `USER_CANCELLED`,
+  `SESSION_INTERRUPTED` (R9), `TOKEN_EXPIRED` (R20) and `SMS_SEND_FAILED`. The backend does not
+  enforce R20: the app does. A successful poll returns a normal authentication result: `bindingId` carries
   its token, and `mobile` and `userId` say who was verified.
 - Because the rules arrive with the token, the device checks (minimum app and iOS version, SIM, the
   UPI entitlement declaration) run after the attempt exists. If one fails, the SDK reports it so the

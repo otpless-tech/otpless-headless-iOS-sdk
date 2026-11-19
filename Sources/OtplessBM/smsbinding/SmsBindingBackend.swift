@@ -105,8 +105,12 @@ internal struct SmsBindingReport: Sendable {
 internal struct SmsBindingVerdict: Equatable, Sendable {
     let state: SmsBindingState
     let reason: String?
+    /// On success, the token the backend returned (`authDetail.token`).
     let bindingId: String?
     let stateVersion: Int
+    /// On success, who was verified (`authDetail.user`).
+    var mobile: String? = nil
+    var userId: String? = nil
 }
 
 /// How a backend call failed. `rejected` is the backend saying no with a reason; `transport` is
@@ -225,7 +229,11 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
             // sent, so this is at least `sent`.
             return SmsBindingVerdict(state: .sent, reason: nil, bindingId: nil, stateVersion: 0)
         case "SUCCESS":
-            return SmsBindingVerdict(state: .verified, reason: nil, bindingId: detail["token"] as? String, stateVersion: 0)
+            let user = detail["user"] as? [String: Any]
+            return SmsBindingVerdict(
+                state: .verified, reason: nil, bindingId: detail["token"] as? String, stateVersion: 0,
+                mobile: user?["mobile"] as? String, userId: user?["uid"] as? String
+            )
         case "FAILED":
             let reason = (detail["errorCode"] as? String) ?? (detail["errorDetails"] as? String)
             return SmsBindingVerdict(state: .rejected, reason: reason, bindingId: nil, stateVersion: 0)

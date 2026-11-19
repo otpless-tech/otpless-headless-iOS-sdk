@@ -251,11 +251,13 @@ final class SmsBindingLiveContractTests: XCTestCase {
     }
 
     func testStatusSuccessIsVerifiedAndCarriesTheAuthToken() async throws {
-        let success = #"{"authDetail":{"status":"SUCCESS","token":"auth-token","channel":"SIM_BINDING","asId":"a"},"config":{},"oneTap":{}}"#
+        let success = #"{"authDetail":{"status":"SUCCESS","token":"auth-token","channel":"SIM_BINDING","asId":"a","user":{"mobile":"919812345621","uid":"u-1"}},"config":{},"oneTap":{}}"#
         SmsStubProtocol.reset(["/sim-binding-status/s1": (200, success)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .verified)
         XCTAssertEqual(verdict.bindingId, "auth-token")
+        XCTAssertEqual(verdict.mobile, "919812345621", "who was verified")
+        XCTAssertEqual(verdict.userId, "u-1")
     }
 
     func testStatusFailedCarriesTheErrorCodeAsTheReason() async throws {

@@ -349,6 +349,15 @@ final class SmsBindingFlowTests: XCTestCase {
         }
     }
 
+    func testASuccessCarriesWhoWasVerified() async {
+        let h = Harness()
+        h.backend.verdicts = [.success(SmsBindingVerdict(
+            state: .verified, reason: nil, bindingId: "tok", stateVersion: 2, mobile: "919812345621", userId: "u-1"
+        ))]
+        let outcome = await h.run()
+        XCTAssertEqual(outcome, .verified(bindingId: "tok", mobile: "919812345621", userId: "u-1"))
+    }
+
     // MARK: Previous attempt (R4)
 
     func testARetryNamesTheAttemptItFollows() async {

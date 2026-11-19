@@ -1,7 +1,7 @@
 import Foundation
 
 internal enum SmsBindingOutcome: Equatable, Sendable {
-    case verified(bindingId: String?)
+    case verified(bindingId: String?, mobile: String? = nil, userId: String? = nil)
     case failed(SmsBindingFailure)
 }
 
@@ -231,7 +231,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     attempt.advance(to: .verified)
                     prompter.updateProgress(.verified)
                     onState?(.verified)
-                    return .verified(bindingId: verdict.bindingId)
+                    return .verified(bindingId: verdict.bindingId, mobile: verdict.mobile, userId: verdict.userId)
                 case .rejected:
                     onState?(.rejected)
                     return .failed(SmsBindingFailure(backendReason: verdict.reason))

@@ -44,7 +44,9 @@ public struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
 }
 
 public enum OtplessSmsBindingResult: Equatable, Sendable {
-    case verified(bindingId: String?)
+    /// - `bindingId`: the token the backend returned for the verified attempt.
+    /// - `mobile`, `userId`: who was verified, as the backend reports them.
+    case verified(bindingId: String?, mobile: String? = nil, userId: String? = nil)
     case failed(OtplessSmsBindingFailure)
 }
 
@@ -130,7 +132,7 @@ extension Otpless {
             }
             SmsBindingRunGate.shared.end()
             switch outcome {
-            case .verified(let bindingId): finish(.verified(bindingId: bindingId))
+            case .verified(let bindingId, let mobile, let userId): finish(.verified(bindingId: bindingId, mobile: mobile, userId: userId))
             case .failed(let failure):
                 finish(.failed(OtplessSmsBindingFailure(
                     failure,

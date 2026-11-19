@@ -202,6 +202,7 @@ final class SmsBindingFlowTests: XCTestCase {
         let prompter = FakePrompter()
         let lastAttempt = SmsBindingLastAttempt()
         let blockMemory = SmsBindingBlockMemory(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let boundNumbers = InMemoryBoundNumberStore()
         let session = FakeSessionGuard()
         let guardsCreated = Counter()
 
@@ -216,7 +217,7 @@ final class SmsBindingFlowTests: XCTestCase {
             useCase = SmsBindingUseCase(
                 backend: backend, composer: composer, iccid: iccid, device: device,
                 prompter: prompter, planStatusSupported: { planStatusSupported },
-                lastAttempt: lastAttempt, blockMemory: blockMemory, sessionGuard: { guardsCreated.increment(); return session },
+                lastAttempt: lastAttempt, boundNumbers: boundNumbers, blockMemory: blockMemory, sessionGuard: { guardsCreated.increment(); return session },
                 sdkVersion: "3.2.0", deviceFingerprintHash: { "fp-hash" },
                 now: { clock.now },
                 sleep: { seconds in log.record(seconds); clock.advance(seconds) }
@@ -347,6 +348,26 @@ final class SmsBindingFlowTests: XCTestCase {
             XCTAssertEqual(request.planStatusSupported, supported)
             XCTAssertNil(request.simBindingDict()["planStatusSupported"])
         }
+    }
+
+    func testAVerifiedBindingIsRememberedForTheSimCheck() async {
+        let h = Harness()
+        h.backend.verdicts = [verdict(.verified, version: 2)]
+        XCTAssertNil(h.boundNumbers.current)
+        _ = await h.run(msisdn: "+919812345621")
+        XCTAssertEqual(h.boundNumbers.current, "+919812345621", "checkSimBinding() and the listener use it from now on")
+    }
+
+    func testAFailedBindingIsNotRemembered() async {
+        let h = Harness()
+        h.composer.result = .cancelled
+        _ = await h.run()
+        XCTAssertNil(h.boundNumbers.current)
+
+        let mismatch = Harness()
+        mismatch.backend.verdicts = [verdict(.rejected, reason: "NUMBER_MISMATCH", version: 2)]
+        _ = await mismatch.run()
+        XCTAssertNil(mismatch.boundNumbers.current)
     }
 
     func testASuccessCarriesWhoWasVerified() async {

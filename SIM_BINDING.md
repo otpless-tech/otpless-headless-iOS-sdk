@@ -78,13 +78,17 @@ Apple's plan status API arrives with iOS 27. The SDK finds it by looking for its
 `Otpless.shared.isSimCheckSupported` is the right test (not the OS version).
 
 ```swift
-Otpless.shared.checkSimBinding(phoneNumber: "+919812345621") { result in
+Otpless.shared.checkSimBinding { result in          // checks the number this app last bound
     switch result {
     case .success(let check): print(check.status, check.reason as Any)   // bound / notBound / unknown
-    case .failure(let error): print(error.code)                          // SIM_CHECK_NOT_SUPPORTED, INVALID_PHONE_NUMBER
+    case .failure(let error): print(error.code)   // SIM_CHECK_NOT_SUPPORTED, NO_BOUND_NUMBER
     }
 }
 ```
+
+The SDK keeps the number it last bound (in the Keychain, set when `startSmsBinding` verifies), so there
+is nothing to pass. `NO_BOUND_NUMBER` means nothing has been bound yet. To check another number, use
+`checkSimBinding(phoneNumber:completion:)` with an E.164 number (`INVALID_PHONE_NUMBER` if it is not).
 
 | Result | Meaning |
 |---|---|
@@ -118,13 +122,20 @@ for a number that is already allowed: it shows the dialog again, and Not Now tak
 ### Listener
 
 ```swift
-Otpless.shared.setSimBindingListener(phoneNumber: number, intervalSeconds: 60) { check in
-    // called only when the result changes
+Otpless.shared.setSimBindingListener(intervalSeconds: 60) { check in
+    // called only when the status changes: bound, notBound or unknown
 }
 Otpless.shared.removeSimBindingListener()
 ```
 
-Checks on launch, on return to the foreground, when the radio technology changes, and every
-`intervalSeconds` (at least 5) while in the foreground. The first result for a number is saved with
-no callback. iOS cannot check while the app is suspended, so a change in the meantime is reported
-at the next launch. A failed Apple call is ignored, not reported as a change.
+Watches the bound number. You can set it before anything is bound (at app launch, say): it waits and
+starts checking once a number is bound. It checks on launch, on return to the foreground, when the radio
+technology changes, and every `intervalSeconds` (at least 5) while in the foreground.
+
+- **Only a change of status calls back.** `unknown` with another reason is not a change. The first
+  result is recorded without a call.
+- iOS cannot check while the app is suspended, so a change in the meantime is reported at the next
+  launch or return to the foreground.
+- A failed Apple call is ignored, not reported as a change.
+- Before iOS 27 it returns `SIM_CHECK_NOT_SUPPORTED`.
+- `setSimBindingListener(phoneNumber:intervalSeconds:listener:)` watches a number you choose.

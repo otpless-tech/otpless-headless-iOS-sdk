@@ -56,6 +56,14 @@ private final class Collected: @unchecked Sendable {
     func add(_ check: OtplessSimBindingCheck) { lock.locked { _checks.append(check) } }
 }
 
+private final class MemoryBound: BoundNumberStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+    init(_ value: String? = nil) { self.value = value }
+    var current: String? { lock.locked { value } }
+    func save(_ e164: String) { lock.locked { value = e164 } }
+}
+
 private let number = "+918980994455"
 
 final class SimCheckTests: XCTestCase {
@@ -221,6 +229,22 @@ final class SimCheckTests: XCTestCase {
         XCTAssertEqual(out.checks, [.unknown(.notAuthorized)])
     }
 
+    func testAChangeOfReasonInsideUnknownIsNotAChange() async throws {
+        // The ticket: fire when the STATUS changes. unknown stays unknown.
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
+        fake.set(.notAuthorized)
+        let m = monitor(fake, store, out)
+        await m.evaluate()
+        fake.set(.restricted)
+        await m.evaluate()
+        XCTAssertTrue(out.checks.isEmpty, "NOT_AUTHORIZED to RESTRICTED is still unknown")
+        XCTAssertEqual(store.last(for: number), "UNKNOWN")
+
+        fake.set(.authorized)
+        await m.evaluate()
+        XCTAssertEqual(out.checks, [OtplessSimBindingCheck(.bound)], "unknown to bound is a change")
+    }
+
     func testATransientApiErrorIsNeitherSavedNorReported() async throws {
         let fake = FakePlanStatus(), out = Collected(), store = MemoryStore()
         let m = monitor(fake, store, out)
@@ -283,5 +307,81 @@ final class SimCheckTests: XCTestCase {
         let retry = await headless.offerRetry(.tokenExpired, context: SmsBindingFailureContext())
         XCTAssertTrue(confirmed)
         XCTAssertFalse(retry)
+    }
+}
+
+
+/// The forms the ENG-628 ticket describes: no number to pass, the SDK keeps the bound one.
+final class SimCheckNoArgumentTests: XCTestCase {
+    private var savedProvider: PlanStatusProvider!
+    private var savedBound: BoundNumberStore!
+
+    override func setUp() {
+        super.setUp()
+        savedProvider = SimCheckEnvironment.provider
+        savedBound = SimCheckEnvironment.boundNumbers
+    }
+
+    override func tearDown() {
+        SimCheckEnvironment.provider = savedProvider
+        SimCheckEnvironment.boundNumbers = savedBound
+        Otpless.shared.removeSimBindingListener()
+        super.tearDown()
+    }
+
+    private func check() async -> Result<OtplessSimBindingCheck, OtplessSimCheckError> {
+        await withCheckedContinuation { continuation in Otpless.shared.checkSimBinding { continuation.resume(returning: $0) } }
+    }
+
+    func testCheckUsesTheBoundNumber() async throws {
+        SimCheckEnvironment.provider = FakePlanStatus()
+        SimCheckEnvironment.boundNumbers = MemoryBound(number)
+        let result = await check()
+        XCTAssertEqual(try result.get(), OtplessSimBindingCheck(.bound))
+    }
+
+    func testNothingBoundYetIsAnErrorNotAStatus() async throws {
+        SimCheckEnvironment.provider = FakePlanStatus()
+        SimCheckEnvironment.boundNumbers = MemoryBound(nil)
+        let result = await check()
+        XCTAssertEqual(result, .failure(.noBoundNumber))
+        XCTAssertEqual(OtplessSimCheckError.noBoundNumber.code, "NO_BOUND_NUMBER")
+    }
+
+    func testBeforeIOS27BothFormsAnswerNotSupportedWhateverIsBound() async throws {
+        let unsupported = FakePlanStatus(); unsupported.supported = false
+        SimCheckEnvironment.provider = unsupported
+        SimCheckEnvironment.boundNumbers = MemoryBound(number)
+        let result = await check()
+        XCTAssertEqual(result, .failure(.notSupported))
+        let registered = Otpless.shared.setSimBindingListener { _ in }
+        guard case .failure(let error) = registered else { return XCTFail("registering must fail before iOS 27") }
+        XCTAssertEqual(error, .notSupported)
+    }
+
+    func testTheListenerCanBeSetBeforeAnythingIsBoundAndThenWaits() async throws {
+        let fake = FakePlanStatus(), out = Collected(), store = MemoryStore(), bound = MemoryBound(nil)
+        let center = NotificationCenter()
+        let radio = Notification.Name("CTServiceRadioAccessTechnologyDidChangeNotification")
+        let host = SimBindingListenerHost()
+        host.start(
+            numberProvider: { bound.current }, interval: 3600, checker: SimBindingChecker(provider: fake), store: store,
+            listener: { out.add($0) }, center: center, isForeground: { true }
+        )
+        defer { host.stop() }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertNil(store.last(for: number), "no number, so nothing is checked or saved")
+        XCTAssertTrue(out.checks.isEmpty)
+
+        bound.save(number)                                   // a binding verifies
+        center.post(name: radio, object: nil)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(store.last(for: number), "BOUND", "now it checks, and records the first result silently")
+        XCTAssertTrue(out.checks.isEmpty)
+
+        fake.set(.notAuthorized)
+        center.post(name: radio, object: nil)
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(out.checks, [.unknown(.notAuthorized)])
     }
 }

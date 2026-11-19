@@ -111,6 +111,7 @@ extension Otpless {
                     backend: backend,
                     prompter: prompter,
                     lastAttempt: .shared,
+                    boundNumbers: SimCheckEnvironment.boundNumbers,
                     blockMemory: .shared,
                     // The stable device id the SDK already reports with every request.
                     deviceFingerprintHash: { Otpless.shared.appInfo["deviceId"] as? String }

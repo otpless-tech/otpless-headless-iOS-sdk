@@ -26,6 +26,51 @@ extension Otpless {
         }
     }
 
+    /// Asks whether the number this app last bound has an active plan on this device. This is the
+    /// form the ticket describes: no number to pass, because the SDK keeps the bound number (set when
+    /// `startSmsBinding` verifies). Never shows a dialog.
+    ///
+    /// Answers `NO_BOUND_NUMBER` if nothing has been bound yet, and `SIM_CHECK_NOT_SUPPORTED` before
+    /// iOS 27.
+    public func checkSimBinding(
+        completion: @escaping @Sendable (Result<OtplessSimBindingCheck, OtplessSimCheckError>) -> Void
+    ) {
+        guard SimCheckEnvironment.provider.isSupported else {
+            return DispatchQueue.main.async { completion(.failure(.notSupported)) }
+        }
+        guard let number = SimCheckEnvironment.boundNumbers.current else {
+            return DispatchQueue.main.async { completion(.failure(.noBoundNumber)) }
+        }
+        checkSimBinding(phoneNumber: number, completion: completion)
+    }
+
+    /// Calls `listener` when the status of the bound number changes (`bound`, `notBound` or
+    /// `unknown`; a different reason inside `unknown` is not a change). This is the form the ticket
+    /// describes: no number to pass. It can be set before anything is bound: it then waits, and
+    /// starts checking once a number is bound.
+    ///
+    /// The check runs on app launch, on return to the foreground, when the radio technology changes,
+    /// and every `intervalSeconds` while the app is in the foreground. The first result is recorded
+    /// without a call. iOS cannot check while the app is suspended, so a change in the meantime is
+    /// reported at the next launch.
+    ///
+    /// Replaces any listener set earlier. Returns `SIM_CHECK_NOT_SUPPORTED` before iOS 27.
+    @discardableResult
+    public func setSimBindingListener(
+        intervalSeconds: TimeInterval = 60,
+        listener: @escaping @Sendable (OtplessSimBindingCheck) -> Void
+    ) -> Result<Void, OtplessSimCheckError> {
+        guard SimCheckEnvironment.provider.isSupported else { return .failure(.notSupported) }
+        SimBindingListenerHost.shared.start(
+            numberProvider: { SimCheckEnvironment.boundNumbers.current },
+            interval: max(intervalSeconds, 5),
+            checker: SimBindingChecker(provider: SimCheckEnvironment.provider),
+            store: SimCheckEnvironment.store,
+            listener: listener
+        )
+        return .success(())
+    }
+
     /// Asks Apple for permission to check `phoneNumber`, for apps that show their own explanation
     /// first. Apple's dialog appears only when the permission is not already held.
     public func requestNumberStatusPermission(
@@ -75,6 +120,7 @@ extension Otpless {
 internal enum SimCheckEnvironment {
     nonisolated(unsafe) static var provider: PlanStatusProvider = LivePlanStatusProvider()
     nonisolated(unsafe) static var store: SimBindingStateStore = UserDefaultsSimBindingStateStore()
+    nonisolated(unsafe) static var boundNumbers: BoundNumberStore = KeychainBoundNumberStore()
 }
 
 /// Owns the one listener and the events that make it re-check.
@@ -95,9 +141,24 @@ internal final class SimBindingListenerHost: @unchecked Sendable {
         center: NotificationCenter = .default,
         isForeground: @escaping @Sendable () async -> Bool = { await MainActor.run { UIApplication.shared.applicationState == .active } }
     ) {
+        start(
+            numberProvider: { phoneNumber }, interval: interval, checker: checker, store: store,
+            listener: listener, center: center, isForeground: isForeground
+        )
+    }
+
+    func start(
+        numberProvider: @escaping @Sendable () -> String?,
+        interval: TimeInterval,
+        checker: SimBindingChecker,
+        store: SimBindingStateStore,
+        listener: @escaping @Sendable (OtplessSimBindingCheck) -> Void,
+        center: NotificationCenter = .default,
+        isForeground: @escaping @Sendable () async -> Bool = { await MainActor.run { UIApplication.shared.applicationState == .active } }
+    ) {
         stop()
         let monitor = SimBindingMonitor(
-            phoneNumber: phoneNumber, checker: checker, store: store,
+            numberProvider: numberProvider, checker: checker, store: store,
             deliver: { check in DispatchQueue.main.async { listener(check) } }
         )
 

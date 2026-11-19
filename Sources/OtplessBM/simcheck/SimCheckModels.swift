@@ -38,10 +38,9 @@ public struct OtplessSimBindingCheck: Equatable, Sendable {
         OtplessSimBindingCheck(.unknown, reason: reason)
     }
 
-    /// Stable text used to tell whether two checks are the same result.
-    internal var signature: String {
-        reason.map { "\(status.rawValue):\($0.rawValue)" } ?? status.rawValue
-    }
+    /// What the listener compares: the status alone. The ticket says to fire when the status changes,
+    /// so `unknown` with another reason is not a change.
+    internal var signature: String { status.rawValue }
 }
 
 /// The user's answer to Apple's "check the phone number on this device?" prompt.
@@ -63,6 +62,9 @@ public struct OtplessSimCheckError: Error, Equatable, Sendable {
     public static let notSupported = OtplessSimCheckError(code: "SIM_CHECK_NOT_SUPPORTED")
     /// The number is not in E.164 form (`+919812345621`).
     public static let invalidPhoneNumber = OtplessSimCheckError(code: "INVALID_PHONE_NUMBER")
+    /// No number has been bound on this install yet, so there is nothing to check. Bind first, or
+    /// pass the number.
+    public static let noBoundNumber = OtplessSimCheckError(code: "NO_BOUND_NUMBER")
 }
 
 // MARK: - Apple's values

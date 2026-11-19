@@ -95,23 +95,33 @@ private extension String {
 /// with. iOS cannot check while the app is suspended, so a change that happens meanwhile is
 /// reported on the next launch or return to the foreground, by comparing with the saved result.
 internal final class SimBindingMonitor: @unchecked Sendable {
-    private let phoneNumber: String
+    private let numberProvider: @Sendable () -> String?
     private let checker: SimBindingChecker
     private let store: SimBindingStateStore
     private let deliver: @Sendable (OtplessSimBindingCheck) -> Void
     private let lock = NSLock()
     private var evaluating = false
 
+    /// `numberProvider` is asked at every re-check. With no number yet (nothing bound), the check waits.
     init(
+        numberProvider: @escaping @Sendable () -> String?,
+        checker: SimBindingChecker,
+        store: SimBindingStateStore,
+        deliver: @escaping @Sendable (OtplessSimBindingCheck) -> Void
+    ) {
+        self.numberProvider = numberProvider
+        self.checker = checker
+        self.store = store
+        self.deliver = deliver
+    }
+
+    convenience init(
         phoneNumber: String,
         checker: SimBindingChecker,
         store: SimBindingStateStore,
         deliver: @escaping @Sendable (OtplessSimBindingCheck) -> Void
     ) {
-        self.phoneNumber = phoneNumber
-        self.checker = checker
-        self.store = store
-        self.deliver = deliver
+        self.init(numberProvider: { phoneNumber }, checker: checker, store: store, deliver: deliver)
     }
 
     /// One re-check. A check already running absorbs this one: its answer is just as fresh.
@@ -122,6 +132,7 @@ internal final class SimBindingMonitor: @unchecked Sendable {
         lock.unlock()
         defer { lock.lock(); evaluating = false; lock.unlock() }
 
+        guard let phoneNumber = numberProvider() else { return }
         guard case .success(let result) = await checker.check(phoneNumber: phoneNumber) else { return }
         // An API error says nothing about the SIM (Apple's helper process failed once in five
         // permission requests on device), so it is neither saved nor reported as a change.

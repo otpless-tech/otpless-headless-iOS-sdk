@@ -29,6 +29,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     private let device: SmsBindingDevice
     private let prompter: SmsBindingPrompter
     private let lastAttempt: SmsBindingLastAttempt
+    private let boundNumbers: BoundNumberStore
     private let blockMemory: SmsBindingBlockMemory
     private let makeSessionGuard: @Sendable () -> SmsBindingSessionGuard
     private let planStatusSupported: @Sendable () -> Bool
@@ -45,6 +46,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         prompter: SmsBindingPrompter = HeadlessSmsBindingPrompter(),
         planStatusSupported: @escaping @Sendable () -> Bool = { LivePlanStatusProvider().isSupported },
         lastAttempt: SmsBindingLastAttempt = SmsBindingLastAttempt(),
+        boundNumbers: BoundNumberStore = InMemoryBoundNumberStore(),
         blockMemory: SmsBindingBlockMemory = SmsBindingBlockMemory(defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard),
         sessionGuard: @escaping @Sendable () -> SmsBindingSessionGuard = { LiveSmsBindingSessionGuard() },
         sdkVersion: String = Constants.SDK_VERSION,
@@ -60,6 +62,7 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.device = device
         self.prompter = prompter
         self.lastAttempt = lastAttempt
+        self.boundNumbers = boundNumbers
         self.blockMemory = blockMemory
         self.makeSessionGuard = sessionGuard
         self.planStatusSupported = planStatusSupported
@@ -197,13 +200,14 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         prompter.showProgress(expiresAt: expiresAt)
 
         // 8. Wait for the verdict
-        return await awaitVerdict(state: state, attempt: &attempt, issuedAt: issuedAt, session: session, onState: onState)
+        return await awaitVerdict(state: state, msisdn: msisdn, attempt: &attempt, issuedAt: issuedAt, session: session, onState: onState)
     }
 
     // MARK: - Verdict
 
     private func awaitVerdict(
         state: String,
+        msisdn: String,
         attempt: inout SmsBindingAttempt,
         issuedAt: Date,
         session: SmsBindingSessionGuard,
@@ -228,6 +232,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                 switch verdict.state {
                 case .verified:
                     lastAttempt.clear()
+                    // The number is bound: from now on `checkSimBinding()` and the listener know it.
+                    boundNumbers.save(msisdn)
                     attempt.advance(to: .verified)
                     prompter.updateProgress(.verified)
                     onState?(.verified)

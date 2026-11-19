@@ -153,10 +153,31 @@ public struct OtplessResponse: @unchecked Sendable {
     }
     
     internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String,
-                                              message errorMessage: String, snaError: SNAError?) -> OtplessResponse {
+                                              message errorMessage: String, snaError: SNAError?,
+                                              reason: String? = nil) -> OtplessResponse {
         var response: [String: Any] = ["errorCode": errorCode, "errorMessage": errorMessage]
         response[OtplessConstant.SnaErrorKey] = snaError?.toDict()
+        // The backend's own reason (for example SIM_NOT_BOUND), kept beside the stable numeric errorCode.
+        if let reason, !reason.isEmpty { response["failureReason"] = reason }
         return OtplessResponse(responseType: .AUTH_TERMINATED, response: response, statusCode: statusCode)
+    }
+
+    /// A transaction the backend ended with status FAILED. One mapping for every place that sees it
+    /// (the status poll and the OTP verify call), so a failure never reads as a success.
+    internal static func terminalResponse(forFailed authDetail: AuthDetail) -> OtplessResponse {
+        let detail = authDetail.errorDetails?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return makeTerminalResponse(
+            status: 400,
+            error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
+            message: detail.isEmpty ? "Authentication on all channels failed." : detail,
+            snaError: authDetail.snaError,
+            reason: authDetail.errorCode
+        )
+    }
+
+    /// The status call itself was refused (401 token expired, 7304, 5xx): the transaction cannot continue.
+    internal static func pollRejected(by error: ApiError) -> OtplessResponse {
+        OtplessResponse(responseType: .AUTH_TERMINATED, response: error.getResponse(), statusCode: error.statusCode)
     }
 
     internal static var snaTransactionFinalTimeout: OtplessResponse {

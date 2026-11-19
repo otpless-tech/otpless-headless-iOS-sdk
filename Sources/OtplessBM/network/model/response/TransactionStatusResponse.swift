@@ -71,6 +71,8 @@ struct AuthDetail: Codable {
     let webauthnRegistered: Bool?
     let communicationMode: String?
     let errorDetails: String?
+    /// Reason name on a FAILED status, e.g. SIM_NOT_BOUND. Optional: older backends do not send it.
+    let errorCode: String?
     let snaError: SNAError?
 }
 

@@ -74,6 +74,21 @@ final class SmsBindingCopyTests: XCTestCase {
     }
 }
 
+final class SmsBindingRetryabilityTests: XCTestCase {
+    /// Found on a device with no network: the message said "try again" but no button was offered.
+    func testAFailedCallIsRetryableAndTheRefusalsThatCannotHelpAreNot() {
+        XCTAssertTrue(SmsBindingFailure.internalError.isRetryable)
+        XCTAssertTrue(OtplessSmsBindingFailure(.internalError).isRetryable)
+        for failure in [SmsBindingFailure.noSim, .upgradeRequired, .entitlementMissing, .deviceBlocked,
+                        .vmnPoolUnavailable, .verificationFailed, .notAvailable, .invalidPhoneNumber] {
+            XCTAssertFalse(failure.isRetryable, failure.rawValue)
+        }
+        for failure in [SmsBindingFailure.smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted] {
+            XCTAssertTrue(failure.isRetryable, failure.rawValue)
+        }
+    }
+}
+
 final class SmsBindingRuleValueTests: XCTestCase {
 
     private func decode(_ rulesJSON: String) throws -> SmsBindingRules {

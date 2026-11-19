@@ -45,10 +45,11 @@ internal enum SmsBindingFailure: String, Error, Equatable, Sendable {
     /// Whether the user can sensibly try again straight away (PRD section 15, "What the app should do").
     var isRetryable: Bool {
         switch self {
-        case .permissionMissing, .smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted:
+        case .permissionMissing, .smsSendFailed, .numberMismatch, .tokenExpired, .sessionInterrupted, .internalError:
+            // `internalError` is a call that failed (no network, a backend error): trying again can work.
             return true
         case .noSim, .airplaneMode, .upgradeRequired, .entitlementMissing, .unsafeSmsApp,
-             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .internalError, .notAvailable, .invalidPhoneNumber:
+             .deviceBlocked, .vmnPoolUnavailable, .verificationFailed, .notAvailable, .invalidPhoneNumber:
             return false
         }
     }

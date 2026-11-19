@@ -291,6 +291,8 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
     /// 7184 is an HTTP 429; the others are 400s.
     private static let numericCodes: [String: SmsBindingFailure] = [
         "7102": .invalidPhoneNumber,
+        // The same refusal, renamed by the backend on Nov 19 ("Invalid phone number or email").
+        "7106": .invalidPhoneNumber,
         "7184": .deviceBlocked,
         "7185": .vmnPoolUnavailable,
         "7186": .upgradeRequired

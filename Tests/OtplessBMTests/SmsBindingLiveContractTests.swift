@@ -183,6 +183,8 @@ final class SmsBindingLiveContractTests: XCTestCase {
              .rejected(.upgradeRequired, retryAfterSeconds: nil)),
             (400, #"{"message":"Invalid Request","errorCode":"7102","description":"Request error: Invalid phone number"}"#,
              .rejected(.invalidPhoneNumber, retryAfterSeconds: nil)),
+            (400, #"{"message":"Invalid Request","errorCode":"7106","description":"Request error: Invalid phone number or email."}"#,
+             .rejected(.invalidPhoneNumber, retryAfterSeconds: nil)),
             (500, "{}", .transport),
             (502, "oops", .transport),
             (400, #"{"message":"Invalid Request","errorCode":"7006"}"#, .transport)

@@ -74,6 +74,7 @@ extension Otpless {
             backend: apiRepository.makeSmsBindingBackend(),
             prompter: HeadlessSmsBindingPrompter(),
             lastAttempt: .shared,
+            boundNumbers: SimCheckEnvironment.boundNumbers,
             blockMemory: .shared,
             deviceFingerprintHash: { Otpless.shared.appInfo["deviceId"] as? String }
         )
@@ -81,7 +82,7 @@ extension Otpless {
             state: state,
             msisdn: msisdn,
             started: started,
-            upiEntitlementDeclared: false,
+            upiEntitlementDeclared: UpiEntitlementDeclaration.shared.declared,
             onState: { [weak self] reached in
                 if reached == .sent { DispatchQueue.main.async { self?.invokeResponse(SmsBindingMainFlow.deliveredResponse) } }
             }

@@ -15,6 +15,21 @@ Outbound SMS binding is off for every app until OTPLESS switches it on in your m
 (`merchant.config.outboundSmsBindingConfig.isEnabled`). Until then `startSmsBinding` returns
 `FEATURE_NOT_ENABLED` and nothing is sent. The iOS 27 SIM check below does not depend on this.
 
+## Device context
+
+Once SMS binding is switched on for your app, the SDK sends a `deviceContext` with each intent, so the
+backend can route an iOS flow by what the device can do: `platform`, `os_version`,
+`plan_status_supported` (the iOS 27 plan status API is present) and `upi_entitlement`. Apps that were
+not set up send exactly the intent they sent before.
+
+Tell the SDK once, at launch, whether your app holds Apple's UPI Device Validation entitlement:
+
+```swift
+Otpless.shared.setUpiEntitlementDeclared(true)   // only if the entitlement is really in the app
+```
+
+`startSmsBinding(upiEntitlementDeclared:)` uses that declaration unless you pass a value.
+
 ## Outbound SMS binding
 
 ```swift

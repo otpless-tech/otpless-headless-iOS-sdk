@@ -62,19 +62,21 @@ extension Otpless {
     /// - Parameters:
     ///   - phoneNumber: The number being bound, without its country code (`9812345621`).
     ///   - countryCode: Its country code (`+91` or `91`).
-    ///   - upiEntitlementDeclared: Pass `true` only if the app holds Apple's UPI Device Validation
-    ///     entitlement. iOS offers no way for the SDK to check this itself, so the SDK trusts the
-    ///     declaration and the backend enforces it. With the rule on and `false` here the attempt
+    ///   - upiEntitlementDeclared: Whether the app holds Apple's UPI Device Validation entitlement.
+    ///     Leave it `nil` to use what the app declared with `setUpiEntitlementDeclared` (`false` if it
+    ///     declared nothing). iOS offers no way for the SDK to check this itself, so the SDK trusts
+    ///     the declaration and the backend enforces it. With the rule on and `false` here the attempt
     ///     stops with `ENTITLEMENT_MISSING`; it never falls back to an editable message.
-    ///   - ui: `.headless` (default) draws nothing of its own. `.standard` adds the dual-SIM prompt,
-    ///     a "verifying" indicator and a "Try again" alert on failures that can be retried.
+    ///   - ui: `.headless` (default) draws nothing of its own. `.standard` adds an alert that explains
+    ///     the step before sending, a progress card with the time left, and a "Try again" alert on
+    ///     failures that can be retried.
     ///   - onProgress: Called on the main thread as the attempt advances.
     ///   - completion: Called once, on the main thread, with the outcome. With `.standard` this is
     ///     after the user has dismissed a failure alert or stopped retrying.
     public func startSmsBinding(
         phoneNumber: String,
         countryCode: String,
-        upiEntitlementDeclared: Bool = false,
+        upiEntitlementDeclared: Bool? = nil,
         ui: OtplessSmsBindingUI = .headless,
         onProgress: (@Sendable (OtplessSmsBindingProgress) -> Void)? = nil,
         completion: @escaping @Sendable (OtplessSmsBindingResult) -> Void
@@ -117,7 +119,7 @@ extension Otpless {
                     state: state,
                     msisdn: msisdn,
                     countryCode: code,
-                    upiEntitlementDeclared: upiEntitlementDeclared,
+                    upiEntitlementDeclared: upiEntitlementDeclared ?? UpiEntitlementDeclaration.shared.declared,
                     onState: { reached in
                         guard let progress = OtplessSmsBindingProgress(rawValue: reached.rawValue) else { return }
                         DispatchQueue.main.async { onProgress?(progress) }

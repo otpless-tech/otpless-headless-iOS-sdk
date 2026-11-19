@@ -112,11 +112,15 @@ internal final class ApiRepository: @unchecked Sendable {
     func postIntent(
         state: String,
         body: PostIntentRequestBody,
-        appAttestInfo: [String: String]? = nil
+        appAttestInfo: [String: String]? = nil,
+        deviceContext: [String: Any]? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
         var requestBody = body.toDict()
         if let appAttestInfo { requestBody["appAttestInfo"] = appAttestInfo }
+        // Only for apps that have switched SMS binding on (see `SimDeviceContext.forIntent`); every
+        // other app sends the body it always did.
+        if let deviceContext { requestBody["deviceContext"] = deviceContext }
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,

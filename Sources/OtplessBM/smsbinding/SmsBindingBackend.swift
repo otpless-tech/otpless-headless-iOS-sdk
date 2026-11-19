@@ -177,6 +177,11 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         ).toDict()
         body["sdkPlatform"] = "IOS"
         body["simBinding"] = request.simBindingDict()
+        body["deviceContext"] = SimDeviceContext.dictionary(
+            osVersion: request.osVersion,
+            planStatusSupported: request.planStatusSupported,
+            upiEntitlement: request.upiEntitlementDeclared
+        )
 
         let data = try await call(state: state, path: Self.startPath, method: "POST", body: body)
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

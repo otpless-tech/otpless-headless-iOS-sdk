@@ -124,6 +124,21 @@ Otpless.shared.requestNumberStatusPermission(phoneNumber: number) { result in
 Apple's dialog appears only when the permission is not already held. Do not call Apple's request
 for a number that is already allowed: it shows the dialog again, and Not Now takes the permission away.
 
+### At OTP verify (iOS 27 and above)
+
+For an app that has SMS binding switched on, the normal OTP flow also uses the plan status API. When
+the user submits the OTP, the SDK silently checks the number and adds `simBound` to the verify call:
+
+| Check | Sent |
+|---|---|
+| `bound` | `simBound: true` |
+| `notBound` | `simBound: false`, which fails the transaction (`SIM_NOT_BOUND`) |
+| `unknown` (no permission, restricted, low confidence, an Apple error) | nothing. The login is never failed on a guess. |
+
+The SDK does not show Apple's dialog here. Ask for the permission after number entry with
+`requestNumberStatusPermission`, so the check has an answer by the time the OTP is verified. A verified
+OTP whose number the SIM holds also becomes the bound number for `checkSimBinding()`.
+
 ### Listener
 
 ```swift

@@ -385,3 +385,75 @@ final class SimCheckNoArgumentTests: XCTestCase {
         XCTAssertEqual(out.checks, [.unknown(.notAuthorized)])
     }
 }
+
+/// ENG-628 item 4: what the verify-OTP call says about the SIM on iOS 27 and above.
+final class SimBoundForOtpTests: XCTestCase {
+
+    private func value(_ fake: FakePlanStatus, enabled: Bool = true, code: String? = "+91", phone: String? = "8980994455") async -> Bool? {
+        await SimBoundForOtp.value(smsBindingEnabled: enabled, provider: fake, countryCode: code, phoneNumber: phone)
+    }
+
+    func testBoundIsTrueAndNotBoundIsFalse() async {
+        let bound = FakePlanStatus()
+        let isBound = await value(bound)
+        XCTAssertEqual(isBound, true)
+
+        let notBound = FakePlanStatus()
+        notBound.set(hint: PlanHint(available: false, highConfidence: true))
+        let isNotBound = await value(notBound)
+        XCTAssertEqual(isNotBound, false)
+    }
+
+    /// `simBound = false` fails the login, so only a certain answer may produce a value.
+    func testAnUncertainAnswerSendsNothing() async {
+        for authorization in [PlanAuthorization.notAuthorized, .restricted, .notSupported] {
+            let fake = FakePlanStatus(); fake.set(authorization)
+            let result = await value(fake)
+            XCTAssertNil(result, "\(authorization)")
+        }
+        let low = FakePlanStatus(); low.set(hint: PlanHint(available: false, highConfidence: false))
+        let lowResult = await value(low)
+        XCTAssertNil(lowResult, "low confidence")
+
+        let broken = FakePlanStatus(); broken.authorization = .failure(.system)
+        let brokenResult = await value(broken)
+        XCTAssertNil(brokenResult, "an Apple error")
+    }
+
+    func testAppsAndDevicesThatDoNotTakePartSendNothing() async {
+        let fake = FakePlanStatus()
+        let off = await value(fake, enabled: false)
+        XCTAssertNil(off, "SMS binding is not switched on for the app")
+
+        let unsupported = FakePlanStatus(); unsupported.supported = false
+        let before27 = await value(unsupported)
+        XCTAssertNil(before27, "no plan status API before iOS 27")
+
+        let noPhone = await value(fake, phone: nil)
+        XCTAssertNil(noPhone, "an email request")
+        let noCode = await value(fake, code: nil)
+        XCTAssertNil(noCode)
+        let emptyPhone = await value(fake, phone: "")
+        XCTAssertNil(emptyPhone)
+        XCTAssertEqual(fake.hints, 0, "Apple is not asked when the flow does not take part")
+    }
+
+    func testTheNumberIsBuiltFromCountryCodeAndPhone() {
+        let fake = FakePlanStatus()
+        for (code, expected) in [("+91", "+918980994455"), ("91", "+918980994455"), (" +91 ", "+918980994455")] {
+            XCTAssertEqual(
+                SimBoundForOtp.e164(smsBindingEnabled: true, provider: fake, countryCode: code, phoneNumber: "8980994455"),
+                expected, code
+            )
+        }
+    }
+
+    func testTheVerifyBodyGainsARealBooleanOnlyWhenThereIsAnAnswer() {
+        let base: [String: Any] = ["otp": "123456", "mobile": "8980994455"]
+        XCTAssertEqual(SimBoundForOtp.body(base, simBound: nil).keys.sorted(), ["mobile", "otp"], "unchanged without an answer")
+        let withTrue = SimBoundForOtp.body(base, simBound: true)
+        XCTAssertEqual(withTrue["simBound"] as? Bool, true)
+        XCTAssertEqual(withTrue["otp"] as? String, "123456")
+        XCTAssertEqual(SimBoundForOtp.body(base, simBound: false)["simBound"] as? Bool, false)
+    }
+}

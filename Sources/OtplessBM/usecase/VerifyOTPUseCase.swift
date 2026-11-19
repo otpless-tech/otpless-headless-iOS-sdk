@@ -9,11 +9,16 @@
 import Foundation
 
 class VerifyOTPUseCase {
-    func invoke(state: String, queryParams: [String: String], getTransactionStatusUseCase: TransactionStatusUseCase) async -> OtplessResponse {
+    func invoke(
+        state: String,
+        queryParams: [String: String],
+        simBound: Bool? = nil,
+        getTransactionStatusUseCase: TransactionStatusUseCase
+    ) async -> OtplessResponse {
         log(message: "[VerifyOTP] Submitting OTP — authType: \(Otpless.shared.authType), rsId: \(Otpless.shared.rsId.isEmpty ? "<none>" : Otpless.shared.rsId)", type: .VERIFY)
 
         let response = await Otpless.shared.apiRepository
-            .verifyOTP(queryParams: queryParams, state: state)
+            .verifyOTP(queryParams: queryParams, state: state, simBound: simBound)
 
         switch response {
         case .failure(let error):

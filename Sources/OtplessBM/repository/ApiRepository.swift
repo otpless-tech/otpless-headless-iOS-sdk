@@ -184,14 +184,19 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    func verifyOTP(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+    func verifyOTP(
+        queryParams: [String: String],
+        state: String,
+        simBound: Bool? = nil
+    ) async -> Result<TransactionStatusResponse, Error> {
         let apiName = "verifyOTP"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.OTP_VERIFICATION_PATH,
                 method: "POST",
-                body: appendTokenIds(queryParams: queryParams)
+                // `simBound` is added only on iOS 27+ for apps with SMS binding on, and only when known
+                body: SimBoundForOtp.body(appendTokenIds(queryParams: queryParams), simBound: simBound)
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))

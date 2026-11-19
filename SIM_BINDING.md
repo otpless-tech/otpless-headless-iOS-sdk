@@ -108,7 +108,7 @@ number it shows "Phone number mismatch" with no Allow button. The SDK reports th
 the same as a refusal, because Apple's answer is the same for both.
 
 Apple asks the user once per number: "Allow <app> to check the phone number on this device?" with
-**Not Now** and **Allow**. A denied user can be asked again. Show your own explanation first:
+**Not Now** and **Allow**. A denied user can be asked again, and must be: Settings has no toggle for this permission (on iOS 27.0.1 the app's settings page shows only Apple Intelligence & Siri, Search and Mobile Data), so asking through `requestNumberStatusPermission` is the only way back. Reinstalling the app also clears the permission. Show your own explanation first:
 
 ```swift
 Otpless.shared.requestNumberStatusPermission(phoneNumber: number) { result in

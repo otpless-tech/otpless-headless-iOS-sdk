@@ -17,6 +17,8 @@
 
 ## Unreleased
 ### Fixes
+- **A transaction the backend ended as `FAILED` is no longer reported as a sign-in.** The verify-OTP call answers HTTP 200 even when it fails the transaction, and the SDK read that as `ONETAP`. It now returns `AUTH_TERMINATED` with the backend's message and a new `failureReason` key (for example `SIM_NOT_BOUND`); the numeric `errorCode` (`9106`) is unchanged. The status poll maps a `FAILED` status the same way and now passes the backend's message and `failureReason` instead of the generic text.
+- **The status poll no longer ends without telling the app.** A refused status call (401 token expired, 7304, 5xx) now ends with `AUTH_TERMINATED` carrying the backend's `errorCode` and message, and a poll that runs out of attempts reports the transaction timeout (`9106`). Before, the app waited forever.
 - Invalid state (`7005`) on the intent or merchant config API now refreshes the cached state and retries the call once per session — Android parity.
 - Stale state and session data left in the Keychain after an app reinstall are now cleared on the first launch. The uid is kept.
 

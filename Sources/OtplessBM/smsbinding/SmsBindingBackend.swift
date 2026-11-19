@@ -137,9 +137,11 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
     /// Starting an attempt is the normal intent call.
     static let startPath = ApiManager.POST_INTENT_PATH
     static let reportPath = "/v3/lp/user/transaction/sim-binding-report/{state}"
-    /// The token is a query parameter. The backend may reuse `silent-auth-status` for fallbacks
-    /// (ENG-627), which would change this path; it is the only place it is written.
-    static let statusPath = "/v3/lp/user/transaction/sim-binding-status/{state}"
+    /// The general status API, as the other channels use. The attempt is named by `token`, passed
+    /// explicitly: the SDK's stored token, asId and uid are deliberately left alone, because a stored
+    /// asId makes the next intent continue the same auth session. This is the only place the path is
+    /// written.
+    static let statusPath = ApiManager.TRANSACTION_STATUS_PATH
     /// The channel the intent response names when it routed the request to SIM binding.
     static let channel = "SIM_BINDING"
     /// The channel the intent asks for; the backend decides the request becomes SIM binding.

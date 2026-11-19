@@ -241,18 +241,18 @@ final class SmsBindingLiveContractTests: XCTestCase {
     // MARK: Status poll
 
     func testStatusPendingMeansWaiting() async throws {
-        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, #"{"authDetail":{"status":"PENDING"}}"#)])
+        SmsStubProtocol.reset(["/status/s1": (200, #"{"authDetail":{"status":"PENDING"}}"#)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .sent)
         let sent = try XCTUnwrap(SmsStubProtocol.recorded.first)
         XCTAssertEqual(sent.method, "GET")
-        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/sim-binding-status/s1")
+        XCTAssertEqual(sent.path, "/v3/lp/user/transaction/status/s1", "the general status API")
         XCTAssertTrue(sent.query.contains("token=tok"), "the token is a query parameter: \(sent.query)")
     }
 
     func testStatusSuccessIsVerifiedAndCarriesTheAuthToken() async throws {
         let success = #"{"authDetail":{"status":"SUCCESS","token":"auth-token","channel":"SIM_BINDING","asId":"a","user":{"mobile":"919812345621","uid":"u-1"}},"config":{},"oneTap":{}}"#
-        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, success)])
+        SmsStubProtocol.reset(["/status/s1": (200, success)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .verified)
         XCTAssertEqual(verdict.bindingId, "auth-token")
@@ -262,7 +262,7 @@ final class SmsBindingLiveContractTests: XCTestCase {
 
     func testStatusFailedCarriesTheErrorCodeAsTheReason() async throws {
         let failed = #"{"authDetail":{"status":"FAILED","channel":"SIM_BINDING","errorCode":"NUMBER_MISMATCH","errorDetails":"NUMBER_MISMATCH"}}"#
-        SmsStubProtocol.reset(["/sim-binding-status/s1": (200, failed)])
+        SmsStubProtocol.reset(["/status/s1": (200, failed)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .rejected)
         XCTAssertEqual(verdict.reason, "NUMBER_MISMATCH")
@@ -270,14 +270,14 @@ final class SmsBindingLiveContractTests: XCTestCase {
     }
 
     func testAnExpiredAttemptAnswersWithAnErrorAndIsReadAsExpired() async throws {
-        SmsStubProtocol.reset(["/sim-binding-status/s1": (400, #"{"errorCode":"7011","message":"Transaction expired"}"#)])
+        SmsStubProtocol.reset(["/status/s1": (400, #"{"errorCode":"7011","message":"Transaction expired"}"#)])
         let verdict = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
         XCTAssertEqual(verdict.state, .expired)
     }
 
     func testAServerErrorOrAnUnknownStatusIsTransportSoThePollCarriesOn() async throws {
         for (status, body) in [(500, "{}"), (200, #"{"authDetail":{"status":"SOMETHING_NEW"}}"#), (200, #"{"x":1}"#)] {
-            SmsStubProtocol.reset(["/sim-binding-status/s1": (status, body)])
+            SmsStubProtocol.reset(["/status/s1": (status, body)])
             do {
                 _ = try await backend().verdict(state: "s1", attemptId: "tok", sinceVersion: nil, waitSeconds: 20)
                 XCTFail("expected an error for \(status) \(body)")

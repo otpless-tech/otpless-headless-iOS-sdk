@@ -152,4 +152,7 @@ internal final class SNAUseCase: @unchecked Sendable {
 internal struct SNAUseCaseResponse {
     let tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings?
     let otplessResponse: [OtplessResponse]?
+    /// Set when the next channel the backend named is outbound SMS SIM binding. It is run by the SMS flow,
+    /// not polled like the other channels.
+    var smsBindingStart: SmsBindingStarted? = nil
 }

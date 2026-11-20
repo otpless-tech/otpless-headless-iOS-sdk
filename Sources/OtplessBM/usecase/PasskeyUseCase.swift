@@ -6,6 +6,8 @@
 //
 
 import Foundation
+
+#if os(iOS)
 import AuthenticationServices
 import LocalAuthentication
 
@@ -327,3 +329,15 @@ internal class PasskeyASAuthorizationView: NSObject, ASAuthorizationControllerDe
         return responseJson
     }
 }
+#else
+/// Passkeys (platform WebAuthn) are not supported on tvOS; every attempt fails with code 5208.
+internal class PasskeyUseCase: NSObject {
+    init(others usecaseProvider: UsecaseProvider) {}
+
+    func autherizePasskey(request: [String: Any]) async -> Result<OtplessResponse, Error> {
+        return .failure(NSError(domain: "this plarform is not supported", code: 5208))
+    }
+
+    func isWebAuthnsupportedOnDevice() -> Bool { false }
+}
+#endif

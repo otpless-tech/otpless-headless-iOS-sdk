@@ -113,6 +113,26 @@ Otpless.shared.requestNumberStatusPermission(phoneNumber: number) { result in
 Apple's dialog appears only when the permission is not already held. Do not call Apple's request
 for a number that is already allowed: it shows the dialog again, and Not Now takes the permission away.
 
+### OTP with SIM bind (`OTP_BIND`, iOS 27 and above)
+
+The backend can send a code that also binds the SIM. The app sees a normal OTP step:
+`INITIATE` with `authType: OTP`, `channel: OTP` and `deliveryChannel: OTP_BIND`. It can come straight from the
+sign-in call, or after silent authentication failed (the app also sees a `VERIFY` for the silent authentication).
+
+Before the app is told to show the OTP screen, the SDK settles Apple's permission to check the number:
+
+- It checks the permission silently, and opens Apple's dialog only if the user has not decided yet.
+- A permission already held is never asked for again: Apple would show the dialog again, and Not Now would take the
+  permission away.
+- A number the phone does not hold gets "Phone number mismatch" with no Allow button, and counts as not allowed.
+- The answer never blocks the code. With no permission the SDK sends no `simBound` (next section).
+- Before iOS 27, or for an email request, nothing happens.
+
+If the code is verified and the SIM is not bound, the backend fails the verify (`SIM_NOT_BOUND`). When that response
+names SMS binding as the next channel and carries its data, the SDK switches to it: the app gets an `INITIATE` with
+`authType: SIM_BINDING` (no error in between), the message screen opens, and the flow ends as in the SMS binding
+section above. Without a next channel the sign-in ends with `AUTH_TERMINATED`.
+
 ### At OTP verify (iOS 27 and above)
 
 For an app that has SMS binding switched on, the normal OTP flow also uses the plan status API. When

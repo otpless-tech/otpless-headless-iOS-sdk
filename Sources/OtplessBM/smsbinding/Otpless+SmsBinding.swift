@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Public types
 
 /// Where an outbound SMS binding attempt is. Delivered to `onProgress` on the main thread.
-public enum OtplessSmsBindingProgress: String, Sendable {
+enum OtplessSmsBindingProgress: String, Sendable {
     /// The backend issued a token and a number to send it to.
     case issued = "ISSUED"
     /// The SMS left the phone.
@@ -18,15 +18,15 @@ public enum OtplessSmsBindingProgress: String, Sendable {
 
 /// Why a binding attempt did not produce a binding. `code` is one of the reason strings in the
 /// Outbound SMS binding PRD (section 15), plus `SDK_NOT_READY` and `ATTEMPT_IN_PROGRESS`.
-public struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
-    public let code: String
+struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
+    let code: String
     /// Whether trying again straight away can help.
-    public let isRetryable: Bool
+    let isRetryable: Bool
     /// The number being bound with its middle hidden (`+91 89xxxxxx55`), for wording such as "send it
     /// from the line with …". Nil when the failure has nothing to do with the number.
-    public let maskedNumber: String?
+    let maskedNumber: String?
     /// For `DEVICE_BLOCKED`: seconds until the user may try again, when known.
-    public let retryAfterSeconds: Int?
+    let retryAfterSeconds: Int?
 
     internal init(code: String, isRetryable: Bool, maskedNumber: String? = nil, retryAfterSeconds: Int? = nil) {
         self.code = code
@@ -43,7 +43,7 @@ public struct OtplessSmsBindingFailure: Error, Equatable, Sendable {
     }
 }
 
-public enum OtplessSmsBindingResult: Equatable, Sendable {
+enum OtplessSmsBindingResult: Equatable, Sendable {
     /// - `bindingId`: the token the backend returned for the verified attempt.
     /// - `mobile`, `userId`: who was verified, as the backend reports them.
     case verified(bindingId: String?, mobile: String? = nil, userId: String? = nil)
@@ -72,7 +72,7 @@ extension Otpless {
     ///   - onProgress: Called on the main thread as the attempt advances.
     ///   - completion: Called once, on the main thread, with the outcome. With `.standard` this is
     ///     after the user has dismissed a failure alert or stopped retrying.
-    public func startSmsBinding(
+    func startSmsBinding(
         phoneNumber: String,
         countryCode: String,
         upiEntitlementDeclared: Bool = false,

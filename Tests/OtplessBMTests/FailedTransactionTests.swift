@@ -36,11 +36,14 @@ final class FailedTransactionTests: XCTestCase {
         XCTAssertNotEqual(response.responseType, .ONETAP)
     }
 
-    func testAFailedVerifyCarriesTheBackendsMessageAndReason() throws {
+    func testAFailedVerifyCarriesTheBackendsMessageAndReasonAsSnaError() throws {
         let response = VerifyOTPUseCase.response(for: try decode(simNotBound))
         let body = response.response ?? [:]
         XCTAssertEqual(body["errorMessage"] as? String, "The SIM is not bound to this device")
-        XCTAssertEqual(body["failureReason"] as? String, "SIM_NOT_BOUND")
+        let sna = try XCTUnwrap(body["snaError"] as? [String: Any], "the reason arrives in the object apps already read")
+        XCTAssertEqual(sna["errorCode"] as? String, "SIM_NOT_BOUND")
+        XCTAssertEqual(sna["message"] as? String, "The SIM is not bound to this device")
+        XCTAssertNil(body["failureReason"], "no new top-level key")
         XCTAssertEqual(body["errorCode"] as? String, String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
                        "the numeric errorCode merchants already match on does not change")
         XCTAssertEqual(response.statusCode, 400)
@@ -50,7 +53,15 @@ final class FailedTransactionTests: XCTestCase {
         let response = VerifyOTPUseCase.response(for: try decode(failedWithoutDetail))
         XCTAssertEqual(response.responseType, .AUTH_TERMINATED)
         XCTAssertEqual(response.response?["errorMessage"] as? String, "Authentication on all channels failed.")
-        XCTAssertNil(response.response?["failureReason"])
+        XCTAssertNil(response.response?["snaError"])
+    }
+
+    func testASnaErrorTheBackendSendsIsPassedThroughNotReplaced() throws {
+        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"x","snaError":{"errorCode":"7777","message":"carrier said no"}}}"#
+        let response = VerifyOTPUseCase.response(for: try decode(json))
+        let sna = try XCTUnwrap(response.response?["snaError"] as? [String: Any])
+        XCTAssertEqual(sna["errorCode"] as? String, "7777")
+        XCTAssertEqual(sna["message"] as? String, "carrier said no")
     }
 
     func testASuccessfulVerifyIsStillASignIn() throws {
@@ -65,7 +76,9 @@ final class FailedTransactionTests: XCTestCase {
         let fromVerify = VerifyOTPUseCase.response(for: try decode(simNotBound))
         XCTAssertEqual(fromPoll.responseType, fromVerify.responseType)
         XCTAssertEqual(fromPoll.response?["errorMessage"] as? String, fromVerify.response?["errorMessage"] as? String)
-        XCTAssertEqual(fromPoll.response?["failureReason"] as? String, fromVerify.response?["failureReason"] as? String)
+        let pollSna = fromPoll.response?["snaError"] as? [String: Any]
+        let verifySna = fromVerify.response?["snaError"] as? [String: Any]
+        XCTAssertEqual(pollSna?["errorCode"] as? String, verifySna?["errorCode"] as? String)
     }
 
     func testAnOlderBackendWithoutErrorCodeStillDecodes() throws {

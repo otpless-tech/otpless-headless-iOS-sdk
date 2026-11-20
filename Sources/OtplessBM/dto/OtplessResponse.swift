@@ -153,13 +153,20 @@ public struct OtplessResponse: @unchecked Sendable {
     }
     
     internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String,
-                                              message errorMessage: String, snaError: SNAError?,
-                                              reason: String? = nil) -> OtplessResponse {
+                                              message errorMessage: String, snaError: SNAError?) -> OtplessResponse {
         var response: [String: Any] = ["errorCode": errorCode, "errorMessage": errorMessage]
         response[OtplessConstant.SnaErrorKey] = snaError?.toDict()
-        // The backend's own reason (for example SIM_NOT_BOUND), kept beside the stable numeric errorCode.
-        if let reason, !reason.isEmpty { response["failureReason"] = reason }
         return OtplessResponse(responseType: .AUTH_TERMINATED, response: response, statusCode: statusCode)
+    }
+
+    /// A failed verify names its reason on `authDetail` (`errorCode`, `errorDetails`) and sends no `snaError`
+    /// object. The app already reads the backend's reason from `snaError`, so a reason that arrives without
+    /// one is passed in the same shape. A `snaError` the backend did send is never replaced.
+    private static func reasonAsSnaError(_ authDetail: AuthDetail) -> SNAError? {
+        guard let code = authDetail.errorCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else { return nil }
+        let detail = authDetail.errorDetails?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (detail?.isEmpty ?? true) ? nil : detail
+        return SNAError(errorCode: code, message: text, description: text)
     }
 
     /// A transaction the backend ended with status FAILED. One mapping for every place that sees it
@@ -170,8 +177,7 @@ public struct OtplessResponse: @unchecked Sendable {
             status: 400,
             error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
             message: detail.isEmpty ? "Authentication on all channels failed." : detail,
-            snaError: authDetail.snaError,
-            reason: authDetail.errorCode
+            snaError: authDetail.snaError ?? reasonAsSnaError(authDetail)
         )
     }
 

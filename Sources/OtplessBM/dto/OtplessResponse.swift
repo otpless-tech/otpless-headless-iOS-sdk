@@ -162,9 +162,15 @@ public struct OtplessResponse: @unchecked Sendable {
         return OtplessResponse(responseType: .AUTH_TERMINATED, response: response, statusCode: statusCode)
     }
 
-    /// A failed verify or poll names its reason on `authDetail` (`errorCode`, `errorDetails`) and sends no
-    /// `snaError` when the failure is not a silent-auth one. It is passed as an `error` object shaped like
-    /// `snaError` (`errorCode`, `message`, `description`) so an app can read both the same way.
+    /// The `error` object for a failed transaction: the backend's own when it sent one, else (for a failure
+    /// that is not a silent-auth one) built in the shape of `snaError` (`errorCode`, `message`,
+    /// `description`) from `errorCode` and `errorDetails`, so an app can read both the same way.
+    private static func errorObject(for authDetail: AuthDetail) -> [String: Any]? {
+        if let own = authDetail.error, !own.isEmpty { return own.toDict() }
+        guard authDetail.snaError == nil else { return nil }
+        return reasonObject(authDetail)
+    }
+
     private static func reasonObject(_ authDetail: AuthDetail) -> [String: Any]? {
         guard let code = authDetail.errorCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else { return nil }
         var object: [String: Any] = ["errorCode": code]
@@ -183,10 +189,11 @@ public struct OtplessResponse: @unchecked Sendable {
             status: 400,
             error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
             message: detail.isEmpty ? "Authentication on all channels failed." : detail,
-            // `snaError` stays the backend's own object for a silent-auth failure; any other failure names
-            // its reason in `error`.
+            // `snaError` is the backend's own object for a silent-auth failure. Any other failure names its
+            // reason in `error`: the backend's own object when it sends one, otherwise one built from
+            // `errorCode` and `errorDetails`.
             snaError: authDetail.snaError,
-            error: authDetail.snaError == nil ? reasonObject(authDetail) : nil
+            error: errorObject(for: authDetail)
         )
     }
 

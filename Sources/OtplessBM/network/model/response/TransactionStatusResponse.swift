@@ -74,6 +74,8 @@ struct AuthDetail: Codable {
     /// Reason name on a FAILED status, e.g. SIM_NOT_BOUND. Optional: older backends do not send it.
     let errorCode: String?
     let snaError: SNAError?
+    /// The backend's own error object for a failure that is not a silent-auth one (shaped like `snaError`).
+    let error: BackendErrorObject?
 }
 
 struct City: Codable {
@@ -333,6 +335,27 @@ enum CodableValue: Codable {
             try container.encode(value)
         }
     }
+}
+
+/// An error object exactly as the backend sent it, passed to the app untouched. Decoding never fails: a
+/// value that is not an object is treated as absent, so an unexpected `error` can never break a response
+/// that is otherwise good.
+internal struct BackendErrorObject: Codable {
+    let fields: [String: CodableValue]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        fields = (try? container.decode([String: CodableValue].self)) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(fields)
+    }
+
+    var isEmpty: Bool { fields.isEmpty }
+
+    func toDict() -> [String: Any] { fields.mapValues { $0.value } }
 }
 
 internal struct SNAError: Codable {

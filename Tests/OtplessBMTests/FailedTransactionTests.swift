@@ -65,7 +65,7 @@ final class FailedTransactionTests: XCTestCase {
         let sna = try XCTUnwrap(response.response?["snaError"] as? [String: Any])
         XCTAssertEqual(sna["errorCode"] as? String, "7777")
         XCTAssertEqual(sna["message"] as? String, "carrier said no")
-        XCTAssertNil(response.response?["error"], "a silent-auth failure is described by snaError alone")
+        XCTAssertNil(response.response?["error"], "a silent-auth failure with no error object of its own gets none built")
     }
 
     func testASuccessfulVerifyIsStillASignIn() throws {
@@ -83,6 +83,31 @@ final class FailedTransactionTests: XCTestCase {
         let pollError = fromPoll.response?["error"] as? [String: Any]
         let verifyError = fromVerify.response?["error"] as? [String: Any]
         XCTAssertEqual(pollError?["errorCode"] as? String, verifyError?["errorCode"] as? String)
+    }
+
+    func testAnErrorObjectTheBackendSendsIsPassedThroughAsItCame() throws {
+        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"built text","error":{"errorCode":"E100","message":"backend text","extra":{"retry":false}}}}"#
+        let response = VerifyOTPUseCase.response(for: try decode(json))
+        let error = try XCTUnwrap(response.response?["error"] as? [String: Any])
+        XCTAssertEqual(error["errorCode"] as? String, "E100", "the backend's object wins over one built from errorCode")
+        XCTAssertEqual(error["message"] as? String, "backend text")
+        XCTAssertNotNil(error["extra"], "fields the SDK does not know are kept")
+        XCTAssertNil(response.response?["snaError"])
+    }
+
+    func testBothObjectsArePassedWhenTheBackendSendsBoth() throws {
+        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"snaError":{"errorCode":"7777"},"error":{"errorCode":"E100"}}}"#
+        let body = VerifyOTPUseCase.response(for: try decode(json)).response ?? [:]
+        XCTAssertEqual((body["snaError"] as? [String: Any])?["errorCode"] as? String, "7777")
+        XCTAssertEqual((body["error"] as? [String: Any])?["errorCode"] as? String, "E100")
+    }
+
+    func testAnErrorThatIsNotAnObjectNeverBreaksTheResponse() throws {
+        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"x","error":"oops"}}"#
+        let response = VerifyOTPUseCase.response(for: try decode(json))
+        XCTAssertEqual(response.responseType, .AUTH_TERMINATED)
+        XCTAssertEqual((response.response?["error"] as? [String: Any])?["errorCode"] as? String, "SIM_NOT_BOUND",
+                       "it falls back to the one built from errorCode")
     }
 
     func testAnOlderBackendWithoutErrorCodeStillDecodes() throws {

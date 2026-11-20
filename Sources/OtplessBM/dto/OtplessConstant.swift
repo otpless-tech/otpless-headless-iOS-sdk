@@ -20,4 +20,5 @@ internal enum OtplessConstant {
     ]
     
     static let SnaErrorKey: String = "snaError"
+    static let ErrorKey: String = "error"
 }

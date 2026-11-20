@@ -9,9 +9,9 @@ private let SILENT_AUTH = "SILENT_AUTH"
 
 internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> SNAUseCaseResponse {
     let quantumLeap = response.quantumLeap
-    let timerSettings: TimerSettings? = (quantumLeap?.pollingRequired == true) ? quantumLeap?.timerSettings : nil
+    var timerSettings: TimerSettings? = (quantumLeap?.pollingRequired == true) ? quantumLeap?.timerSettings : nil
 
-    let otplessResponses: [OtplessResponse]
+    var otplessResponses: [OtplessResponse]
     if response.authDetail.status == Constants.SUCCESS {
         if let quantumLeap = quantumLeap {
             otplessResponses = [
@@ -84,6 +84,18 @@ internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> S
         otplessResponses = [failed, second]
     }
 
+    // The next channel is outbound SMS SIM binding: the SMS flow runs it. It must not be polled like the
+    // others, whose timer settings are seconds (this one's are milliseconds, so it would wait 25 minutes
+    // and never open the message screen).
+    var smsBindingStart: SmsBindingStarted?
+    if let leap = quantumLeap, leap.channel == LiveSmsBindingBackend.channel {
+        timerSettings = nil
+        switch SmsBindingStarted.parse(quantumLeap: leap.simBindingDictionary()) {
+        case .started(let started): smsBindingStart = started
+        case .notSimBinding, .malformed: otplessResponses.append(SmsBindingMainFlow.errorResponse(.notAvailable))
+        }
+    }
+
     return SNAUseCaseResponse(
         tokenAsIdUIdAndTimerSettings: TokenAsIdUIdAndTimerSettings(
             token: quantumLeap?.channelAuthToken ?? "",
@@ -91,6 +103,7 @@ internal func makeSnaUseCaseResponse(_ response: TransactionStatusResponse) -> S
             uid: quantumLeap?.uid ?? "",
             timerSettings: timerSettings
         ),
-        otplessResponse: otplessResponses
+        otplessResponse: otplessResponses,
+        smsBindingStart: smsBindingStart
     )
 }

@@ -22,6 +22,13 @@ struct MerchantConfigResponse: Codable {
     var isAppAttestEnabled: Bool {
         merchant?.config?.isAttestationEnabled == true
     }
+
+    /// Whether outbound SMS SIM binding is switched on for this app, from
+    /// `merchant.config.outboundSmsBindingConfig.isEnabled`. A missing or false flag means "off":
+    /// the SDK then never calls any binding endpoint, so apps that were not onboarded see no change.
+    var isOutboundSmsBindingEnabled: Bool {
+        merchant?.config?.outboundSmsBindingConfig?.isEnabled == true
+    }
 }
 
 struct MetaData: Codable {
@@ -155,6 +162,11 @@ struct Config: Codable {
     let isWebauthnRegistered: Bool?
     let lang: String?
     let isAttestationEnabled: Bool?
+    let outboundSmsBindingConfig: OutboundSmsBindingConfig?
+}
+
+struct OutboundSmsBindingConfig: Codable {
+    let isEnabled: Bool?
 }
 
 struct ChannelConfig: Codable {

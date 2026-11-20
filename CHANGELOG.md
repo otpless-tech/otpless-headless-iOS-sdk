@@ -1,3 +1,14 @@
+## 3.2.0 (unreleased)
+### Feature
+- **Outbound SMS SIM binding**, a channel of the intent call, run by the SDK inside the normal `start(withRequest:)` flow when the backend answers a sign-in, or SNA's status response, as `SIM_BINDING` (there is no function to call). The response carries the token, number, message and, when the backend sends them, the rules (the backend checks the rules itself, so a response with none still runs the flow). The SDK polls the general `status` API, and ends an attempt that fails on the device by adding `lapseMeta` to that call. The phone sends a one-time token by SMS from its own SIM and the backend verifies it. Behaviour follows the rules the backend serves for your app; the SDK never branches on a template name. Device rules run before anything is requested (minimum app and iOS version, SIM present and on a network, `canSendText`). With the UPI rule on, the composer uses Apple's UPI device validation (non-editable message, carrier-sent completion) and never falls back to an editable one. iOS 26+ also registers Apple's ICCID token. The app sees `INITIATE` (`authType: SIM_BINDING`), `DELIVERY_STATUS`, then `ONETAP` or a `VERIFY` error with `errorCode`, `authType` and `retryable`.
+- **Opt-in per app.** SMS binding runs only when the app's merchant config has `merchant.config.outboundSmsBindingConfig.isEnabled` set to true. Apps that were not onboarded see no change.
+- Rule values the PRD does not name are read under a few likely names (`min_app_version`, `min_os`), so a backend that picks another does not silently switch the rule off.
+- **Single session (R9).** When the rule is on and the app goes to the background during an attempt, the attempt is abandoned: the backend is told (`lapseMeta` with `SESSION_INTERRUPTED` on the status call) so the token stops working at once, and the call returns `SESSION_INTERRUPTED`.
+- A retry for the same number names the attempt it follows (`previous_attempt_id`) so the backend can pick a different number to send to. It is kept in memory only and cleared once a binding verifies.
+### Notes
+- Nothing changes for apps that do not call these APIs.
+- Apple's UPI device validation needs the `com.apple.developer.upi-device-validation` entitlement in the host app, which Apple grants only after NPCI whitelisting. Pass `upiEntitlementDeclared: true` only if your app holds it.
+
 ## 3.1.1 (5th November 2026)
 ### Fixes
 - Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.

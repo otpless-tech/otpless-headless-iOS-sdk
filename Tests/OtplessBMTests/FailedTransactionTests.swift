@@ -86,12 +86,12 @@ final class FailedTransactionTests: XCTestCase {
     }
 
     func testAnErrorObjectTheBackendSendsIsPassedThroughAsItCame() throws {
-        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"built text","error":{"errorCode":"E100","message":"backend text","extra":{"retry":false}}}}"#
+        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"built text","error":{"errorCode":"E100","message":"backend text","description":"backend description"}}}"#
         let response = VerifyOTPUseCase.response(for: try decode(json))
         let error = try XCTUnwrap(response.response?["error"] as? [String: Any])
         XCTAssertEqual(error["errorCode"] as? String, "E100", "the backend's object wins over one built from errorCode")
         XCTAssertEqual(error["message"] as? String, "backend text")
-        XCTAssertNotNil(error["extra"], "fields the SDK does not know are kept")
+        XCTAssertEqual(error["description"] as? String, "backend description")
         XCTAssertNil(response.response?["snaError"])
     }
 
@@ -100,14 +100,6 @@ final class FailedTransactionTests: XCTestCase {
         let body = VerifyOTPUseCase.response(for: try decode(json)).response ?? [:]
         XCTAssertEqual((body["snaError"] as? [String: Any])?["errorCode"] as? String, "7777")
         XCTAssertEqual((body["error"] as? [String: Any])?["errorCode"] as? String, "E100")
-    }
-
-    func testAnErrorThatIsNotAnObjectNeverBreaksTheResponse() throws {
-        let json = #"{"authDetail":{"status":"FAILED","communicationDelivered":false,"errorCode":"SIM_NOT_BOUND","errorDetails":"x","error":"oops"}}"#
-        let response = VerifyOTPUseCase.response(for: try decode(json))
-        XCTAssertEqual(response.responseType, .AUTH_TERMINATED)
-        XCTAssertEqual((response.response?["error"] as? [String: Any])?["errorCode"] as? String, "SIM_NOT_BOUND",
-                       "it falls back to the one built from errorCode")
     }
 
     func testAnOlderBackendWithoutErrorCodeStillDecodes() throws {

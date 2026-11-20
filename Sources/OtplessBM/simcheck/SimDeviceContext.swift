@@ -47,7 +47,7 @@ internal final class UpiEntitlementDeclaration: @unchecked Sendable {
 extension Otpless {
     /// Declares, for every flow, whether this app holds Apple's UPI Device Validation entitlement
     /// (`com.apple.developer.upi-device-validation`). The SDK sends it with the device context so the
-    /// backend can route the flow, and uses it as the default for `startSmsBinding`. Call it once,
+    /// backend can route the flow, and the SMS binding flow uses it for the UPI rule. Call it once,
     /// before starting a flow. Declare `true` only if the entitlement is really in the app.
     public func setUpiEntitlementDeclared(_ declared: Bool) {
         UpiEntitlementDeclaration.shared.declared = declared

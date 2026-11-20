@@ -5,14 +5,13 @@ one place. It holds one file and no code. The declarations below are copied from
 
 - **#57** (ENG-622): outbound SMS binding
 - **#58** (ENG-628, ENG-626): iOS 27 SIM check, device context, `simBound`
-- **#60**: a proposal that trims the public surface (built on #58)
 
-"Kept by #60" says whether the function or type stays public if #60 is accepted. Everything marked
-"No" stays in the module as internal code.
+The tables show the full surface as it was first written, and "Public now" says whether #57 and #58
+keep it public after this review. Everything marked "No" is internal or removed.
 
-## Functions and properties on `Otpless.shared`
+## Functions and properties on `Otpless.shared` (as first written)
 
-| # | Declaration | Added in | Kept by #60 |
+| # | Declaration | Added in | Public now |
 |---|---|---|---|
 | 1 | `startSmsBinding(phoneNumber:countryCode:upiEntitlementDeclared:ui:onProgress:completion:)` | #57 | No |
 | 2 | `setUpiEntitlementDeclared(_:)` | #58 | Yes |
@@ -28,8 +27,7 @@ one place. It holds one file and no code. The declarations below are copied from
 
 Binds the user's SIM by having the phone send a one-time token by SMS from its own SIM. Behaviour follows
 the rules the backend serves for the app's client. Call after `initialise` has reported `SDK_READY`.
-In #57 `upiEntitlementDeclared` is `Bool = false`; #58 changes it to `Bool? = nil`, defaulting to the
-app's declaration (function 2).
+As first written, `upiEntitlementDeclared` was `Bool = false` in #57 and `Bool? = nil` in #58.
 
 ```swift
 public func startSmsBinding(
@@ -134,7 +132,7 @@ public func requestNumberStatusPermission(
 
 ## Public types
 
-| Type | Members | Added in | Kept by #60 |
+| Type | Members | Added in | Public now |
 |---|---|---|---|
 | `OtplessSmsBindingUI` | `.headless`, `.standard` | #57 | No |
 | `OtplessSmsBindingProgress` | `issued`, `sent`, `received`, `verified`, `rejected`, `expired`, `aborted` | #57 | No |

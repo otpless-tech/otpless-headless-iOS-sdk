@@ -166,7 +166,7 @@ public struct OtplessResponse: @unchecked Sendable {
     /// that is not a silent-auth one) built in the shape of `snaError` (`errorCode`, `message`,
     /// `description`) from `errorCode` and `errorDetails`, so an app can read both the same way.
     private static func errorObject(for authDetail: AuthDetail) -> [String: Any]? {
-        if let own = authDetail.error, !own.isEmpty { return own.toDict() }
+        if let own = authDetail.error { return own.toDict() }
         guard authDetail.snaError == nil else { return nil }
         return reasonObject(authDetail)
     }

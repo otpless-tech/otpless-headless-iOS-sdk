@@ -98,7 +98,7 @@ final class SmsBindingLiveContractTests: XCTestCase {
         SmsBindingStartRequest(
             msisdn: "+919812345621", countryCode: "+91", osVersion: "26.7", appVersion: "3.2.0", sdkVersion: "3.2.0",
             deviceFingerprintHash: "fp", previousAttemptId: "att_0",
-            upiEntitlementDeclared: true, iccidTokenSupported: true
+            upiEntitlementDeclared: true, iccidTokenSupported: true, planStatusSupported: false
         )
     }
 
@@ -148,6 +148,12 @@ final class SmsBindingLiveContractTests: XCTestCase {
                        "only the fields the backend defines for iOS")
         XCTAssertNil(sim["apiLevel"], "Android only")
 
+        // ENG-627's device context, under its field names
+        let context = try XCTUnwrap(body["deviceContext"] as? [String: Any])
+        XCTAssertEqual(context["platform"] as? String, "ios")
+        XCTAssertEqual(context["os_version"] as? String, "26.7")
+        XCTAssertEqual(context["plan_status_supported"] as? Bool, false)
+        XCTAssertEqual(context["upi_entitlement"] as? Bool, true)
         XCTAssertNil(sim["sim"], "Android only")
     }
 

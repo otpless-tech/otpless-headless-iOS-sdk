@@ -153,10 +153,53 @@ public struct OtplessResponse: @unchecked Sendable {
     }
     
     internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String,
-                                              message errorMessage: String, snaError: SNAError?) -> OtplessResponse {
+                                              message errorMessage: String, snaError: TransactionError?,
+                                              error: [String: Any]? = nil) -> OtplessResponse {
         var response: [String: Any] = ["errorCode": errorCode, "errorMessage": errorMessage]
         response[OtplessConstant.SnaErrorKey] = snaError?.toDict()
+        // The reason of a failure that is not a silent-auth one, in the shape of `snaError`.
+        response[OtplessConstant.ErrorKey] = error
         return OtplessResponse(responseType: .AUTH_TERMINATED, response: response, statusCode: statusCode)
+    }
+
+    /// The `error` object for a failed transaction: the backend's own when it sent one, else (for a failure
+    /// that is not a silent-auth one) built in the shape of `snaError` (`errorCode`, `message`,
+    /// `description`) from `errorCode` and `errorDetails`, so an app can read both the same way.
+    private static func errorObject(for authDetail: AuthDetail) -> [String: Any]? {
+        if let own = authDetail.error { return own.toDict() }
+        guard authDetail.snaError == nil else { return nil }
+        return reasonObject(authDetail)
+    }
+
+    private static func reasonObject(_ authDetail: AuthDetail) -> [String: Any]? {
+        guard let code = authDetail.errorCode?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty else { return nil }
+        var object: [String: Any] = ["errorCode": code]
+        if let detail = authDetail.errorDetails?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+            object["message"] = detail
+            object["description"] = detail
+        }
+        return object
+    }
+
+    /// A transaction the backend ended with status FAILED. One mapping for every place that sees it
+    /// (the status poll and the OTP verify call), so a failure never reads as a success.
+    internal static func terminalResponse(forFailed authDetail: AuthDetail) -> OtplessResponse {
+        let detail = authDetail.errorDetails?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return makeTerminalResponse(
+            status: 400,
+            error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
+            message: detail.isEmpty ? "Authentication on all channels failed." : detail,
+            // `snaError` is the backend's own object for a silent-auth failure. Any other failure names its
+            // reason in `error`: the backend's own object when it sends one, otherwise one built from
+            // `errorCode` and `errorDetails`.
+            snaError: authDetail.snaError,
+            error: errorObject(for: authDetail)
+        )
+    }
+
+    /// The status call itself was refused (401 token expired, 7304, 5xx): the transaction cannot continue.
+    internal static func pollRejected(by error: ApiError) -> OtplessResponse {
+        OtplessResponse(responseType: .AUTH_TERMINATED, response: error.getResponse(), statusCode: error.statusCode)
     }
 
     internal static var snaTransactionFinalTimeout: OtplessResponse {

@@ -84,12 +84,7 @@ class TransactionStatusUseCase {
 
                 case Constants.FAILED:
                     log(message: "[Polling] Auth failed — emitting AUTH_TERMINATED and stopping poll", type: .POLLING_STOPPED)
-                    let terminal = OtplessResponse.makeTerminalResponse(
-                        status: 400,
-                        error: String(OtplessConstant.EC.ALL_CHANNEL_AUTH_FAILED),
-                        message: "Authentication on all channels failed.",
-                        snaError: success.authDetail.snaError
-                    )
+                    let terminal = OtplessResponse.terminalResponse(forFailed: success.authDetail)
                     responseCallback?(terminal)
                     stopPolling(dueToSuccessfulVerification: false)
                     return
@@ -120,12 +115,24 @@ class TransactionStatusUseCase {
                 log(message: "[Polling] Request failed — \(error.localizedDescription)", type: .API_RESPONSE_FAILURE)
                 if let apiError = error as? ApiError, apiError.statusCode >= 400 && apiError.statusCode <= 500 {
                     log(message: "[Polling] Client/server error (\(apiError.statusCode)) — stopping poll", type: .POLLING_STOPPED)
-                    stopPolling(dueToSuccessfulVerification: false)
+                    // Tell the app: a poll that stops without an answer leaves the login waiting forever
+                    // (for example a token that expired, 401).
+                    isPolling = false
+                    responseCallback?(OtplessResponse.pollRejected(by: apiError))
+                    return
                 }
             }
         }
 
-        log(message: "[Polling] Loop exhausted — max attempts reached", type: .POLLING_STOPPED)
+        // Reached only when every attempt ran with the transaction still pending. A stop by the app, a
+        // verdict or an answered OTP has already returned or broken out with `isPolling` false.
+        if isPolling {
+            log(message: "[Polling] Loop exhausted — max attempts reached, reporting a timeout", type: .POLLING_STOPPED)
+            isPolling = false
+            responseCallback?(OtplessResponse.snaTransactionFinalTimeout)
+        } else {
+            log(message: "[Polling] Loop ended", type: .POLLING_STOPPED)
+        }
     }
     
     private func handlePendingState(_ success: TransactionStatusResponse) async {

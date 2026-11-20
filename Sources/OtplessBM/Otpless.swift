@@ -673,11 +673,33 @@ private extension Otpless {
 
         if !otplessRequest.isIntentRequest() {
             log(message: "[Verify] OTP/code verify request — state: \(self.state?.prefix(8) ?? "nil")…", type: .VERIFY)
-            let verifyOtpResponse = await verifyOtpUseCase.invoke(
+            // iOS 27+, apps with SMS binding on: say whether the SIM holds this number, when certain.
+            let simBound = await SimBoundForOtp.value(
+                smsBindingEnabled: isSmsBindingAvailable,
+                provider: SimCheckEnvironment.provider,
+                countryCode: otplessRequest.getCountryCode(),
+                phoneNumber: otplessRequest.getPhone()
+            )
+            let verifyOutcome = await verifyOtpUseCase.invoke(
                 state: self.state ?? "",
                 queryParams: otplessRequest.getQueryParams(),
+                simBound: simBound,
                 getTransactionStatusUseCase: self.transactionStatusUseCase
             )
+            // The SIM is not bound and the backend names SMS binding as the next channel: carry on there.
+            if let next = verifyOutcome.nextSmsBinding {
+                await continueWithSmsBinding(next, otplessRequest)
+                return
+            }
+            let verifyOtpResponse = verifyOutcome.response
+            // A verified OTP whose number the SIM holds is a bound number: the SIM check uses it from now on.
+            if simBound == true, verifyOtpResponse.responseType == .ONETAP,
+               let number = SimBoundForOtp.e164(
+                    smsBindingEnabled: true, provider: SimCheckEnvironment.provider,
+                    countryCode: otplessRequest.getCountryCode(), phoneNumber: otplessRequest.getPhone()
+               ) {
+                SimCheckEnvironment.boundNumbers.save(number)
+            }
             invokeResponse(verifyOtpResponse)
             return
         }
@@ -704,7 +726,33 @@ private extension Otpless {
 
 
     
+    /// A failed verify named SMS binding as the next channel (the OTP did not bind the SIM): switch to the new attempt,
+    /// tell the app the next step has started (`INITIATE`, `authType: SIM_BINDING`), and run it.
+    func continueWithSmsBinding(_ next: NextSmsBinding, _ request: OtplessRequest) async {
+        self.token = next.token
+        self.asId = next.asId
+        if !next.uid.isEmpty { self.uid = next.uid }
+        onAuthTypeChange(newAuthType: SmsBindingMainFlow.authType)
+        invokeResponse(OtplessResponse.createSuccessfulInitiateResponse(
+            requestId: next.token,
+            channel: SmsBindingMainFlow.authType,
+            authType: SmsBindingMainFlow.authType,
+            deliveryChannel: SmsBindingMainFlow.deliveryChannel
+        ))
+        await runSmsBindingFromIntent(next.started, request)
+    }
+
+    /// OTP_BIND (iOS 27+): settles Apple's permission for the entered number before the app is told to show the
+    /// OTP screen. Never blocks the OTP: with no permission the SDK just sends no `simBound`.
+    private func settleOtpBindPermission(for response: OtplessResponse?, _ otplessRequest: OtplessRequest) async {
+        guard OtpBindStep.isOtpBind(response) else { return }
+        let number = SmsBindingMainFlow.e164(countryCode: otplessRequest.getCountryCode(), phoneNumber: otplessRequest.getPhone())
+        let permission = await OtpBindStep.settlePermission(provider: SimCheckEnvironment.provider, e164: number)
+        log(message: "[OTP_BIND] number-status permission for \(number ?? "no number"): \(permission?.rawValue ?? "not applicable")", type: .INTENT)
+    }
+
     private func handleIntentResponse(_ intentResponse: PostIntentUseCaseResponse, _ otplessRequest: OtplessRequest) async {
+        await settleOtpBindPermission(for: intentResponse.otplessResponse, otplessRequest)
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
             // check for error code, if error code is terminal error code
@@ -772,6 +820,8 @@ private extension Otpless {
             let response = await self.snaUseCase.invoke(url: snaUrl, timerSettings: timerSettings)
             if let otplessResponse = response.otplessResponse {
                 for op in otplessResponse {
+                    // SNA failed and the code goes with a SIM bind: settle the permission before the OTP screen.
+                    await settleOtpBindPermission(for: op, otplessRequest)
                     invokeResponse(op)
                     if op.responseType == ResponseTypes.ONETAP {
                         // No need to proceed further, user has been authenticated

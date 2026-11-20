@@ -32,7 +32,10 @@ internal class PostIntentUseCase {
 
         let appAttestInfo = await getAppAttestInfo(requestBody, state: state)
         let response = await Otpless.shared.apiRepository
-            .postIntent(state: state, body: requestBody, appAttestInfo: appAttestInfo)
+            .postIntent(
+                state: state, body: requestBody, appAttestInfo: appAttestInfo,
+                deviceContext: Otpless.shared.deviceContextForIntent()
+            )
 
         switch response {
         case .success(let success):

@@ -132,8 +132,10 @@ extension SmsBindingStarted {
         guard let sim = leap["simBinding"] as? [String: Any],
               let token = (sim["token"] as? String) ?? (leap["channelAuthToken"] as? String),
               let smsBody = sim["smsBody"] as? String,
-              let vmn = sim["vmn"] as? String,
-              let ruleMap = sim["rules"] as? [String: Any] else { return .malformed }
+              let vmn = sim["vmn"] as? String else { return .malformed }
+        // The backend checks the rules itself and may send none. A rule that is absent is off, so a missing
+        // block runs the flow with the checks the device always does and nothing the rules would add.
+        let ruleMap = (sim["rules"] as? [String: Any]) ?? [:]
         return .started(SmsBindingStarted(
             issued: SmsBindingIssued(attemptId: token, smsBody: smsBody, vmn: vmn, ttlSeconds: LiveSmsBindingBackend.ttlSeconds(sim, leap)),
             rules: SmsBindingRules.decodeInline(rules: ruleMap, rulesHash: sim["rulesHash"] as? String)

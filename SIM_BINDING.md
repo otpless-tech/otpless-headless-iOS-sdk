@@ -21,7 +21,8 @@ response of that step. The SDK then runs it, and you see:
    errors (`VERIFY`, with `errorCode`, `errorMessage`, `authType: SIM_BINDING` and `retryable`).
 
 - **How it talks to the backend:** the response carries the token, the number to send to, the message
-  and your rules together. After the user sends, the SDK polls the general `status` API with the
+  and, when OTPLESS sends them, your rules. OTPLESS also checks the rules itself, so a response may carry
+  none: the SDK then runs the flow with the checks the device always does (the phone must be able to send a text). After the user sends, the SDK polls the general `status` API with the
   attempt's token every 1.5 s until the attempt is verified, rejected or expired. If the attempt ends
   without one (the user cancels, the send fails, R20's time limit is exceeded, or R9's single session is
   broken), the SDK adds `lapseMeta` to the status call
@@ -29,7 +30,7 @@ response of that step. The SDK then runs it, and you see:
   transaction and closes the attempt as aborted. The codes are `USER_CANCELLED`,
   `SESSION_INTERRUPTED` (R9), `TOKEN_EXPIRED` (R20) and `SMS_SEND_FAILED`. The backend does not
   enforce R20: the app does.
-- Because the rules arrive with the token, the device checks (minimum app and iOS version, SIM, the
+- When the response carries rules, the device checks they ask for (minimum app and iOS version, SIM, the
   UPI entitlement declaration) run after the attempt exists. If one fails, the SDK reports it so the
   token stops working at once.
 - With the UPI rule on, the composer uses Apple's UPI device validation (non-editable message,

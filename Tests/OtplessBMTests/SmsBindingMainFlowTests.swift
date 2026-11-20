@@ -67,6 +67,36 @@ final class SmsBindingMainFlowParsingTests: XCTestCase {
         }
     }
 
+    /// What staging sent once the backend started checking the rules itself: no `rules`, no `rulesHash`, and
+    /// no token inside `simBinding` (the token is the top-level `channelAuthToken`).
+    func testASimBindingIntentWithNoRulesStillRuns() throws {
+        let noRules = """
+        {"quantumLeap":{"state":"s1","channelAuthToken":"755822caab2d4dcb85b2ad03e21be121","uid":"U1","channel":"SIM_BINDING",
+         "channels":["SIM_BINDING"],"asId":"A1","communicationMode":"OUTBOUND_SMS","status":"PENDING",
+         "timerSettings":{"interval":1500,"timeout":120000},"pollingRequired":true,
+         "simBinding":{"vmn":"+917065888859","smsBody":"please send the message SUNbX4qIoy0+=NN=.cf65upXIQkNTQiiH9xu.Xh2","expiresAt":1795191221,"expiresInSeconds":120}}}
+        """
+        let response = try intent(noRules)
+        guard case .started(let started) = SmsBindingStarted.parse(quantumLeap: response.quantumLeap.simBindingDictionary()) else {
+            return XCTFail("a response without rules must still start the flow")
+        }
+        XCTAssertEqual(started.issued.attemptId, "755822caab2d4dcb85b2ad03e21be121")
+        XCTAssertEqual(started.issued.vmn, "+917065888859")
+        XCTAssertEqual(started.issued.ttlSeconds, 120)
+        XCTAssertFalse(started.rules.isOn(.singleSession), "an absent rule is off")
+        XCTAssertFalse(started.rules.requiresUpiEntitlement)
+        XCTAssertNil(started.rules.minimumAppVersion)
+    }
+
+    func testWithNoRulesTheDeviceStillNeedsToBeAbleToSendAText() {
+        struct Phone: SmsBindingDevice {
+            var osVersion = "26.0"; var appVersion = "1.0"; var hasCellularRadio = true; var canSendText: Bool
+        }
+        let none = SmsBindingRules.decodeInline(rules: [:], rulesHash: nil)
+        XCTAssertNil(SmsBindingPrechecks.evaluate(rules: none, device: Phone(canSendText: true), upiEntitlementDeclared: false))
+        XCTAssertEqual(SmsBindingPrechecks.evaluate(rules: none, device: Phone(canSendText: false), upiEntitlementDeclared: false), .noSim)
+    }
+
     func testTheIntentUseCaseHandsASimBindingResponseToTheSmsFlowAndDoesNotPoll() throws {
         let result = PostIntentUseCase(others: Otpless.shared).parseSimBindingResponse(try intent(simBindingIntent))
         XCTAssertNotNil(result.smsBindingStart)

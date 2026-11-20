@@ -153,7 +153,7 @@ public struct OtplessResponse: @unchecked Sendable {
     }
     
     internal static func makeTerminalResponse(status statusCode: Int, error errorCode: String,
-                                              message errorMessage: String, snaError: SNAError?,
+                                              message errorMessage: String, snaError: TransactionError?,
                                               error: [String: Any]? = nil) -> OtplessResponse {
         var response: [String: Any] = ["errorCode": errorCode, "errorMessage": errorMessage]
         response[OtplessConstant.SnaErrorKey] = snaError?.toDict()

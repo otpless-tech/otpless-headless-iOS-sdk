@@ -124,13 +124,25 @@ internal final class SimBindingMonitor: @unchecked Sendable {
         self.init(numberProvider: { phoneNumber }, checker: checker, store: store, deliver: deliver)
     }
 
+    // Locking happens in these synchronous helpers: Swift 6 does not allow `NSLock` calls in async code.
+    private func tryBegin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if evaluating { return false }
+        evaluating = true
+        return true
+    }
+
+    private func end() {
+        lock.lock()
+        evaluating = false
+        lock.unlock()
+    }
+
     /// One re-check. A check already running absorbs this one: its answer is just as fresh.
     func evaluate() async {
-        lock.lock()
-        if evaluating { lock.unlock(); return }
-        evaluating = true
-        lock.unlock()
-        defer { lock.lock(); evaluating = false; lock.unlock() }
+        guard tryBegin() else { return }
+        defer { end() }
 
         guard let phoneNumber = numberProvider() else { return }
         guard case .success(let result) = await checker.check(phoneNumber: phoneNumber) else { return }

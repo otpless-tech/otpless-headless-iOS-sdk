@@ -16,6 +16,11 @@
 - **Host-app setup:** App Attest works without any entitlement; Apple then issues development-environment keys (AAGUID `appattestdevelop`). Add the `com.apple.developer.devicecheck.appattest-environment` entitlement set to `production` for App Store / TestFlight builds so the backend sees production attestations. Unsupported devices and the simulator are skipped cleanly.
 
 ## Unreleased
+### Feature
+- **tvOS support (tvOS 16+).** The SDK now compiles and initialises on tvOS (Package.swift `.tvOS(.v16)`, podspec `tvos.deployment_target = '16.0'`). WebKit is no longer imported on platforms that don't ship it; the device-info user agent falls back to `otplesssdk` there. The one-tap bottom sheet UI is iOS-only (on tvOS `startAuth(parent:config:)` only runs the background single-item flow) and passkeys fail with code `5208` on tvOS.
+### Notes
+- CocoaPods integration on tvOS additionally needs the `OtplessEventIO` pod to declare tvOS support; Swift Package Manager works today.
+
 ### Fixes
 - Invalid state (`7005`) on the intent or merchant config API now refreshes the cached state and retries the call once per session — Android parity.
 - Stale state and session data left in the Keychain after an app reinstall are now cleared on the first launch. The uid is kept.

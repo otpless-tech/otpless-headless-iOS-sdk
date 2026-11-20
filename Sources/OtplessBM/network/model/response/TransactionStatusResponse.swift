@@ -71,7 +71,11 @@ struct AuthDetail: Codable {
     let webauthnRegistered: Bool?
     let communicationMode: String?
     let errorDetails: String?
-    let snaError: SNAError?
+    /// Reason name on a FAILED status, e.g. SIM_NOT_BOUND. Optional: older backends do not send it.
+    let errorCode: String?
+    let snaError: TransactionError?
+    /// The backend's own error object for a failure that is not a silent-auth one (shaped like `snaError`).
+    let error: TransactionError?
 }
 
 struct City: Codable {
@@ -332,6 +336,10 @@ enum CodableValue: Codable {
         }
     }
 }
+
+/// The error object the backend sends on a failed transaction (`errorCode`, `message`, `description`).
+/// It is `snaError` for a silent-auth failure and `error` for any other, so both use this one name.
+internal typealias TransactionError = SNAError
 
 internal struct SNAError: Codable {
     let errorCode: String

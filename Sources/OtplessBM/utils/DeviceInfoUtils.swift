@@ -9,7 +9,9 @@ import Foundation
 import UIKit
 import Foundation
 import CommonCrypto
+#if canImport(WebKit)
 import WebKit
+#endif
 import OtplessEventIO
 
 class DeviceInfoUtils : @unchecked Sendable {
@@ -129,7 +131,11 @@ class DeviceInfoUtils : @unchecked Sendable {
         
         let screenWidth = String(Int(UIScreen.main.bounds.width))
         let screenHeight = String(Int(UIScreen.main.bounds.height))
+        #if canImport(WebKit)
         let userAgent = WKWebView().value(forKey: "userAgent") as? String
+        #else
+        let userAgent: String? = nil // WebKit is unavailable on tvOS
+        #endif
         var nonNullUserAgent: String = "otplesssdk"
         if let userAgent = userAgent {
             nonNullUserAgent = userAgent.replacingOccurrences(of: "\"", with: "\\\"") + " otplesssdk"

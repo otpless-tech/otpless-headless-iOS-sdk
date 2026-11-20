@@ -5,7 +5,8 @@ import PackageDescription
 let package = Package(
     name: "OtplessBM",
     platforms: [
-        .iOS(.v13)
+        .iOS(.v13),
+        .tvOS(.v16)
     ],
     products: [
         .library(

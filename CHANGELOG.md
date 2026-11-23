@@ -1,3 +1,9 @@
+## 3.1.2 (23rd November 2026)
+### Feature
+- **tvOS support (tvOS 16+).** The SDK now compiles and initialises on tvOS (Package.swift `.tvOS(.v16)`, podspec `tvos.deployment_target = '16.0'`). WebKit is no longer imported on platforms that don't ship it; the device-info user agent falls back to `otplesssdk` there. The one-tap bottom sheet UI is iOS-only (on tvOS `startAuth(parent:config:)` only runs the background single-item flow) and passkeys fail with code `5208` on tvOS.
+### Notes
+- CocoaPods integration on tvOS additionally needs the `OtplessEventIO` pod to declare tvOS support; Swift Package Manager works today.
+
 ## 3.1.1 (5th November 2026)
 ### Fixes
 - Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.

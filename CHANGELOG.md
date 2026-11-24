@@ -16,6 +16,14 @@
 - iOS cannot check a SIM while the app is suspended; the listener reports a change at the next launch or return to the foreground.
 - Apple's UPI device validation needs the `com.apple.developer.upi-device-validation` entitlement in the host app, which Apple grants only after NPCI whitelisting. Pass `upiEntitlementDeclared: true` only if your app holds it.
 
+## 3.1.2 (23rd November 2026)
+### Feature
+- **tvOS support (tvOS 16+).** The SDK now compiles and initialises on tvOS (Package.swift `.tvOS(.v16)`, podspec `tvos.deployment_target = '16.0'`). WebKit is no longer imported on platforms that don't ship it; the device-info user agent falls back to `otplesssdk` there. The one-tap bottom sheet UI is iOS-only (on tvOS `startAuth(parent:config:)` only runs the background single-item flow) and passkeys fail with code `5208` on tvOS.
+### Fixes
+- Facebook sign-in is now gated on `FBSDKLoginKit` only. Previously the SDK picked the real Facebook implementation when `FacebookCore` alone was importable and then failed to build on `import FBSDKLoginKit`, so apps shipping only `FacebookCore` had to add `FacebookLogin` just to compile. Without `FBSDKLoginKit` the SDK now uses the no-op implementation, whose error message points to the `OtplessBM/FacebookSupport` subspec or the `FacebookLogin` SPM product.
+### Notes
+- CocoaPods integration on tvOS additionally needs the `OtplessEventIO` pod to declare tvOS support; Swift Package Manager works today.
+
 ## 3.1.1 (5th November 2026)
 ### Fixes
 - Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.

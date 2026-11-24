@@ -50,6 +50,7 @@ enum OtplessSmsBindingResult: Equatable, Sendable {
     case failed(OtplessSmsBindingFailure)
 }
 
+#if os(iOS)
 // MARK: - Entry point
 
 extension Otpless {
@@ -183,3 +184,4 @@ internal final class SmsBindingRunGate: @unchecked Sendable {
         lock.unlock()
     }
 }
+#endif

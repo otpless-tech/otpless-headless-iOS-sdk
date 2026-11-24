@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 /// How much of the experience the SDK draws.
 enum OtplessSmsBindingUI: Sendable {
@@ -140,6 +139,9 @@ internal struct HeadlessSmsBindingPrompter: SmsBindingPrompter {
     func hideProgress() async {}
     func offerRetry(_ failure: SmsBindingFailure, context: SmsBindingFailureContext) async -> Bool { false }
 }
+
+#if os(iOS)
+import UIKit
 
 // MARK: - Standard UI
 
@@ -329,3 +331,4 @@ private final class ProgressOverlay: UIView {
         countdown.text = SmsBindingCopy.timeLeft(seconds: Int(expiresAt.timeIntervalSinceNow.rounded(.up)))
     }
 }
+#endif

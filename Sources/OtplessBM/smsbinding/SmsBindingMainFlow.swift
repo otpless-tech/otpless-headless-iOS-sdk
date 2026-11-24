@@ -54,6 +54,7 @@ internal enum SmsBindingMainFlow {
     }
 }
 
+#if os(iOS)
 extension Otpless {
     /// Runs the SMS flow for an intent the backend answered as SIM binding, then reports as above. Not
     /// used by `startSmsBinding`, which asks for the attempt itself.
@@ -90,3 +91,4 @@ extension Otpless {
         invokeResponse(SmsBindingMainFlow.response(for: outcome))
     }
 }
+#endif

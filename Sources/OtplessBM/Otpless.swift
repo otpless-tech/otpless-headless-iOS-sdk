@@ -750,7 +750,9 @@ private extension Otpless {
             authType: SmsBindingMainFlow.authType,
             deliveryChannel: SmsBindingMainFlow.deliveryChannel
         ))
+        #if os(iOS)
         await runSmsBindingFromIntent(next.started, request)
+        #endif
     }
 
     /// OTP_BIND (iOS 27+): settles Apple's permission for the entered number before the app is told to show the

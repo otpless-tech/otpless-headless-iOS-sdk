@@ -146,7 +146,10 @@ extension Otpless {
             }
         }
     }
+}
+#endif
 
+extension Otpless {
     /// The merchant config switches the feature on per app. Until it does, nothing is sent to the
     /// backend.
     internal var isSmsBindingAvailable: Bool {
@@ -184,4 +187,3 @@ internal final class SmsBindingRunGate: @unchecked Sendable {
         lock.unlock()
     }
 }
-#endif

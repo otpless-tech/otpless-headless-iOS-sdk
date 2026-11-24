@@ -11,6 +11,7 @@ internal enum SmsBindingOutcome: Equatable, Sendable {
 /// and VMN, show the composer, apply the rules that depend on how the user sent it (R19, R20,
 /// R21), report what the device saw, then wait for the backend's verdict. Every decision comes
 /// from the rules; nothing here knows which template a client was onboarded with.
+#if os(iOS)
 internal final class SmsBindingUseCase: @unchecked Sendable {
 
     /// R21: the ICCID token must be requested within this long of sending.
@@ -318,3 +319,4 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         return .internalError
     }
 }
+#endif

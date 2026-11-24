@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 // MARK: - Previous attempt (R4: the backend skips the VMN the device used last time)
 
@@ -54,6 +53,9 @@ internal final class InactiveSessionGuard: SmsBindingSessionGuard, @unchecked Se
     func end() {}
 }
 
+#if os(iOS)
+import UIKit
+
 internal final class LiveSmsBindingSessionGuard: SmsBindingSessionGuard, @unchecked Sendable {
     private let lock = NSLock()
     private var observer: NSObjectProtocol?
@@ -106,3 +108,4 @@ private final class BackgroundTask: @unchecked Sendable {
         id = .invalid
     }
 }
+#endif

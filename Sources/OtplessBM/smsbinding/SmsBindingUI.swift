@@ -1,8 +1,7 @@
 import Foundation
-import UIKit
 
 /// How much of the experience the SDK draws.
-public enum OtplessSmsBindingUI: Sendable {
+enum OtplessSmsBindingUI: Sendable {
     /// No SDK screens besides Apple's message composer. The app uses the callbacks and, if it
     /// wants, `OtplessSmsBindingFailure.message` for wording.
     case headless
@@ -15,7 +14,7 @@ public enum OtplessSmsBindingUI: Sendable {
 extension OtplessSmsBindingFailure {
     /// A sentence fit to show the user for this failure. It names the number to send from when the
     /// message came from a different one, and says how long a block lasts when that is known.
-    public var message: String {
+    var message: String {
         SmsBindingCopy.failure(
             code: code,
             context: SmsBindingFailureContext(maskedNumber: maskedNumber, retryAfterSeconds: retryAfterSeconds)
@@ -140,6 +139,9 @@ internal struct HeadlessSmsBindingPrompter: SmsBindingPrompter {
     func hideProgress() async {}
     func offerRetry(_ failure: SmsBindingFailure, context: SmsBindingFailureContext) async -> Bool { false }
 }
+
+#if os(iOS)
+import UIKit
 
 // MARK: - Standard UI
 
@@ -329,3 +331,4 @@ private final class ProgressOverlay: UIView {
         countdown.text = SmsBindingCopy.timeLeft(seconds: Int(expiresAt.timeIntervalSinceNow.rounded(.up)))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if os(iOS) // UITableView separators and sheet presentation are unavailable on tvOS
 //
 //  OneTapBottomSheetViewController.swift
 //  OtplessSDK
@@ -422,3 +423,5 @@ internal final class LogoRingView: UIView {
 
 
 
+
+#endif

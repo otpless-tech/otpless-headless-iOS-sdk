@@ -1,4 +1,6 @@
+#if canImport(CoreTelephony)
 import CoreTelephony
+#endif
 import Foundation
 import UIKit
 
@@ -6,16 +8,9 @@ import UIKit
 
 extension Otpless {
 
-    /// Whether this device has Apple's plan status API (iOS 27 and later). When this is false every
-    /// SIM check below answers `SIM_CHECK_NOT_SUPPORTED`; the SDK does not guess.
-    public var isSimCheckSupported: Bool { SimCheckEnvironment.provider.isSupported }
-
-    /// Asks whether `phoneNumber` has an active plan on this device. Never shows a dialog and never
-    /// blocks the flow: the app decides what `bound`, `notBound` and `unknown` mean.
-    ///
-    /// - Parameter phoneNumber: E.164, for example `+919812345621`.
-    /// - Parameter completion: Called once, on the main thread.
-    public func checkSimBinding(
+    /// Checks one E.164 number (for example `+919812345621`). Used by `checkSimBinding(completion:)` once
+    /// it has the bound number; not part of the public API.
+    internal func checkSimBinding(
         phoneNumber: String,
         completion: @escaping @Sendable (Result<OtplessSimBindingCheck, OtplessSimCheckError>) -> Void
     ) {
@@ -28,7 +23,7 @@ extension Otpless {
 
     /// Asks whether the number this app last bound has an active plan on this device. This is the
     /// form the ticket describes: no number to pass, because the SDK keeps the bound number (set when
-    /// `startSmsBinding` verifies). Never shows a dialog.
+    /// an SMS binding or a verified OTP binds it). Never shows a dialog.
     ///
     /// Answers `NO_BOUND_NUMBER` if nothing has been bound yet, and `SIM_CHECK_NOT_SUPPORTED` before
     /// iOS 27.
@@ -82,31 +77,6 @@ extension Otpless {
             let result = await checker.requestPermission(phoneNumber: phoneNumber)
             DispatchQueue.main.async { completion(result) }
         }
-    }
-
-    /// Calls `listener` when the result of the check for `phoneNumber` changes.
-    ///
-    /// The check runs on app launch, on return to the foreground, when the radio technology
-    /// changes, and every `intervalSeconds` while the app is in the foreground. iOS cannot check
-    /// while the app is suspended, so a change that happens meanwhile is reported at the next launch.
-    ///
-    /// Replaces any listener set earlier. Returns `SIM_CHECK_NOT_SUPPORTED` before iOS 27.
-    @discardableResult
-    public func setSimBindingListener(
-        phoneNumber: String,
-        intervalSeconds: TimeInterval = 60,
-        listener: @escaping @Sendable (OtplessSimBindingCheck) -> Void
-    ) -> Result<Void, OtplessSimCheckError> {
-        guard SimCheckEnvironment.provider.isSupported else { return .failure(.notSupported) }
-        guard PhoneNumberFormat.isE164(phoneNumber) else { return .failure(.invalidPhoneNumber) }
-        SimBindingListenerHost.shared.start(
-            phoneNumber: phoneNumber,
-            interval: max(intervalSeconds, 5),
-            checker: SimBindingChecker(provider: SimCheckEnvironment.provider),
-            store: SimCheckEnvironment.store,
-            listener: listener
-        )
-        return .success(())
     }
 
     public func removeSimBindingListener() {

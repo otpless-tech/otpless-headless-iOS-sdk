@@ -9,7 +9,8 @@ import Foundation
 import os
 import UIKit
 
-#if !canImport(FBSDKLoginKit) && !canImport(FacebookCore)
+// The real implementation needs FBSDKLoginKit; FacebookCore alone is not enough
+#if !canImport(FBSDKLoginKit)
 class FBSdkUseCase: NSObject, FacebookAuthProtocol {
     func register(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]?) {}
     
@@ -19,12 +20,12 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
     func register(openURLContexts URLContexts: Set<UIOpenURLContext>) {}
     
     func startFBSignIn(withNonce nonce: String, withPermissions permissions: [String]) async -> FacebookSignInResponse {
-        os_log("OTPLESS: Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile")
+        os_log("OTPLESS: Facebook support not initialized. Please add FBSDKLoginKit (OtplessBM/FacebookSupport subspec or the FacebookLogin SPM product)")
         return FacebookSignInResponse(
             success: false,
             token: nil,
             idToken: nil,
-            error: "Facebook support not initialized. Please add OtplessBM/FacebookSupport to your Podfile"
+            error: "Facebook support not initialized. Please add FBSDKLoginKit (OtplessBM/FacebookSupport subspec or the FacebookLogin SPM product)"
         )
     }
     
@@ -32,14 +33,8 @@ class FBSdkUseCase: NSObject, FacebookAuthProtocol {
 }
 #else
 
-#if canImport(FBSDKCoreKit)
 import FBSDKCoreKit
 import FBSDKLoginKit
-#endif
-
-#if canImport(FacebookCore)
-import FacebookCore
-#endif
 
 class FBSdkUseCase: NSObject, FacebookAuthProtocol {
     

@@ -1,7 +1,4 @@
-import CoreTelephony
 import Foundation
-import MessageUI
-import UIKit
 
 // MARK: - Seams
 
@@ -38,6 +35,11 @@ internal enum IccidTokenResult: Equatable, Sendable {
 internal protocol IccidTokenProvider: Sendable {
     func fetch() async -> IccidTokenResult
 }
+
+#if os(iOS)
+import CoreTelephony
+import MessageUI
+import UIKit
 
 // MARK: - Live: device facts
 
@@ -240,3 +242,4 @@ private final class ComposerSession: NSObject, MFMessageComposeViewControllerDel
         selfRetain = nil
     }
 }
+#endif

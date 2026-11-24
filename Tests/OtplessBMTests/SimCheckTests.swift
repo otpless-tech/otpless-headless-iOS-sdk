@@ -457,3 +457,91 @@ final class SimBoundForOtpTests: XCTestCase {
         XCTAssertEqual(SimBoundForOtp.body(base, simBound: false)["simBound"] as? Bool, false)
     }
 }
+
+
+// MARK: - OTP_BIND: settle the permission before the OTP screen
+
+final class OtpBindStepTests: XCTestCase {
+    private let number = "+918980994455"
+
+    func testOtpBindIsRecognisedFromTheDeliveryChannelStagingSends() {
+        // What staging sent after SNA failed: the channel stays OTP and the communication mode is OTP_BIND.
+        let staging = OtplessResponse(
+            responseType: .INITIATE,
+            response: ["deliveryChannel": "OTP_BIND", "requestId": "r", "channel": "OTP", "authType": "OTP"],
+            statusCode: 200
+        )
+        XCTAssertTrue(OtpBindStep.isOtpBind(staging))
+    }
+
+    func testOtpBindIsAlsoRecognisedWhenTheChannelIsNamedOtpBind() {
+        let named = OtplessResponse(responseType: .INITIATE, response: ["channel": "OTP_BIND"], statusCode: 200)
+        XCTAssertTrue(OtpBindStep.isOtpBind(named))
+    }
+
+    func testOtherResponsesAreNotOtpBind() {
+        func initiate(_ delivery: String) -> OtplessResponse {
+            OtplessResponse(responseType: .INITIATE, response: ["deliveryChannel": delivery, "channel": "OTP", "authType": "OTP"], statusCode: 200)
+        }
+        XCTAssertFalse(OtpBindStep.isOtpBind(initiate("SMS")))
+        XCTAssertFalse(OtpBindStep.isOtpBind(initiate("WHATSAPP")))
+        XCTAssertFalse(OtpBindStep.isOtpBind(OtplessResponse(responseType: .VERIFY, response: ["deliveryChannel": "OTP_BIND"], statusCode: 400)),
+                       "only an INITIATE starts the code step")
+        XCTAssertFalse(OtpBindStep.isOtpBind(nil))
+    }
+
+    func testAnUndecidedNumberGetsAppleDialogOnce() async {
+        let fake = FakePlanStatus()
+        fake.set(.notAuthorized)
+        fake.requestAnswer = .success(.authorized)
+        let result = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        XCTAssertEqual(result, .granted)
+        XCTAssertEqual(fake.requests, 1)
+    }
+
+    func testAPermissionAlreadyHeldIsNeverAskedForAgain() async {
+        let fake = FakePlanStatus()
+        fake.set(.authorized)
+        let result = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        XCTAssertEqual(result, .granted)
+        XCTAssertEqual(fake.requests, 0, "asking again would show the dialog again, and Not Now would remove the permission")
+    }
+
+    func testARefusalIsReportedAndDoesNotThrow() async {
+        let fake = FakePlanStatus()
+        fake.set(.notAuthorized)
+        fake.requestAnswer = .success(.notAuthorized)
+        let result = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        XCTAssertEqual(result, .denied)
+    }
+
+    func testARestrictedNumberIsUnavailableWithNoDialog() async {
+        let fake = FakePlanStatus()
+        fake.set(.restricted)
+        let result = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        XCTAssertEqual(result, .unavailable)
+        XCTAssertEqual(fake.requests, 0)
+    }
+
+    func testBeforeIOS27ThereIsNothingToSettle() async {
+        let fake = FakePlanStatus()
+        fake.supported = false
+        let result = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        XCTAssertNil(result)
+        XCTAssertEqual(fake.requests, 0)
+    }
+
+    func testAnEmailRequestHasNoNumberToSettle() async {
+        let result = await OtpBindStep.settlePermission(provider: FakePlanStatus(), e164: nil)
+        XCTAssertNil(result)
+    }
+
+    func testANewNumberIsSettledAgain() async {
+        let fake = FakePlanStatus()
+        fake.set(.notAuthorized)
+        fake.requestAnswer = .success(.authorized)
+        _ = await OtpBindStep.settlePermission(provider: fake, e164: number)
+        _ = await OtpBindStep.settlePermission(provider: fake, e164: "+917990283535")
+        XCTAssertEqual(fake.requests, 2, "the provider is asked for each number the user enters")
+    }
+}

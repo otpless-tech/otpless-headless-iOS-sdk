@@ -294,6 +294,7 @@ import OtplessEventIO
         if onetapItemData.isEmpty {
             return false
         }
+        #if os(iOS)
         if authConfig.isForeground {
             await MainActor.run {
                 presentOneTapBottomSheet(viewController: vc, items: onetapItemData, config: authConfig)
@@ -307,6 +308,16 @@ import OtplessEventIO
         } else {
             return false
         }
+        #else
+        // The one-tap bottom sheet is not available on tvOS; only the background flow is supported.
+        if authConfig.isForeground || onetapItemData.count != 1 {
+            return false
+        }
+        let request = OtplessRequest()
+        request.onetapItemData = onetapItemData[0]
+        await startOnetapAuth(config: authConfig, request: request)
+        return true
+        #endif
     }
     
     private func startOnetapAuth(config authConfig: OtplessAuthCofig, request otplessRequest: OtplessRequest) async {
@@ -680,12 +691,18 @@ private extension Otpless {
                 countryCode: otplessRequest.getCountryCode(),
                 phoneNumber: otplessRequest.getPhone()
             )
-            let verifyOtpResponse = await verifyOtpUseCase.invoke(
+            let verifyOutcome = await verifyOtpUseCase.invoke(
                 state: self.state ?? "",
                 queryParams: otplessRequest.getQueryParams(),
                 simBound: simBound,
                 getTransactionStatusUseCase: self.transactionStatusUseCase
             )
+            // The SIM is not bound and the backend names SMS binding as the next channel: carry on there.
+            if let next = verifyOutcome.nextSmsBinding {
+                await continueWithSmsBinding(next, otplessRequest)
+                return
+            }
+            let verifyOtpResponse = verifyOutcome.response
             // A verified OTP whose number the SIM holds is a bound number: the SIM check uses it from now on.
             if simBound == true, verifyOtpResponse.responseType == .ONETAP,
                let number = SimBoundForOtp.e164(
@@ -720,7 +737,35 @@ private extension Otpless {
 
 
     
+    /// A failed verify named SMS binding as the next channel (the OTP did not bind the SIM): switch to the new attempt,
+    /// tell the app the next step has started (`INITIATE`, `authType: SIM_BINDING`), and run it.
+    func continueWithSmsBinding(_ next: NextSmsBinding, _ request: OtplessRequest) async {
+        self.token = next.token
+        self.asId = next.asId
+        if !next.uid.isEmpty { self.uid = next.uid }
+        onAuthTypeChange(newAuthType: SmsBindingMainFlow.authType)
+        invokeResponse(OtplessResponse.createSuccessfulInitiateResponse(
+            requestId: next.token,
+            channel: SmsBindingMainFlow.authType,
+            authType: SmsBindingMainFlow.authType,
+            deliveryChannel: SmsBindingMainFlow.deliveryChannel
+        ))
+        #if os(iOS)
+        await runSmsBindingFromIntent(next.started, request)
+        #endif
+    }
+
+    /// OTP_BIND (iOS 27+): settles Apple's permission for the entered number before the app is told to show the
+    /// OTP screen. Never blocks the OTP: with no permission the SDK just sends no `simBound`.
+    private func settleOtpBindPermission(for response: OtplessResponse?, _ otplessRequest: OtplessRequest) async {
+        guard OtpBindStep.isOtpBind(response) else { return }
+        let number = SmsBindingMainFlow.e164(countryCode: otplessRequest.getCountryCode(), phoneNumber: otplessRequest.getPhone())
+        let permission = await OtpBindStep.settlePermission(provider: SimCheckEnvironment.provider, e164: number)
+        log(message: "[OTP_BIND] number-status permission for \(number ?? "no number"): \(permission?.rawValue ?? "not applicable")", type: .INTENT)
+    }
+
     private func handleIntentResponse(_ intentResponse: PostIntentUseCaseResponse, _ otplessRequest: OtplessRequest) async {
+        await settleOtpBindPermission(for: intentResponse.otplessResponse, otplessRequest)
         if let otplessResponse = intentResponse.otplessResponse {
             invokeResponse(otplessResponse)
             // check for error code, if error code is terminal error code
@@ -745,10 +790,12 @@ private extension Otpless {
         }
         
         // The backend answered as outbound SMS SIM binding (the last step after SNA and OTP): run it here.
+        #if os(iOS)
         if let started = intentResponse.smsBindingStart {
             await runSmsBindingFromIntent(started, otplessRequest)
             return
         }
+        #endif
 
         if let passkeyRequestStr = intentResponse.passkeyRequestStr,
            !passkeyRequestStr.isEmpty,
@@ -788,6 +835,8 @@ private extension Otpless {
             let response = await self.snaUseCase.invoke(url: snaUrl, timerSettings: timerSettings)
             if let otplessResponse = response.otplessResponse {
                 for op in otplessResponse {
+                    // SNA failed and the code goes with a SIM bind: settle the permission before the OTP screen.
+                    await settleOtpBindPermission(for: op, otplessRequest)
                     invokeResponse(op)
                     if op.responseType == ResponseTypes.ONETAP {
                         // No need to proceed further, user has been authenticated
@@ -809,10 +858,12 @@ private extension Otpless {
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
                 // SNA failed and the backend named outbound SMS as the next channel: run it here.
+                #if os(iOS)
                 if let started = response.smsBindingStart {
                     await runSmsBindingFromIntent(started, otplessRequest)
                     return
                 }
+                #endif
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)
@@ -1061,6 +1112,7 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
 
 extension Otpless {
     
+    #if os(iOS)
     @available(iOS 15.0, *)
     @MainActor
     internal func presentOneTapBottomSheet(viewController: UIViewController, items: [OnetapItemData], config config: OtplessAuthCofig) {
@@ -1084,6 +1136,7 @@ extension Otpless {
         onetapController = sheetVC
         viewController.present(sheetVC, animated: true)
     }
+    #endif
     
     internal func dismissOneTapBottomSheet() {
         Task { @MainActor [weak self] in

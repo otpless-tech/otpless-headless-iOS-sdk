@@ -124,3 +124,53 @@ final class PollFailureTests: XCTestCase {
         XCTAssertEqual(response.response?["errorMessage"] as? String, "Server error")
     }
 }
+
+
+/// What staging sent when an OTP_BIND code was verified for a number the SIM does not hold: the transaction FAILED with
+/// SIM_NOT_BOUND, and `quantumLeap` named SMS binding as the next channel.
+private let simNotBoundWithNextChannel = """
+{"authDetail":{"status":"FAILED","token":"21f56e742e3546b2a2889a9121b82b59","asId":"24346881090C48A382BEB4177285E47B",
+ "errorDetails":"The SIM is not bound to this device","errorCode":"SIM_NOT_BOUND","communicationDelivered":false,"webauthnRegistered":false},
+ "quantumLeap":{"state":"170dc9a0","channelAuthToken":"21f56e742e3546b2a2889a9121b82b59","uid":"3708E6B23FC64C579C411E35CEBB24F2",
+ "channel":"SIM_BINDING","channels":["SIM_BINDING"],"asId":"24346881090C48A382BEB4177285E47B","communicationMode":"OUTBOUND_SMS",
+ "status":"PENDING","timerSettings":{"interval":1500,"timeout":120000},"pollingRequired":true,
+ "simBinding":{"vmn":"+917065888859","smsBody":"please send the message EITRsfrNAJY2A2O:6jj2lHxOOoKQ-z7MQF2RvDvD","expiresAt":1795194486,"expiresInSeconds":120}}}
+"""
+
+final class VerifyFallbackTests: XCTestCase {
+    private func decode(_ json: String) throws -> TransactionStatusResponse {
+        try JSONDecoder().decode(TransactionStatusResponse.self, from: Data(json.utf8))
+    }
+
+    func testAFailedVerifyThatNamesSmsBindingNextCarriesOnThere() throws {
+        let next = try XCTUnwrap(VerifyOTPUseCase.nextSmsBinding(from: try decode(simNotBoundWithNextChannel)))
+        XCTAssertEqual(next.token, "21f56e742e3546b2a2889a9121b82b59")
+        XCTAssertEqual(next.started.issued.vmn, "+917065888859")
+        XCTAssertEqual(next.started.issued.ttlSeconds, 120)
+        XCTAssertEqual(next.uid, "3708E6B23FC64C579C411E35CEBB24F2")
+    }
+
+    func testAFailedVerifyWithNoNextChannelStillEnds() throws {
+        XCTAssertNil(VerifyOTPUseCase.nextSmsBinding(from: try decode(simNotBound)))
+    }
+
+    func testASuccessfulVerifyNeverCarriesOn() throws {
+        XCTAssertNil(VerifyOTPUseCase.nextSmsBinding(from: try decode(verified)))
+    }
+
+    func testAnotherNextChannelIsNotSmsBinding() throws {
+        let other = simNotBoundWithNextChannel
+            .replacingOccurrences(of: "\"channel\":\"SIM_BINDING\"", with: "\"channel\":\"OTP\"")
+        XCTAssertNil(VerifyOTPUseCase.nextSmsBinding(from: try decode(other)))
+    }
+
+    func testANextChannelWithIncompleteDataEnds() throws {
+        let incomplete = simNotBoundWithNextChannel.replacingOccurrences(of: "\"vmn\":\"+917065888859\",", with: "")
+        XCTAssertNil(VerifyOTPUseCase.nextSmsBinding(from: try decode(incomplete)))
+    }
+
+    func testTheFailedResponseIsStillTheTerminalOneForCallersThatDoNotFollowTheNextChannel() throws {
+        let response = VerifyOTPUseCase.response(for: try decode(simNotBoundWithNextChannel))
+        XCTAssertEqual(response.responseType, .AUTH_TERMINATED)
+    }
+}

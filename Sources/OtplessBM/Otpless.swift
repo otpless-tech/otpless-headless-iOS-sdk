@@ -294,6 +294,7 @@ import OtplessEventIO
         if onetapItemData.isEmpty {
             return false
         }
+        #if os(iOS)
         if authConfig.isForeground {
             await MainActor.run {
                 presentOneTapBottomSheet(viewController: vc, items: onetapItemData, config: authConfig)
@@ -307,6 +308,16 @@ import OtplessEventIO
         } else {
             return false
         }
+        #else
+        // The one-tap bottom sheet is not available on tvOS; only the background flow is supported.
+        if authConfig.isForeground || onetapItemData.count != 1 {
+            return false
+        }
+        let request = OtplessRequest()
+        request.onetapItemData = onetapItemData[0]
+        await startOnetapAuth(config: authConfig, request: request)
+        return true
+        #endif
     }
     
     private func startOnetapAuth(config authConfig: OtplessAuthCofig, request otplessRequest: OtplessRequest) async {
@@ -777,10 +788,12 @@ private extension Otpless {
         }
         
         // The backend answered as outbound SMS SIM binding (the last step after SNA and OTP): run it here.
+        #if os(iOS)
         if let started = intentResponse.smsBindingStart {
             await runSmsBindingFromIntent(started, otplessRequest)
             return
         }
+        #endif
 
         if let passkeyRequestStr = intentResponse.passkeyRequestStr,
            !passkeyRequestStr.isEmpty,
@@ -843,10 +856,12 @@ private extension Otpless {
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
                 // SNA failed and the backend named outbound SMS as the next channel: run it here.
+                #if os(iOS)
                 if let started = response.smsBindingStart {
                     await runSmsBindingFromIntent(started, otplessRequest)
                     return
                 }
+                #endif
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)
@@ -1095,6 +1110,7 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
 
 extension Otpless {
     
+    #if os(iOS)
     @available(iOS 15.0, *)
     @MainActor
     internal func presentOneTapBottomSheet(viewController: UIViewController, items: [OnetapItemData], config config: OtplessAuthCofig) {
@@ -1118,6 +1134,7 @@ extension Otpless {
         onetapController = sheetVC
         viewController.present(sheetVC, animated: true)
     }
+    #endif
     
     internal func dismissOneTapBottomSheet() {
         Task { @MainActor [weak self] in

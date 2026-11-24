@@ -294,6 +294,7 @@ import OtplessEventIO
         if onetapItemData.isEmpty {
             return false
         }
+        #if os(iOS)
         if authConfig.isForeground {
             await MainActor.run {
                 presentOneTapBottomSheet(viewController: vc, items: onetapItemData, config: authConfig)
@@ -307,6 +308,16 @@ import OtplessEventIO
         } else {
             return false
         }
+        #else
+        // The one-tap bottom sheet is not available on tvOS; only the background flow is supported.
+        if authConfig.isForeground || onetapItemData.count != 1 {
+            return false
+        }
+        let request = OtplessRequest()
+        request.onetapItemData = onetapItemData[0]
+        await startOnetapAuth(config: authConfig, request: request)
+        return true
+        #endif
     }
     
     private func startOnetapAuth(config authConfig: OtplessAuthCofig, request otplessRequest: OtplessRequest) async {
@@ -1045,6 +1056,7 @@ public protocol OtplessResponseDelegate: NSObjectProtocol {
 
 extension Otpless {
     
+    #if os(iOS)
     @available(iOS 15.0, *)
     @MainActor
     internal func presentOneTapBottomSheet(viewController: UIViewController, items: [OnetapItemData], config config: OtplessAuthCofig) {
@@ -1068,6 +1080,7 @@ extension Otpless {
         onetapController = sheetVC
         viewController.present(sheetVC, animated: true)
     }
+    #endif
     
     internal func dismissOneTapBottomSheet() {
         Task { @MainActor [weak self] in

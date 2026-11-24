@@ -9,6 +9,14 @@
 - Nothing changes for apps that do not call these APIs.
 - Apple's UPI device validation needs the `com.apple.developer.upi-device-validation` entitlement in the host app, which Apple grants only after NPCI whitelisting. Pass `upiEntitlementDeclared: true` only if your app holds it.
 
+## 3.1.2 (23rd November 2026)
+### Feature
+- **tvOS support (tvOS 16+).** The SDK now compiles and initialises on tvOS (Package.swift `.tvOS(.v16)`, podspec `tvos.deployment_target = '16.0'`). WebKit is no longer imported on platforms that don't ship it; the device-info user agent falls back to `otplesssdk` there. The one-tap bottom sheet UI is iOS-only (on tvOS `startAuth(parent:config:)` only runs the background single-item flow) and passkeys fail with code `5208` on tvOS.
+### Fixes
+- Facebook sign-in is now gated on `FBSDKLoginKit` only. Previously the SDK picked the real Facebook implementation when `FacebookCore` alone was importable and then failed to build on `import FBSDKLoginKit`, so apps shipping only `FacebookCore` had to add `FacebookLogin` just to compile. Without `FBSDKLoginKit` the SDK now uses the no-op implementation, whose error message points to the `OtplessBM/FacebookSupport` subspec or the `FacebookLogin` SPM product.
+### Notes
+- CocoaPods integration on tvOS additionally needs the `OtplessEventIO` pod to declare tvOS support; Swift Package Manager works today.
+
 ## 3.1.1 (5th November 2026)
 ### Fixes
 - Request-id flow (`set(fromBackend:)`): the request no longer defaults to the phone channel. Any intent that carries a backend-generated `requestId` now sends `isAutoIntent: true` (WebAuthn request ids excluded); the channel is not needed for these intents. Silent auth (SNA) is not requested when only a request id is set.
@@ -28,6 +36,8 @@
 
 ## Unreleased
 ### Fixes
+- **A transaction the backend ended as `FAILED` is no longer reported as a sign-in.** The verify-OTP call answers HTTP 200 even when it fails the transaction, and the SDK read that as `ONETAP`. It now returns `AUTH_TERMINATED` with the backend's message in `errorMessage`, and the reason in an `error` object: the backend's own `error` object (the shape of `snaError`) when it sends one, otherwise one built from its `errorCode` and `errorDetails` (`errorCode`, `message`, `description`, the shape of `snaError`, for example `SIM_NOT_BOUND`). The numeric `errorCode` (`9106`) is unchanged. `snaError` stays the backend's own object for silent-auth failures. The status poll maps a `FAILED` status the same way.
+- **The status poll no longer ends without telling the app.** A refused status call (401 token expired, 7304, 5xx) now ends with `AUTH_TERMINATED` carrying the backend's `errorCode` and message, and a poll that runs out of attempts reports the transaction timeout (`9106`). Before, the app waited forever.
 - Invalid state (`7005`) on the intent or merchant config API now refreshes the cached state and retries the call once per session — Android parity.
 - Stale state and session data left in the Keychain after an app reinstall are now cleared on the first launch. The uid is kept.
 

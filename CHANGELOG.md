@@ -1,3 +1,9 @@
+## 3.2.1 (26th November 2026)
+### Fixes
+- **CocoaPods publishing with tvOS.** The `GoogleSupport` and `FacebookSupport` subspecs are now iOS-only in the podspec. GoogleSignIn and FBSDKLoginKit have no tvOS support, so CocoaPods rejected the pod on the tvOS platform check that tvOS support (3.1.2) turned on. No SDK code changes: this only affects how the pod is published.
+### Notes
+- 3.1.2 and 3.2.0 were published to Swift Package Manager only. 3.2.1 is the first CocoaPods release since 3.1.1 and includes everything in 3.1.2 (tvOS support, Facebook sign-in gating) and 3.2.0 (SMS SIM binding, the iOS 27 SIM check).
+
 ## 3.2.0 (26th November 2026)
 ### Feature
 - **Outbound SMS SIM binding**, a channel of the intent call, run by the SDK inside the normal `start(withRequest:)` flow when the backend answers a sign-in, or SNA's status response, as `SIM_BINDING` (there is no function to call). The response carries the token, number, message and, when the backend sends them, the rules (the backend checks the rules itself, so a response with none still runs the flow). The SDK polls the general `status` API, and ends an attempt that fails on the device by adding `lapseMeta` to that call. The phone sends a one-time token by SMS from its own SIM and the backend verifies it. Behaviour follows the rules the backend serves for your app; the SDK never branches on a template name. Device rules run before anything is requested (minimum app and iOS version, SIM present and on a network, `canSendText`). With the UPI rule on, the composer uses Apple's UPI device validation (non-editable message, carrier-sent completion) and never falls back to an editable one. iOS 26+ also registers Apple's ICCID token. The app sees `INITIATE` (`authType: SIM_BINDING`), `DELIVERY_STATUS`, then `ONETAP` or a `VERIFY` error with `errorCode`, `authType` and `retryable`.

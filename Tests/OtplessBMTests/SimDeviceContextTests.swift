@@ -50,3 +50,29 @@ final class SimDeviceContextTests: XCTestCase {
         XCTAssertNil(Otpless.shared.deviceContextForIntent())
     }
 }
+
+/// tvOS has no SIM binding: the platform is reported so the backend leaves it out, and the one answer for
+/// "cannot run here" is a failed `INITIATE`, never the success one.
+final class SimBindingPlatformTests: XCTestCase {
+    func testTheDeviceContextNamesTheRunningPlatform() {
+        XCTAssertEqual(SmsBindingMainFlow.platform, "ios")
+        XCTAssertTrue(SmsBindingMainFlow.isSupportedOnThisPlatform)
+        XCTAssertEqual(
+            SimDeviceContext.dictionary(osVersion: "27.0", planStatusSupported: true, upiEntitlement: false)["platform"] as? String,
+            "ios"
+        )
+        XCTAssertEqual(
+            SimDeviceContext.dictionary(platform: "tvos", osVersion: "18.0", planStatusSupported: false, upiEntitlement: false)["platform"] as? String,
+            "tvos"
+        )
+    }
+
+    func testTheNotAvailableAnswerIsAFailedInitiate() {
+        let response = SmsBindingMainFlow.notAvailableInitiateResponse
+        XCTAssertEqual(response.responseType, .INITIATE)
+        XCTAssertEqual(response.statusCode, 500)
+        XCTAssertEqual(response.response?["errorCode"] as? String, "SIM_BINDING_NOT_AVAILABLE")
+        XCTAssertEqual(response.response?["authType"] as? String, "SIM_BINDING")
+        XCTAssertNotNil(response.response?["errorMessage"] as? String)
+    }
+}

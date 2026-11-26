@@ -142,3 +142,42 @@ final class StateRefreshTests: XCTestCase {
         XCTAssertNil(result)
     }
 }
+
+/// The Keychain survives an uninstall, so the number a previous install bound must not carry over.
+final class BoundNumberFreshInstallTests: XCTestCase {
+    private let storage = SecureStorage.shared
+    private var originalKeychain: KeychainStore!
+
+    override func setUp() {
+        super.setUp()
+        originalKeychain = storage.keychain
+        storage.keychain = InMemoryKeychainStore()
+        UserDefaults.standard.removeObject(forKey: Constants.INSTALL_MARKER_KEY)
+    }
+
+    override func tearDown() {
+        storage.keychain = originalKeychain
+        UserDefaults.standard.removeObject(forKey: Constants.INSTALL_MARKER_KEY)
+        super.tearDown()
+    }
+
+    func testAFreshInstallClearsTheBoundNumber() {
+        let store = KeychainBoundNumberStore()
+        store.save("+919812345621")
+        XCTAssertEqual(store.current, "+919812345621")
+
+        storage.clearStaleDataOnFreshInstall()
+
+        XCTAssertNil(store.current)
+    }
+
+    func testALaterLaunchKeepsTheBoundNumber() {
+        let store = KeychainBoundNumberStore()
+        storage.clearStaleDataOnFreshInstall()   // first launch marks the install
+        store.save("+919812345621")
+
+        storage.clearStaleDataOnFreshInstall()   // later launches leave it alone
+
+        XCTAssertEqual(store.current, "+919812345621")
+    }
+}

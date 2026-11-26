@@ -8,17 +8,13 @@ import UIKit
 
 extension Otpless {
 
-    /// Checks one E.164 number (for example `+919812345621`). Used by `checkSimBinding(completion:)` once
-    /// it has the bound number; not part of the public API.
+    /// Checks one E.164 number (for example `+919812345621`). Used by `checkSimBinding()` once it has the
+    /// bound number; not part of the public API.
     internal func checkSimBinding(
-        phoneNumber: String,
-        completion: @escaping @Sendable (Result<OtplessSimBindingCheck, OtplessSimCheckError>) -> Void
-    ) {
+        phoneNumber: String
+    ) async -> Result<OtplessSimBindingCheck, OtplessSimCheckError> {
         let checker = SimBindingChecker(provider: SimCheckEnvironment.provider)
-        Task {
-            let result = await checker.check(phoneNumber: phoneNumber)
-            DispatchQueue.main.async { completion(result) }
-        }
+        return await checker.check(phoneNumber: phoneNumber)
     }
 
     /// Asks whether the number this app last bound has an active plan on this device. This is the
@@ -27,16 +23,14 @@ extension Otpless {
     ///
     /// Answers `NO_BOUND_NUMBER` if nothing has been bound yet, and `SIM_CHECK_NOT_SUPPORTED` before
     /// iOS 27.
-    public func checkSimBinding(
-        completion: @escaping @Sendable (Result<OtplessSimBindingCheck, OtplessSimCheckError>) -> Void
-    ) {
+    public func checkSimBinding() async -> Result<OtplessSimBindingCheck, OtplessSimCheckError> {
         guard SimCheckEnvironment.provider.isSupported else {
-            return DispatchQueue.main.async { completion(.failure(.notSupported)) }
+            return .failure(.notSupported)
         }
         guard let number = SimCheckEnvironment.boundNumbers.current else {
-            return DispatchQueue.main.async { completion(.failure(.noBoundNumber)) }
+            return .failure(.noBoundNumber)
         }
-        checkSimBinding(phoneNumber: number, completion: completion)
+        return await checkSimBinding(phoneNumber: number)
     }
 
     /// Calls `listener` when the status of the bound number changes (`bound`, `notBound` or
@@ -69,14 +63,10 @@ extension Otpless {
     /// Asks Apple for permission to check `phoneNumber`, for apps that show their own explanation
     /// first. Apple's dialog appears only when the permission is not already held.
     public func requestNumberStatusPermission(
-        phoneNumber: String,
-        completion: @escaping @Sendable (Result<OtplessNumberStatusPermission, OtplessSimCheckError>) -> Void
-    ) {
+        phoneNumber: String
+    ) async -> Result<OtplessNumberStatusPermission, OtplessSimCheckError> {
         let checker = SimBindingChecker(provider: SimCheckEnvironment.provider)
-        Task {
-            let result = await checker.requestPermission(phoneNumber: phoneNumber)
-            DispatchQueue.main.async { completion(result) }
-        }
+        return await checker.requestPermission(phoneNumber: phoneNumber)
     }
 
     public func removeSimBindingListener() {

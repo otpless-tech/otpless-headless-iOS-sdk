@@ -32,7 +32,10 @@ internal class PostIntentUseCase {
 
         let appAttestInfo = await getAppAttestInfo(requestBody, state: state)
         let response = await Otpless.shared.apiRepository
-            .postIntent(state: state, body: requestBody, appAttestInfo: appAttestInfo)
+            .postIntent(
+                state: state, body: requestBody, appAttestInfo: appAttestInfo,
+                deviceContext: Otpless.shared.deviceContextForIntent()
+            )
 
         switch response {
         case .success(let success):
@@ -147,7 +150,55 @@ internal class PostIntentUseCase {
         }
     }
     
+    /// The backend answered a normal intent as outbound SMS SIM binding. It is not polled like the other
+    /// channels: its timer settings are in milliseconds and the device has to send an SMS first. The
+    /// SMS flow runs it (`Otpless.runSmsBindingFromIntent`).
+    func parseSimBindingResponse(_ response: IntentResponse) -> PostIntentUseCaseResponse {
+        let ids = TokenAsIdUIdAndTimerSettings(
+            token: response.quantumLeap.channelAuthToken,
+            asId: response.quantumLeap.asId,
+            uid: response.quantumLeap.uid ?? "",
+            timerSettings: response.quantumLeap.timerSettings
+        )
+        // This platform cannot run it (tvOS): answer with the failed INITIATE, not the success one.
+        guard SmsBindingMainFlow.isSupportedOnThisPlatform else { return smsBindingNotAvailableResponse() }
+        switch SmsBindingStarted.parse(quantumLeap: response.quantumLeap.simBindingDictionary()) {
+        case .started(let started):
+            Otpless.shared.onAuthTypeChange(newAuthType: response.quantumLeap.channel)
+            return PostIntentUseCaseResponse(
+                intent: nil,
+                otplessResponse: parseInitiateResponse(data: response),
+                tokenAsIdUIdAndTimerSettings: ids,
+                passkeyRequestStr: nil,
+                uid: nil,
+                sdkAuthParams: nil,
+                isPollingRequired: false,
+                isSNA: false,
+                smsBindingStart: started
+            )
+        case .notSimBinding, .malformed:
+            // Without the token, number and message there is nothing to run, and polling would hang.
+            return smsBindingNotAvailableResponse()
+        }
+    }
+
+    private func smsBindingNotAvailableResponse() -> PostIntentUseCaseResponse {
+        PostIntentUseCaseResponse(
+            intent: nil,
+            otplessResponse: SmsBindingMainFlow.notAvailableInitiateResponse,
+            tokenAsIdUIdAndTimerSettings: nil,
+            passkeyRequestStr: nil,
+            uid: nil,
+            sdkAuthParams: nil,
+            isPollingRequired: false,
+            isSNA: false
+        )
+    }
+
     func parseSuccessResponse(_ response: IntentResponse, postIntentRequestBody: PostIntentRequestBody) -> PostIntentUseCaseResponse {
+        if response.quantumLeap.channel == LiveSmsBindingBackend.channel {
+            return parseSimBindingResponse(response)
+        }
         var initiateResponse: OtplessResponse? = nil
         let isPollingRequired = response.quantumLeap.pollingRequired
         
@@ -423,6 +474,8 @@ internal struct PostIntentUseCaseResponse {
     var sdkAuthParams: SdkAuthParams?
     var isPollingRequired: Bool
     var isSNA: Bool
+    /// Set when the backend answered the intent as outbound SMS SIM binding.
+    var smsBindingStart: SmsBindingStarted?
     
     init(
         intent: String?,
@@ -432,8 +485,10 @@ internal struct PostIntentUseCaseResponse {
         uid: String?,
         sdkAuthParams: SdkAuthParams?,
         isPollingRequired: Bool,
-        isSNA: Bool
+        isSNA: Bool,
+        smsBindingStart: SmsBindingStarted? = nil
     ) {
+        self.smsBindingStart = smsBindingStart
         self.intent = intent
         self.otplessResponse = otplessResponse
         self.tokenAsIdUIdAndTimerSettings = tokenAsIdUIdAndTimerSettings

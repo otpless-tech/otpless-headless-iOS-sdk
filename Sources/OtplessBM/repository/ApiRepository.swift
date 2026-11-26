@@ -18,6 +18,11 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
+    /// The real outbound SMS binding backend, on this repository's `ApiManager`.
+    func makeSmsBindingBackend() -> SmsBindingBackend {
+        LiveSmsBindingBackend(apiManager: apiManager)
+    }
+
     /// Test seam: lets a test supply an `ApiManager` built on a stubbed `URLSession`.
     init(apiManager: ApiManager) {
         self.apiManager = apiManager
@@ -107,11 +112,15 @@ internal final class ApiRepository: @unchecked Sendable {
     func postIntent(
         state: String,
         body: PostIntentRequestBody,
-        appAttestInfo: [String: String]? = nil
+        appAttestInfo: [String: String]? = nil,
+        deviceContext: [String: Any]? = nil
     ) async -> Result<IntentResponse, Error> {
         let apiName = "postIntent"
         var requestBody = body.toDict()
         if let appAttestInfo { requestBody["appAttestInfo"] = appAttestInfo }
+        // Only for apps that have switched SMS binding on (see `SimDeviceContext.forIntent`); every
+        // other app sends the body it always did.
+        if let deviceContext { requestBody["deviceContext"] = deviceContext }
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
@@ -175,14 +184,19 @@ internal final class ApiRepository: @unchecked Sendable {
         }
     }
     
-    func verifyOTP(queryParams: [String: String], state: String) async -> Result<TransactionStatusResponse, Error> {
+    func verifyOTP(
+        queryParams: [String: String],
+        state: String,
+        simBound: Bool? = nil
+    ) async -> Result<TransactionStatusResponse, Error> {
         let apiName = "verifyOTP"
         do {
             let data = try await self.apiManager.performUserAuthRequest(
                 state: state,
                 path: ApiManager.OTP_VERIFICATION_PATH,
                 method: "POST",
-                body: appendTokenIds(queryParams: queryParams)
+                // `simBound` is added only on iOS 27+ for apps with SMS binding on, and only when known
+                body: SimBoundForOtp.body(appendTokenIds(queryParams: queryParams), simBound: simBound)
             )
             sendApiResponse(apiName: apiName, data: data, statusCode: 200)
             return try Result.success(JSONDecoder().decode(TransactionStatusResponse.self, from: data))

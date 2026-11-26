@@ -122,7 +122,7 @@ internal final class SecureStorage: @unchecked Sendable {
     func clearStaleDataOnFreshInstall() {
         guard !getFromUserDefaults(key: Constants.INSTALL_MARKER_KEY, defaultValue: false) else { return }
         log(message: "[Storage] Fresh install detected — clearing stale keychain data", type: .SDK_STATE_FETCH)
-        let keychainToDelete = [Constants.STATE_KEY, SessionStorageKeys.state, SessionStorageKeys.session]
+        let keychainToDelete = [Constants.STATE_KEY, SessionStorageKeys.state, SessionStorageKeys.session, KeychainBoundNumberStore.key]
         for each in keychainToDelete {
             delete(key: each)
         }

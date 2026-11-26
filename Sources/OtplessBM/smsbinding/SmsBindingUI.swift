@@ -206,7 +206,7 @@ internal final class StandardSmsBindingPrompter: SmsBindingPrompter, @unchecked 
     /// waiting forever.
     private func ask(title: String, message: String, confirm: String?, dismiss: String, ifNoScreen: Bool) async -> Bool {
         await withCheckedContinuation { continuation in
-            let once = OneShot()
+            let once = ResumeOnce()
             let answer: @Sendable (Bool) -> Void = { value in
                 if once.claim() { continuation.resume(returning: value) }
             }

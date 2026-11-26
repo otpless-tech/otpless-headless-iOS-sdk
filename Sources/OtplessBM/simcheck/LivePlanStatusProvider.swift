@@ -65,7 +65,7 @@ internal struct LivePlanStatusProvider: PlanStatusProvider {
         makeBlock: (@escaping @Sendable (Result<T, Error>) -> Void) -> AnyObject
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
-            let once = OneShot()
+            let once = ResumeOnce()
             let finish: @Sendable (Result<T, Error>) -> Void = { result in
                 guard once.claim() else { return }
                 continuation.resume(with: result)

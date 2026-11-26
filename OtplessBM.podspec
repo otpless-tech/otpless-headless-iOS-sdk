@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'OtplessBM'
-  s.version          = '3.2.0'
+  s.version          = '3.2.1'
   s.summary          = 'Standalone SDK for Otpless Headless functionality.'
 
   s.description      = <<-DESC
@@ -21,12 +21,16 @@ Pod::Spec.new do |s|
   end
 
   s.subspec 'FacebookSupport' do |fb|
+    # FBSDKLoginKit has no tvOS support, so this subspec is iOS only.
+    fb.platform = :ios, '13.0'
     fb.dependency 'OtplessBM/Core'
     fb.dependency 'FBSDKCoreKit', '~> 17.0.2'
     fb.dependency 'FBSDKLoginKit', '~> 17.0.2'
   end
 
   s.subspec 'GoogleSupport' do |google|
+    # GoogleSignIn has no tvOS support, so this subspec is iOS only.
+    google.platform = :ios, '13.0'
     google.dependency 'OtplessBM/Core'
     google.dependency 'GoogleSignIn', '~> 9.0'
     google.dependency 'GoogleSignInSwiftSupport', '~> 9.0'

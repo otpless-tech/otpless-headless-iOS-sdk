@@ -30,8 +30,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
     private let device: SmsBindingDevice
     private let prompter: SmsBindingPrompter
     private let lastAttempt: SmsBindingLastAttempt
+    private let boundNumbers: BoundNumberStore
     private let blockMemory: SmsBindingBlockMemory
     private let makeSessionGuard: @Sendable () -> SmsBindingSessionGuard
+    private let planStatusSupported: @Sendable () -> Bool
     private let sdkVersion: String
     private let deviceFingerprintHash: @Sendable () -> String?
     private let now: @Sendable () -> Date
@@ -43,7 +45,9 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         iccid: IccidTokenProvider = LiveIccidTokenProvider(),
         device: SmsBindingDevice = LiveSmsBindingDevice(),
         prompter: SmsBindingPrompter = HeadlessSmsBindingPrompter(),
+        planStatusSupported: @escaping @Sendable () -> Bool = { LivePlanStatusProvider().isSupported },
         lastAttempt: SmsBindingLastAttempt = SmsBindingLastAttempt(),
+        boundNumbers: BoundNumberStore = InMemoryBoundNumberStore(),
         blockMemory: SmsBindingBlockMemory = SmsBindingBlockMemory(defaults: UserDefaults(suiteName: UUID().uuidString) ?? .standard),
         sessionGuard: @escaping @Sendable () -> SmsBindingSessionGuard = { LiveSmsBindingSessionGuard() },
         sdkVersion: String = Constants.SDK_VERSION,
@@ -59,8 +63,10 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
         self.device = device
         self.prompter = prompter
         self.lastAttempt = lastAttempt
+        self.boundNumbers = boundNumbers
         self.blockMemory = blockMemory
         self.makeSessionGuard = sessionGuard
+        self.planStatusSupported = planStatusSupported
         self.sdkVersion = sdkVersion
         self.deviceFingerprintHash = deviceFingerprintHash
         self.now = now
@@ -106,7 +112,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                     deviceFingerprintHash: deviceFingerprintHash(),
                     previousAttemptId: previousAttemptId ?? lastAttempt.previous(for: msisdn),
                     upiEntitlementDeclared: upiEntitlementDeclared,
-                    iccidTokenSupported: device.supportsIccidToken
+                    iccidTokenSupported: device.supportsIccidToken,
+                    planStatusSupported: planStatusSupported()
                 )
             )
         } catch {
@@ -254,6 +261,8 @@ internal final class SmsBindingUseCase: @unchecked Sendable {
                 switch verdict.state {
                 case .verified:
                     lastAttempt.clear()
+                    // The number is bound: from now on `checkSimBinding()` and the listener know it.
+                    boundNumbers.save(msisdn)
                     attempt.advance(to: .verified)
                     prompter.updateProgress(.verified)
                     onState?(.verified)

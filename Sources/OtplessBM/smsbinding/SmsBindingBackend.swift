@@ -20,6 +20,9 @@ internal struct SmsBindingStartRequest: Sendable {
     let upiEntitlementDeclared: Bool
     /// The device can produce Apple's ICCID token (iOS 26+). Whether it is used is up to the rules.
     let iccidTokenSupported: Bool
+    /// ENG-628: this device has Apple's plan status API (iOS 27+). Lets orchestration route on
+    /// capability rather than on the OS version alone.
+    var planStatusSupported: Bool = false
 
     /// Country code and national number, apart. Without a country code the digits are all national.
     var numberParts: (countryCode: String, national: String) {
@@ -200,6 +203,11 @@ internal struct LiveSmsBindingBackend: SmsBindingBackend {
         ).toDict()
         body["sdkPlatform"] = "IOS"
         body["simBinding"] = request.simBindingDict()
+        body["deviceContext"] = SimDeviceContext.dictionary(
+            osVersion: request.osVersion,
+            planStatusSupported: request.planStatusSupported,
+            upiEntitlement: request.upiEntitlementDeclared
+        )
 
         let data = try await call(state: state, path: Self.startPath, method: "POST", body: body)
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],

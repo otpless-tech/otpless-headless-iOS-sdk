@@ -8,6 +8,40 @@ internal enum SmsBindingMainFlow {
     static let authType = "SIM_BINDING"
     static let deliveryChannel = "OUTBOUND_SMS"
 
+    /// The platform name for the device context. The backend uses it to leave SIM binding out of a
+    /// tvOS flow.
+    static var platform: String {
+        #if os(iOS)
+        return "ios"
+        #else
+        return "tvos"
+        #endif
+    }
+
+    /// SMS binding needs the phone's SIM and Apple's message composer, so it runs on iOS only.
+    static var isSupportedOnThisPlatform: Bool {
+        #if os(iOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The `INITIATE` that says the SMS step cannot start (the backend did not route a usable
+    /// SIM binding, or this platform cannot run one). It replaces the success `INITIATE`, so the app
+    /// never waits for a flow that is not coming.
+    static var notAvailableInitiateResponse: OtplessResponse {
+        OtplessResponse(
+            responseType: .INITIATE,
+            response: [
+                "errorCode": SmsBindingFailure.notAvailable.rawValue,
+                "errorMessage": SmsBindingCopy.failure(code: SmsBindingFailure.notAvailable.rawValue),
+                "authType": authType
+            ],
+            statusCode: 500
+        )
+    }
+
     /// The number of the request, E.164. SIM binding is a phone flow: an email request has none.
     static func e164(countryCode: String?, phoneNumber: String?) -> String? {
         let code = (countryCode ?? "").filter { $0.isNumber }
@@ -75,6 +109,7 @@ extension Otpless {
             backend: apiRepository.makeSmsBindingBackend(),
             prompter: HeadlessSmsBindingPrompter(),
             lastAttempt: .shared,
+            boundNumbers: SimCheckEnvironment.boundNumbers,
             blockMemory: .shared,
             deviceFingerprintHash: { Otpless.shared.appInfo["deviceId"] as? String }
         )
@@ -82,7 +117,7 @@ extension Otpless {
             state: state,
             msisdn: msisdn,
             started: started,
-            upiEntitlementDeclared: false,
+            upiEntitlementDeclared: UpiEntitlementDeclaration.shared.declared,
             onState: { [weak self] reached in
                 if reached == .sent { DispatchQueue.main.async { self?.invokeResponse(SmsBindingMainFlow.deliveredResponse) } }
             }

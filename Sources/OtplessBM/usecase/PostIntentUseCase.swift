@@ -32,7 +32,10 @@ internal class PostIntentUseCase {
 
         let appAttestInfo = await getAppAttestInfo(requestBody, state: state)
         let response = await Otpless.shared.apiRepository
-            .postIntent(state: state, body: requestBody, appAttestInfo: appAttestInfo)
+            .postIntent(
+                state: state, body: requestBody, appAttestInfo: appAttestInfo,
+                deviceContext: Otpless.shared.deviceContextForIntent()
+            )
 
         switch response {
         case .success(let success):
@@ -157,6 +160,8 @@ internal class PostIntentUseCase {
             uid: response.quantumLeap.uid ?? "",
             timerSettings: response.quantumLeap.timerSettings
         )
+        // This platform cannot run it (tvOS): answer with the failed INITIATE, not the success one.
+        guard SmsBindingMainFlow.isSupportedOnThisPlatform else { return smsBindingNotAvailableResponse() }
         switch SmsBindingStarted.parse(quantumLeap: response.quantumLeap.simBindingDictionary()) {
         case .started(let started):
             Otpless.shared.onAuthTypeChange(newAuthType: response.quantumLeap.channel)
@@ -173,25 +178,21 @@ internal class PostIntentUseCase {
             )
         case .notSimBinding, .malformed:
             // Without the token, number and message there is nothing to run, and polling would hang.
-            return PostIntentUseCaseResponse(
-                intent: nil,
-                otplessResponse: OtplessResponse(
-                    responseType: .INITIATE,
-                    response: [
-                        "errorCode": SmsBindingFailure.notAvailable.rawValue,
-                        "errorMessage": SmsBindingCopy.failure(code: SmsBindingFailure.notAvailable.rawValue),
-                        "authType": SmsBindingMainFlow.authType
-                    ],
-                    statusCode: 500
-                ),
-                tokenAsIdUIdAndTimerSettings: nil,
-                passkeyRequestStr: nil,
-                uid: nil,
-                sdkAuthParams: nil,
-                isPollingRequired: false,
-                isSNA: false
-            )
+            return smsBindingNotAvailableResponse()
         }
+    }
+
+    private func smsBindingNotAvailableResponse() -> PostIntentUseCaseResponse {
+        PostIntentUseCaseResponse(
+            intent: nil,
+            otplessResponse: SmsBindingMainFlow.notAvailableInitiateResponse,
+            tokenAsIdUIdAndTimerSettings: nil,
+            passkeyRequestStr: nil,
+            uid: nil,
+            sdkAuthParams: nil,
+            isPollingRequired: false,
+            isSNA: false
+        )
     }
 
     func parseSuccessResponse(_ response: IntentResponse, postIntentRequestBody: PostIntentRequestBody) -> PostIntentUseCaseResponse {

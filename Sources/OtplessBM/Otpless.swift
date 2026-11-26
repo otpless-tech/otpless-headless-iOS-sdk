@@ -740,6 +740,12 @@ private extension Otpless {
     /// A failed verify named SMS binding as the next channel (the OTP did not bind the SIM): switch to the new attempt,
     /// tell the app the next step has started (`INITIATE`, `authType: SIM_BINDING`), and run it.
     func continueWithSmsBinding(_ next: NextSmsBinding, _ request: OtplessRequest) async {
+        // The success `INITIATE` goes out only where the SMS step can run (iOS); elsewhere (tvOS) the app
+        // gets the failed one and the sign-in ends instead of waiting.
+        guard SmsBindingMainFlow.isSupportedOnThisPlatform else {
+            invokeResponse(SmsBindingMainFlow.notAvailableInitiateResponse)
+            return
+        }
         self.token = next.token
         self.asId = next.asId
         if !next.uid.isEmpty { self.uid = next.uid }
@@ -790,12 +796,15 @@ private extension Otpless {
         }
         
         // The backend answered as outbound SMS SIM binding (the last step after SNA and OTP): run it here.
-        #if os(iOS)
         if let started = intentResponse.smsBindingStart {
+            #if os(iOS)
             await runSmsBindingFromIntent(started, otplessRequest)
+            #else
+            _ = started
+            invokeResponse(SmsBindingMainFlow.notAvailableInitiateResponse)
+            #endif
             return
         }
-        #endif
 
         if let passkeyRequestStr = intentResponse.passkeyRequestStr,
            !passkeyRequestStr.isEmpty,
@@ -858,12 +867,15 @@ private extension Otpless {
                 self.asId = tokenAsIdUIdAndTimerSettings.asId ?? ""
                 self.uid = tokenAsIdUIdAndTimerSettings.uid ?? ""
                 // SNA failed and the backend named outbound SMS as the next channel: run it here.
-                #if os(iOS)
                 if let started = response.smsBindingStart {
+                    #if os(iOS)
                     await runSmsBindingFromIntent(started, otplessRequest)
+                    #else
+                    _ = started
+                    invokeResponse(SmsBindingMainFlow.notAvailableInitiateResponse)
+                    #endif
                     return
                 }
-                #endif
                 if let timerSettings = tokenAsIdUIdAndTimerSettings.timerSettings {
                     await transactionStatusUseCase.invoke(queryParams: otplessRequest.getQueryParams(), state: self.state ?? "", timerSettings: timerSettings, onResponse: { [weak self] otplessResponse in
                         self?.invokeResponse(otplessResponse)

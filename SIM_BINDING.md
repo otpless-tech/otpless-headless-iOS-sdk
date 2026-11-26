@@ -66,6 +66,9 @@ authentication fails, in the status response of that step. The SDK then runs it,
   `SESSION_INTERRUPTED`, `DEVICE_BLOCKED`, `VMN_POOL_UNAVAILABLE`, `VERIFICATION_FAILED`,
   `INTERNAL_ERROR`, `ATTEMPT_IN_PROGRESS`, `SIM_BINDING_NOT_AVAILABLE` and `INVALID_PHONE_NUMBER`.
 - iOS has no airplane-mode API; airplane mode empties the radio list, so it shows as `NO_SIM`.
+- **tvOS:** SMS binding needs a SIM and Apple's message composer, so it runs on iOS only. On tvOS the device context says
+  `platform: tvos`, and if the backend still answers with `SIM_BINDING` the app gets a failed `INITIATE`
+  (`errorCode: SIM_BINDING_NOT_AVAILABLE`) instead of waiting for a flow that cannot start.
 
 ## iOS 27 SIM check
 
@@ -73,13 +76,15 @@ Apple's plan status API arrives with iOS 27. The SDK finds it by looking for its
 Before iOS 27 every call below answers `SIM_CHECK_NOT_SUPPORTED`.
 
 ```swift
-Otpless.shared.checkSimBinding { result in          // checks the number this app last bound
-    switch result {
-    case .success(let check): print(check.status, check.reason as Any)   // bound / notBound / unknown
-    case .failure(let error): print(error.code)   // SIM_CHECK_NOT_SUPPORTED, NO_BOUND_NUMBER
-    }
+let result = await Otpless.shared.checkSimBinding()      // checks the number this app last bound
+switch result {
+case .success(let check): print(check.status, check.reason as Any)   // bound / notBound / unknown
+case .failure(let error): print(error.code)   // SIM_CHECK_NOT_SUPPORTED, NO_BOUND_NUMBER
 }
 ```
+
+`checkSimBinding()` and `requestNumberStatusPermission(phoneNumber:)` are `async` and return a `Result`, so they fit
+Swift concurrency without a continuation. They resume on the caller's context, not on the main thread.
 
 The SDK keeps the number it last bound (in the Keychain, set when an SMS binding or a verified OTP binds a number), so there
 is nothing to pass. `NO_BOUND_NUMBER` means nothing has been bound yet.
@@ -105,9 +110,8 @@ Apple asks the user once per number: "Allow <app> to check the phone number on t
 **Not Now** and **Allow**. A denied user can be asked again, and must be: Settings has no toggle for this permission (on iOS 27.0.1 the app's settings page shows only Apple Intelligence & Siri, Search and Mobile Data), so asking through `requestNumberStatusPermission` is the only way back. Reinstalling the app also clears the permission. Show your own explanation first:
 
 ```swift
-Otpless.shared.requestNumberStatusPermission(phoneNumber: number) { result in
-    // .success(.granted | .denied | .unavailable)
-}
+let result = await Otpless.shared.requestNumberStatusPermission(phoneNumber: number)
+// .success(.granted | .denied | .unavailable)
 ```
 
 Apple's dialog appears only when the permission is not already held. Do not call Apple's request

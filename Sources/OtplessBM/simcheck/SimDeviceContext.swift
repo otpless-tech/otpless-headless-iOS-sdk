@@ -9,9 +9,14 @@ internal enum SimDeviceContext {
     /// `platform`, `os_version`, `plan_status_supported` (the iOS 27 plan status API is present and
     /// usable) and `upi_entitlement` (the host's declaration that its app holds Apple's UPI Device
     /// Validation entitlement), under the names ENG-627 gives.
-    static func dictionary(osVersion: String, planStatusSupported: Bool, upiEntitlement: Bool) -> [String: Any] {
+    static func dictionary(
+        platform: String = SmsBindingMainFlow.platform,
+        osVersion: String,
+        planStatusSupported: Bool,
+        upiEntitlement: Bool
+    ) -> [String: Any] {
         [
-            "platform": "ios",
+            "platform": platform,
             "os_version": osVersion,
             "plan_status_supported": planStatusSupported,
             "upi_entitlement": upiEntitlement

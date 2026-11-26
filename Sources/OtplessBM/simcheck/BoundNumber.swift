@@ -9,7 +9,9 @@ internal protocol BoundNumberStore: Sendable {
 }
 
 internal struct KeychainBoundNumberStore: BoundNumberStore {
-    private static let key = "otpless.simbinding.bound_number"
+    /// Also listed in `SecureStorage.clearStaleDataOnFreshInstall`: the Keychain survives an uninstall, so
+    /// a number bound by an earlier install must not carry over.
+    static let key = "otpless.simbinding.bound_number"
 
     var current: String? {
         let value = SecureStorage.shared.retrieve(key: Self.key)

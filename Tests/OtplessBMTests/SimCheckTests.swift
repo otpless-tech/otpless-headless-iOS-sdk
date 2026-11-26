@@ -330,7 +330,7 @@ final class SimCheckNoArgumentTests: XCTestCase {
     }
 
     private func check() async -> Result<OtplessSimBindingCheck, OtplessSimCheckError> {
-        await withCheckedContinuation { continuation in Otpless.shared.checkSimBinding { continuation.resume(returning: $0) } }
+        await Otpless.shared.checkSimBinding()
     }
 
     func testCheckUsesTheBoundNumber() async throws {
